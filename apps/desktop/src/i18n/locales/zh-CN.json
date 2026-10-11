@@ -542,7 +542,7 @@
         "testButton": "测试图像输入",
         "testing": "正在测试…",
         "testFailed": "图像输入测试失败。",
-        "asrSupport": "请先启动麦克风识别。首版按住期间收音，松开后识别，不显示实时草稿。支持本地 Qwen、Groq 等兼容批量识别、Qwen realtime 和 FunASR；暂不支持实时翻译、OpenAI realtime、Gemini 和 Token Plan。",
+        "asrSupport": "请先启动麦克风识别。按住期间，问题转写草稿临时替换眼前字幕，沿用其布局设置；松开后恢复字幕并提交最终转写。支持本地 Qwen、Groq 等兼容批量识别、Qwen realtime 和 FunASR；批量后端通过快照更新，延迟较高且可能增加费用。暂不支持实时翻译、OpenAI realtime、Gemini 和 Token Plan。",
         "wristTitle": "回答手腕面板",
         "wristDescription": "此布局独立于 OCR 手腕面板。",
         "vrUnavailable": "请启用 VR Overlay 功能以使用视觉问答。",

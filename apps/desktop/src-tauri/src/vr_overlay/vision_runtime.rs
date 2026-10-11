@@ -75,6 +75,10 @@ impl VisionRuntime {
         self.session.is_some() || self.task.is_some()
     }
 
+    pub fn draft(&self) -> Option<String> {
+        self.session.as_ref().map(VisionSession::draft)
+    }
+
     pub fn clear(&mut self) {
         self.id = self.id.wrapping_add(1);
         self.session = None;
@@ -146,6 +150,9 @@ impl VisionRuntime {
                 })
         {
             self.fail("Recording timed out. Release the trigger and ask again.".into());
+        }
+        if let (Some(session), Some(view)) = (&self.session, &mut self.view) {
+            view.source = session.draft();
         }
         while let Ok(update) = self.receiver.try_recv() {
             match update {

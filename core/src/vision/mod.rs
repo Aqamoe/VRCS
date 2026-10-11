@@ -1,9 +1,9 @@
 //! User-triggered image questions with an isolated microphone audio window.
 
 mod audio;
-pub(crate) use audio::MicrophoneTap;
+pub(crate) use audio::{AudioReader as QuestionAudioReader, MicrophoneTap};
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::config::{apply_feature_gates, ApiProfile, AppConfig, VisionConfig};
@@ -15,6 +15,7 @@ use crate::server::AppState;
 pub struct VisionService {
     state: Arc<AppState>,
     llm: LlmClient,
+    runtime: Option<tokio::runtime::Handle>,
 }
 
 pub struct VisionSession {
@@ -22,6 +23,8 @@ pub struct VisionSession {
     snapshot: AppConfig,
     audio: audio::AudioWindow,
     api_key: String,
+    draft: crate::asr::QuestionDraft,
+    recognition: tokio::task::JoinHandle<Result<String, String>>,
 }
 
 pub enum VisionProgress {
@@ -39,6 +42,7 @@ impl VisionService {
         Self {
             state,
             llm: LlmClient::new(reqwest::Client::new()),
+            runtime: tokio::runtime::Handle::try_current().ok(),
         }
     }
 
@@ -58,6 +62,21 @@ impl VisionService {
     }
 
     pub fn begin(&self) -> Result<VisionSession, String> {
+        let runtime = self
+            .runtime
+            .clone()
+            .or_else(|| tokio::runtime::Handle::try_current().ok())
+            .ok_or(
+                "Visual questions need a Tokio runtime; use begin_with_runtime on the VR thread",
+            )?;
+        self.begin_with_runtime(&runtime)
+    }
+
+    /// Use a live application runtime when this service was created outside Tokio.
+    pub fn begin_with_runtime(
+        &self,
+        runtime: &tokio::runtime::Handle,
+    ) -> Result<VisionSession, String> {
         let snapshot = self.snapshot();
         if !snapshot.vision.enabled || *self.state.integrations.shutdown.borrow() {
             return Err("Visual questions are disabled".into());
@@ -78,11 +97,48 @@ impl VisionService {
             .capture
             .microphone_tap
             .begin(snapshot.vision.max_capture_seconds)?;
+        let draft = Arc::new(Mutex::new(String::new()));
+        let reader = audio.reader();
+        let status = audio.reader();
+        let service = self.clone();
+        let task_snapshot = snapshot.clone();
+        let task_draft = draft.clone();
+
+        let recognition = runtime.spawn(async move {
+            let work = crate::asr::recognize_live_question(
+                task_snapshot.asr.clone(), reader, task_snapshot.vad.silence_seconds,
+                Arc::clone(&service.state.capture.qwen_runtime),
+                Arc::clone(&service.state.capture.model_manager), task_draft,
+            );
+            tokio::pin!(work);
+            let started = std::time::Instant::now();
+            let mut tick = tokio::time::interval(Duration::from_millis(20));
+            loop {
+                tokio::select! {
+                    result = &mut work => return result,
+                    _ = tick.tick() => {
+                        status.check()?;
+                        if !service.matches_session(&task_snapshot) {
+                            return Err("The microphone or visual question settings changed. Ask again.".into());
+                        }
+                        if let Some(released) = status.released_at() {
+                            if released.elapsed() >= Duration::from_millis(task_snapshot.vision.asr_finalize_timeout_ms) {
+                                return Err("Question speech recognition timed out. Ask again.".into());
+                            }
+                        } else if started.elapsed() > Duration::from_secs(u64::from(task_snapshot.vision.max_capture_seconds)) {
+                            return Err("Audio window exceeded its duration limit".into());
+                        }
+                    }
+                }
+            }
+        });
         Ok(VisionSession {
             service: self.clone(),
             snapshot,
             audio,
             api_key,
+            draft,
+            recognition,
         })
     }
 
@@ -148,6 +204,15 @@ impl VisionService {
 }
 
 impl VisionSession {
+    /// Latest cumulative source transcript. Partial hypotheses replace earlier ones.
+    /// Poll from the VR tick; this method does not need a Tokio context.
+    pub fn draft(&self) -> String {
+        if !self.service.matches_session(&self.snapshot) {
+            return String::new();
+        }
+        self.draft.lock().expect("question draft lock").clone()
+    }
+
     /// Called synchronously on the real release edge, before any asynchronous work.
     pub fn release(&mut self) {
         self.audio.release();
@@ -160,23 +225,17 @@ impl VisionSession {
     ) -> Result<VisionAnswer, String> {
         validate_image(&image, &self.snapshot.vision)?;
         self.check_configuration()?;
+        if self.audio.released_at().is_none() {
+            return Err("Release the audio window before answering".into());
+        }
         on_progress(VisionProgress::FinalizingAsr);
         let question = tokio::time::timeout(
             Duration::from_millis(self.snapshot.vision.asr_finalize_timeout_ms),
-            async {
-                let samples = self.audio.finish().await?;
-                crate::asr::transcribe_question(
-                    self.snapshot.asr.clone(),
-                    samples,
-                    self.snapshot.vad.silence_seconds,
-                    Arc::clone(&self.service.state.capture.qwen_runtime),
-                    Arc::clone(&self.service.state.capture.model_manager),
-                )
-                .await
-            },
+            &mut self.recognition,
         )
         .await
-        .map_err(|_| "Question speech recognition timed out. Ask again.".to_owned())??;
+        .map_err(|_| "Question speech recognition timed out. Ask again.".to_owned())?
+        .map_err(|error| format!("Question speech recognition task failed: {error}"))??;
         if question.trim().is_empty() {
             return Err("No question was recognized. Hold the trigger and speak again.".into());
         }
@@ -201,6 +260,12 @@ impl VisionSession {
             return Err("The microphone or visual question settings changed. Ask again.".into());
         }
         Ok(())
+    }
+}
+
+impl Drop for VisionSession {
+    fn drop(&mut self) {
+        self.recognition.abort();
     }
 }
 
@@ -266,9 +331,15 @@ mod tests {
 
         let calls = Arc::new(AtomicUsize::new(0));
         let llm_calls = calls.clone();
+        let asr_calls = Arc::new(AtomicUsize::new(0));
+        let speech_calls = asr_calls.clone();
         let mock = Router::new()
-            .route("/v1/audio/transcriptions", post(|| async {
-                Json(json!({"text": "What is this button?"}))
+            .route("/v1/audio/transcriptions", post(move || {
+                let calls = speech_calls.clone();
+                async move {
+                    let index = calls.fetch_add(1, Ordering::SeqCst);
+                    Json(json!({"text": if index == 0 { "What is this" } else { "What is this button?" }}))
+                }
             }))
             .route("/v1/chat/completions", post(move |Json(body): Json<Value>| {
                 let calls = llm_calls.clone();
@@ -335,22 +406,55 @@ mod tests {
         tap.started();
         let mut subtitles = handle.subscribe_presentation_events();
         let base = Instant::now() - Duration::from_millis(10);
-        let mut session = service.begin().unwrap();
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        // A VR thread has no current Tokio Handle. The service retains the one
+        // captured at creation, so ordinary begin still launches recognition.
+        let vr_service = service.clone();
+        let mut session = std::thread::spawn(move || vr_service.begin())
+            .join()
+            .unwrap()
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        let first_end = Instant::now();
+        tap.push(&[0.1; 12800], base, first_end);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while session.draft().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(session.draft(), "What is this");
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(asr_calls.load(Ordering::SeqCst), 1);
         session.release();
-        tap.push(&[0.1; 480], base, Instant::now());
+        // This late chunk covers the release edge; the final upload must wait
+        // for it and must not use the incomplete preview as the question.
+        tap.push(&[0.1; 480], first_end, Instant::now());
         let answer = session.answer(test_png(), |_| {}).await.unwrap();
         assert_eq!(answer.question, "What is this button?");
         assert_eq!(answer.answer, "It opens the menu.");
+        assert_eq!(asr_calls.load(Ordering::SeqCst), 2);
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(subtitles.try_recv().is_err());
 
-        let cancelled = service.begin().unwrap();
+        let mut explicit_service = service.clone();
+        explicit_service.runtime = None;
+        let runtime = tokio::runtime::Handle::current();
+        let cancelled = std::thread::spawn(move || explicit_service.begin_with_runtime(&runtime))
+            .join()
+            .unwrap()
+            .unwrap();
         drop(cancelled);
         let mut stale = service.begin().unwrap();
         stale.release();
         handle.state.config.config.write().unwrap().vision.model = "different-model".into();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !stale.recognition.is_finished() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         assert!(stale.answer(test_png(), |_| {}).await.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         tap.stopped("test ended");

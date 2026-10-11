@@ -132,16 +132,56 @@ impl StreamingSession {
         self.task.abort();
     }
 
+    #[cfg(test)]
     pub(crate) async fn transcribe_question_audio(
         &mut self,
         samples: SharedAudio,
     ) -> Result<Vec<CloudEvent>, String> {
+        self.transcribe_question_input(async move { Ok(samples) }, |_| {})
+            .await
+    }
+
+    pub(crate) async fn transcribe_question_live(
+        &mut self,
+        mut reader: crate::vision::QuestionAudioReader,
+        on_event: impl FnMut(&CloudEvent),
+    ) -> Result<Vec<CloudEvent>, String> {
+        let audio = self.audio.clone();
+        self.transcribe_question_input(
+            async move {
+                let mut samples = Vec::new();
+                while let Some(chunk) = reader.next().await? {
+                    if chunk.iter().any(|sample| !sample.is_finite()) {
+                        return Err("Question audio contains non-finite samples".into());
+                    }
+                    samples.extend_from_slice(&chunk);
+                    audio
+                        .send(StreamingInput::Audio(super::share_audio(chunk)))
+                        .await
+                        .map_err(|_| "Question recognition session is closed".to_string())?;
+                }
+                super::question::validate_audio(&samples)?;
+                Ok(super::share_audio(Vec::new()))
+            },
+            on_event,
+        )
+        .await
+    }
+
+    async fn transcribe_question_input(
+        &mut self,
+        input: impl std::future::Future<Output = Result<SharedAudio, String>>,
+        mut on_event: impl FnMut(&CloudEvent),
+    ) -> Result<Vec<CloudEvent>, String> {
         let audio = self.audio.clone();
         let sending = async move {
-            audio
-                .send(StreamingInput::Audio(samples))
-                .await
-                .map_err(|_| "Question recognition session is closed".to_string())?;
+            let samples = input.await?;
+            if !samples.is_empty() {
+                audio
+                    .send(StreamingInput::Audio(samples))
+                    .await
+                    .map_err(|_| "Question recognition session is closed".to_string())?;
+            }
             // The FIFO commit acknowledgement is a barrier for all queued PCM.
             let (tx, rx) = oneshot::channel();
             audio
@@ -165,13 +205,17 @@ impl StreamingSession {
                 result = &mut sending => {
                     result?;
                     while let Ok(event) = self.events.try_recv() {
+                        on_event(&event);
                         collected.push(event);
                     }
                     return Ok(collected);
                 }
                 event = self.events.recv() => match event {
                     Some(CloudEvent::Failed { code, detail, .. }) => return Err(format!("{code}: {detail}")),
-                    Some(event) => collected.push(event),
+                    Some(event) => {
+                        on_event(&event);
+                        collected.push(event);
+                    }
                     None => {
                         // The finish acknowledgement can become ready with channel closure.
                         sending.await?;
@@ -1197,6 +1241,120 @@ mod tests {
             },
             server,
         )
+    }
+
+    #[tokio::test]
+    async fn live_question_replaces_draft_before_release_and_waits_for_tail_final() {
+        let (session, mut server) = mock_question_session(Provider::Qwen).await;
+        let tap = crate::vision::MicrophoneTap::default();
+        tap.started();
+        let base = std::time::Instant::now();
+        let mut window = tap.begin(2).unwrap();
+        let reader = window.reader();
+        let draft = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let task_draft = draft.clone();
+        let task = tokio::spawn(super::super::question::recognize_live_session(
+            super::super::CloudRecognitionSession::Realtime(session),
+            reader,
+            task_draft,
+        ));
+        let server_task =
+            tokio::spawn(async move {
+                let mut bytes = 0;
+                let mut preview_sent = false;
+                while let Some(Ok(message)) = server.next().await {
+                    let value: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+                    if value["type"] == "input_audio_buffer.append" {
+                        bytes += base64::Engine::decode(
+                            &base64::engine::general_purpose::STANDARD,
+                            value["audio"].as_str().unwrap(),
+                        )
+                        .unwrap()
+                        .len();
+                        if !preview_sent {
+                            for text in ["old draft", "replacement"] {
+                                server.send(json_frame(serde_json::json!({
+                                "type":"conversation.item.input_audio_transcription.text",
+                                "item_id":"one", "text":text
+                            }), false)).await.unwrap();
+                            }
+                            preview_sent = true;
+                        }
+                    } else if value["type"] == "session.finish" {
+                        assert!(preview_sent);
+                        assert!(bytes > 4000 * 2 && bytes <= 4320 * 2);
+                        server
+                            .send(json_frame(
+                                serde_json::json!({
+                                    "type":"conversation.item.input_audio_transcription.completed",
+                                    "item_id":"one", "transcript":"final question"
+                                }),
+                                false,
+                            ))
+                            .await
+                            .unwrap();
+                        server
+                            .send(json_frame(
+                                serde_json::json!({"type":"session.finished"}),
+                                false,
+                            ))
+                            .await
+                            .unwrap();
+                        break;
+                    }
+                }
+            });
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let first_end = std::time::Instant::now();
+        tap.push(&[0.1; 4000], base, first_end);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while draft.lock().unwrap().as_str() != "replacement" {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!task.is_finished());
+        window.release();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(!task.is_finished());
+        tap.push(&[0.2; 320], first_end, std::time::Instant::now());
+        let text = tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(text, "final question");
+        assert_eq!(draft.lock().unwrap().as_str(), "final question");
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn live_question_cancellation_aborts_worker_before_release() {
+        let (session, _server) = mock_question_session(Provider::Qwen).await;
+        let worker = session.task.abort_handle();
+        let tap = crate::vision::MicrophoneTap::default();
+        tap.started();
+        let window = tap.begin(2).unwrap();
+        let result = tokio::time::timeout(
+            Duration::from_millis(25),
+            super::super::question::recognize_live_session(
+                super::super::CloudRecognitionSession::Realtime(session),
+                window.reader(),
+                std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+            ),
+        )
+        .await;
+        assert!(result.is_err());
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !worker.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        drop(window);
+        assert!(tap.begin(2).is_ok());
     }
 
     #[tokio::test]

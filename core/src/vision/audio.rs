@@ -36,6 +36,13 @@ pub(crate) struct AudioWindow {
     id: u64,
 }
 
+pub(crate) struct AudioReader {
+    tap: MicrophoneTap,
+    id: u64,
+    cursor: usize,
+    released_since: Option<Instant>,
+}
+
 impl MicrophoneTap {
     pub(crate) fn begin(&self, max_seconds: u32) -> Result<AudioWindow, String> {
         self.begin_at(max_seconds, Instant::now())
@@ -174,6 +181,26 @@ impl MicrophoneTap {
 }
 
 impl AudioWindow {
+    pub(crate) fn reader(&self) -> AudioReader {
+        AudioReader {
+            tap: self.tap.clone(),
+            id: self.id,
+            cursor: 0,
+            released_since: None,
+        }
+    }
+
+    pub(crate) fn released_at(&self) -> Option<Instant> {
+        self.tap
+            .inner
+            .lock()
+            .expect("microphone tap lock")
+            .window
+            .as_ref()
+            .filter(|window| window.id == self.id)
+            .and_then(|window| window.end)
+    }
+
     pub(crate) fn release(&mut self) {
         self.release_at(Instant::now());
     }
@@ -210,6 +237,7 @@ impl AudioWindow {
         self.tap.changed.notify_one();
     }
 
+    #[cfg(test)]
     pub(crate) async fn finish(&mut self) -> Result<Vec<f32>, String> {
         let result = tokio::time::timeout(Duration::from_secs(1), async {
             loop {
@@ -256,6 +284,98 @@ impl AudioWindow {
     }
 }
 
+impl AudioReader {
+    pub(crate) fn check(&self) -> Result<(), String> {
+        let state = self.tap.inner.lock().expect("microphone tap lock");
+        let window = state
+            .window
+            .as_ref()
+            .filter(|window| window.id == self.id)
+            .ok_or("Audio window is no longer active")?;
+        match &window.error {
+            Some(error) => Err(error.clone()),
+            None => Ok(()),
+        }
+    }
+
+    pub(crate) fn released_at(&self) -> Option<Instant> {
+        self.tap
+            .inner
+            .lock()
+            .expect("microphone tap lock")
+            .window
+            .as_ref()
+            .filter(|window| window.id == self.id)
+            .and_then(|window| window.end)
+    }
+
+    /// Only emit sample instants that have passed wall time. Producer estimates
+    /// can lead wall time, and transmitted PCM cannot be retracted on release.
+    pub(crate) async fn next(&mut self) -> Result<Option<Vec<f32>>, String> {
+        loop {
+            {
+                let state = self.tap.inner.lock().expect("microphone tap lock");
+                let window = state
+                    .window
+                    .as_ref()
+                    .filter(|window| window.id == self.id)
+                    .ok_or("Audio window is no longer active")?;
+                if let Some(error) = &window.error {
+                    return Err(error.clone());
+                }
+                let now = Instant::now();
+                if window.end.is_none() && now > window.deadline {
+                    return Err("Audio window exceeded its duration limit".into());
+                }
+                let complete = window
+                    .end
+                    .is_some_and(|end| state.watermark.is_some_and(|mark| mark >= end));
+                if window.end.is_some() {
+                    let since = self.released_since.get_or_insert(now);
+                    if !complete && since.elapsed() >= Duration::from_secs(1) {
+                        return Err("Timed out waiting for microphone audio".into());
+                    }
+                }
+                let stop = window.end.unwrap_or(now).min(now);
+                let mut safe = window.samples.len();
+                for &(start, end, count, first, offset) in &window.spans {
+                    if stop < end {
+                        let last = if stop <= start {
+                            0
+                        } else {
+                            ((stop.duration_since(start).as_secs_f64()
+                                / end.duration_since(start).as_secs_f64()
+                                * count as f64
+                                - 1e-7)
+                                .ceil() as usize)
+                                .min(count)
+                        };
+                        safe = (offset + last.saturating_sub(first)).min(safe);
+                        break;
+                    }
+                }
+                if safe < self.cursor {
+                    return Err("Question audio crossed the release boundary".into());
+                }
+                if safe > self.cursor {
+                    let chunk = window.samples[self.cursor..safe].to_vec();
+                    self.cursor = safe;
+                    return Ok(Some(chunk));
+                }
+                if complete {
+                    return if self.cursor == 0 {
+                        Err("No microphone audio covered the window".into())
+                    } else {
+                        Ok(None)
+                    };
+                }
+            }
+            // One reader polls a bounded window; no per-frame tasks or queues.
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+}
+
 impl Drop for AudioWindow {
     fn drop(&mut self) {
         self.cleanup();
@@ -270,6 +390,58 @@ mod tests {
         let tap = MicrophoneTap::default();
         tap.started();
         (tap, Instant::now())
+    }
+
+    #[tokio::test]
+    async fn live_reader_defers_future_pcm_and_preserves_release_tail() {
+        let (tap, base) = running();
+        let mut window = tap.begin_at(1, base).unwrap();
+        let mut reader = window.reader();
+        tap.push(&[0.1; 16000], base, base + Duration::from_secs(1));
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let first = reader.next().await.unwrap().unwrap();
+        assert!(first.len() < 16000);
+        window.release();
+        let expected = tap
+            .inner
+            .lock()
+            .unwrap()
+            .window
+            .as_ref()
+            .unwrap()
+            .samples
+            .len();
+        let mut total = first.len();
+        while let Some(chunk) = reader.next().await.unwrap() {
+            total += chunk.len();
+        }
+        assert_eq!(total, expected);
+    }
+
+    #[tokio::test]
+    async fn live_reader_waits_for_tail_and_drop_invalidates_it() {
+        let (tap, base) = running();
+        let mut window = tap.begin_at(1, base).unwrap();
+        let mut reader = window.reader();
+        tap.push(&[0.1; 16], base, base + Duration::from_millis(1));
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        assert_eq!(reader.next().await.unwrap().unwrap().len(), 16);
+        window.release_at(base + Duration::from_millis(2));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), reader.next())
+                .await
+                .is_err()
+        );
+        tap.push(
+            &[0.2; 32],
+            base + Duration::from_millis(1),
+            base + Duration::from_millis(3),
+        );
+        assert_eq!(reader.next().await.unwrap().unwrap(), vec![0.2; 16]);
+        assert!(reader.next().await.unwrap().is_none());
+        drop(window);
+        assert!(reader.next().await.is_err());
+        assert!(tap.begin(1).is_ok());
     }
 
     #[tokio::test]

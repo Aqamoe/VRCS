@@ -542,7 +542,7 @@
         "testButton": "画像入力をテスト",
         "testing": "テスト中…",
         "testFailed": "画像入力テストに失敗しました。",
-        "asrSupport": "先にマイクの文字起こしを開始してください。この版はトリガーを押している間に収音し、放した後に認識します。リアルタイムの下書きは表示しません。ローカル Qwen、Groq などの互換バッチ認識、Qwen realtime、FunASR に対応します。リアルタイム翻訳、OpenAI realtime、Gemini、Token Plan は未対応です。",
+        "asrSupport": "先にマイクの文字起こしを開始してください。トリガーを押している間は、質問の文字起こし下書きを視野字幕の代わりに表示し、その配置設定を使います。放すと字幕に戻り、確定した文字起こしを送信します。ローカル Qwen、Groq などの互換バッチ認識、Qwen realtime、FunASR に対応します。バッチ方式は音声のスナップショットを認識するため、遅延と追加料金が増える場合があります。リアルタイム翻訳、OpenAI realtime、Gemini、Token Plan は未対応です。",
         "wristTitle": "回答の手首パネル",
         "wristDescription": "OCR の手首パネルとは独立した配置です。",
         "vrUnavailable": "画像質問応答には VR Overlay 機能を有効にしてください。",

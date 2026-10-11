@@ -542,7 +542,7 @@
         "testButton": "Test image input",
         "testing": "Testing…",
         "testFailed": "Image input test failed.",
-        "asrSupport": "Start microphone transcription first. This version records while you hold the trigger and recognizes speech after release, without a live draft. Supported: local Qwen, compatible batch transcription such as Groq, Qwen realtime, and FunASR. Live translation, OpenAI realtime, Gemini, and Token Plan are not supported yet.",
+        "asrSupport": "Start microphone transcription first. While you hold the trigger, the live question draft temporarily replaces the headset subtitles and uses their layout settings. Release to restore subtitles and submit the final transcript. Supported: local Qwen, compatible batch transcription such as Groq, Qwen realtime, and FunASR. Batch backends update snapshots with more delay and can incur extra charges. Live translation, OpenAI realtime, Gemini, and Token Plan are not supported yet.",
         "wristTitle": "Answer wrist panel",
         "wristDescription": "This layout is independent of the OCR wrist panel.",
         "vrUnavailable": "Enable the VR Overlay feature to use visual question answering.",

@@ -659,11 +659,11 @@ fn tick(app: &AppHandle, state: &mut WorkerState, status: &mut VrOverlayStatus, 
     };
     status.state = RuntimeState::Ready;
     status.last_error_detail = None;
-    update_headset(state, status, &mut backend);
     #[cfg(windows)]
     state
         .ocr
         .tick(&mut backend, &state.ocr_config, &state.config.wrist);
+    update_headset(state, status, &mut backend);
     update_wrist(state, status, &mut backend);
     update_dashboard(app, state, status, &mut backend);
     let headset_failed =
@@ -786,12 +786,29 @@ fn update_dashboard(
     status.dashboard.last_error_code = None;
 }
 
+fn question_draft_frame(draft: &str) -> PresentationFrame {
+    PresentationFrame::headset(
+        if draft.trim().is_empty() {
+            "Listening · release trigger to ask"
+        } else {
+            draft
+        },
+        1.0,
+    )
+}
+
 fn update_headset(
     state: &mut WorkerState,
     status: &mut VrOverlayStatus,
     backend: &mut OpenVrBackend,
 ) {
-    if !state.config.enabled || !state.config.headset.enabled {
+    #[cfg(windows)]
+    let question_draft = state.ocr.vision.draft();
+    #[cfg(not(windows))]
+    let question_draft: Option<String> = None;
+    // A held visual question temporarily owns the subtitle surface, without
+    // changing subtitle history or requiring the subtitle display to be enabled.
+    if question_draft.is_none() && (!state.config.enabled || !state.config.headset.enabled) {
         backend.reset(OverlayKind::Headset);
         state.headset_hash = None;
         status.headset.state = ResourceState::Disabled;
@@ -811,7 +828,9 @@ fn update_headset(
         return;
     }
 
-    let frame = if state.headset_sample {
+    let frame = if let Some(draft) = question_draft {
+        Some(question_draft_frame(&draft))
+    } else if state.headset_sample {
         Some(PresentationFrame::headset(
             "VRCS Headset Overlay Sample / 视野字幕预览",
             1.0,
@@ -1040,6 +1059,18 @@ fn unix_timestamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn question_draft_uses_the_headset_subtitle_frame() {
+        assert_eq!(
+            question_draft_frame("updated question"),
+            PresentationFrame::headset("updated question", 1.0)
+        );
+        assert_eq!(
+            question_draft_frame("  "),
+            PresentationFrame::headset("Listening · release trigger to ask", 1.0)
+        );
+    }
 
     #[test]
     fn sample_kind_rejects_unknown_values() {

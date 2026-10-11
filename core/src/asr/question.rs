@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::config::{AsrConfig, QWEN_MANAGED_BACKEND};
 use crate::providers::{self, ServiceAdapter};
@@ -8,26 +9,7 @@ use super::{
     CloudRecognitionSession, ModelManager, QwenRuntime, SharedAudio,
 };
 
-/// Recognize buffered 16 kHz mono PCM in an isolated session.
-/// The caller must apply a timeout around this entire future, including connection setup.
-pub(crate) async fn transcribe_question(
-    config: AsrConfig,
-    samples: Vec<f32>,
-    silence_seconds: f64,
-    runtime: Arc<QwenRuntime>,
-    manager: Arc<ModelManager>,
-) -> Result<String, String> {
-    validate_audio(&samples)?;
-    validate_backend(&config)?;
-    let session = if config.backend == QWEN_MANAGED_BACKEND {
-        spawn_managed_qwen_session(config, runtime, manager).await?
-    } else {
-        spawn_cloud_recognition_session(config, silence_seconds).await?
-    };
-    recognize_session(session, share_audio(samples)).await
-}
-
-fn validate_audio(samples: &[f32]) -> Result<(), String> {
+pub(super) fn validate_audio(samples: &[f32]) -> Result<(), String> {
     if samples.is_empty() {
         return Err("Question audio is empty".into());
     }
@@ -68,6 +50,132 @@ pub(crate) fn validate_backend(config: &AsrConfig) -> Result<(), String> {
     }
 }
 
+pub(crate) type QuestionDraft = Arc<Mutex<String>>;
+
+#[derive(Default)]
+struct Transcript {
+    utterances: Vec<(String, String, bool)>,
+}
+
+impl Transcript {
+    fn update(&mut self, event: &CloudEvent) {
+        let (id, text, final_text) = match event {
+            CloudEvent::Partial {
+                utterance_id, text, ..
+            } => (utterance_id, text, false),
+            CloudEvent::Final {
+                utterance_id, text, ..
+            } => (utterance_id, text, true),
+            _ => return,
+        };
+        if let Some((_, previous, finalized)) =
+            self.utterances.iter_mut().find(|(key, _, _)| key == id)
+        {
+            if final_text || !*finalized {
+                *previous = text.trim().to_owned();
+                *finalized = final_text;
+            }
+        } else {
+            self.utterances
+                .push((id.clone(), text.trim().to_owned(), final_text));
+        }
+    }
+
+    fn draft(&self) -> String {
+        self.utterances
+            .iter()
+            .map(|(_, text, _)| text.as_str())
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+/// A single worker owns the recognizer for the entire press/release interval.
+/// Batch previews re-upload cumulative PCM at most once per 750 ms, with one
+/// request in flight. Longer questions cost more compute/bandwidth than realtime.
+pub(crate) async fn recognize_live_question(
+    config: AsrConfig,
+    reader: crate::vision::QuestionAudioReader,
+    silence_seconds: f64,
+    runtime: Arc<QwenRuntime>,
+    manager: Arc<ModelManager>,
+    draft: QuestionDraft,
+) -> Result<String, String> {
+    validate_backend(&config)?;
+    let session = if config.backend == QWEN_MANAGED_BACKEND {
+        spawn_managed_qwen_session(config, runtime, manager).await?
+    } else {
+        spawn_cloud_recognition_session(config, silence_seconds).await?
+    };
+    recognize_live_session(session, reader, draft).await
+}
+
+pub(super) async fn recognize_live_session(
+    session: CloudRecognitionSession,
+    mut reader: crate::vision::QuestionAudioReader,
+    draft: QuestionDraft,
+) -> Result<String, String> {
+    let mut session = QuestionSession(session);
+    match &mut session.0 {
+        CloudRecognitionSession::Realtime(stream) => {
+            let mut transcript = Transcript::default();
+            let events = stream
+                .transcribe_question_live(reader, |event| {
+                    transcript.update(event);
+                    *draft.lock().expect("question draft lock") = transcript.draft();
+                })
+                .await?;
+            merge_finals(events)
+        }
+        CloudRecognitionSession::Segmented(upload) => {
+            let mut samples = Vec::new();
+            let mut last_preview = Instant::now();
+            while let Some(chunk) = reader.next().await? {
+                if chunk.iter().any(|sample| !sample.is_finite()) {
+                    return Err("Question audio contains non-finite samples".into());
+                }
+                samples.extend_from_slice(&chunk);
+                if last_preview.elapsed() >= Duration::from_millis(750)
+                    && validate_audio(&samples).is_ok()
+                {
+                    let preview = recognize_snapshot(upload, share_audio(samples.clone())).await?;
+                    *draft.lock().expect("question draft lock") = preview;
+                    last_preview = Instant::now();
+                }
+            }
+            validate_audio(&samples)?;
+            // Always recognize the exact released window. A preview is never final.
+            let text = recognize_snapshot(upload, share_audio(samples)).await?;
+            *draft.lock().expect("question draft lock") = text.clone();
+            Ok(text)
+        }
+    }
+}
+
+async fn recognize_snapshot(
+    upload: &mut super::segmented_upload::SegmentedUploadSession,
+    samples: SharedAudio,
+) -> Result<String, String> {
+    upload.send(samples).await?;
+    let expected_id = upload.commit().await?;
+    let mut events = Vec::new();
+    loop {
+        let event = upload
+            .recv()
+            .await
+            .ok_or("Question recognition closed without a final result")?;
+        let complete = matches!(&event, CloudEvent::Final { utterance_id, .. } if utterance_id == &expected_id);
+        if let CloudEvent::Failed { code, detail, .. } = &event {
+            return Err(format!("{code}: {detail}"));
+        }
+        events.push(event);
+        if complete {
+            return merge_finals(events);
+        }
+    }
+}
+
 struct QuestionSession(CloudRecognitionSession);
 
 impl Drop for QuestionSession {
@@ -76,6 +184,7 @@ impl Drop for QuestionSession {
     }
 }
 
+#[cfg(test)]
 pub(super) async fn recognize_session(
     session: CloudRecognitionSession,
     samples: SharedAudio,
@@ -158,6 +267,31 @@ mod tests {
             text: text.into(),
             language: None,
         }
+    }
+
+    #[test]
+    fn draft_replaces_partials_and_keeps_finalized_utterances() {
+        let mut transcript = Transcript::default();
+        for text in ["wrong", "correct"] {
+            transcript.update(&CloudEvent::Partial {
+                utterance_id: "first".into(),
+                text: text.into(),
+                language: None,
+            });
+        }
+        assert_eq!(transcript.draft(), "correct");
+        transcript.update(&final_event("first", "final"));
+        transcript.update(&CloudEvent::Partial {
+            utterance_id: "first".into(),
+            text: "stale".into(),
+            language: None,
+        });
+        transcript.update(&CloudEvent::Partial {
+            utterance_id: "second".into(),
+            text: "tail".into(),
+            language: None,
+        });
+        assert_eq!(transcript.draft(), "final tail");
     }
 
     #[test]

@@ -23,7 +23,9 @@ pub use crate::credentials::{
     credential_status, delete_credential, read_credential, write_credential,
 };
 pub use manager::ModelManager;
-pub(crate) use question::{transcribe_question, validate_backend as validate_question_backend};
+pub(crate) use question::{
+    recognize_live_question, validate_backend as validate_question_backend, QuestionDraft,
+};
 pub(crate) use qwen_models::is_supported as is_supported_qwen_package;
 pub(crate) use qwen_runtime::QwenRuntime;
 pub(crate) use session::{prepare_managed_qwen, spawn_managed_qwen_session};
