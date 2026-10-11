@@ -300,7 +300,7 @@ pub const OPENAI_COMPATIBLE_PRESETS: &[ProviderPreset] = &[ProviderPreset {
 }];
 
 const ALIBABA_SERVICES: &[ProviderServiceDefinition] = &[
-    text_service(
+    multimodal_service(
         "alibaba_chat_completions",
         "Alibaba Chat Completions",
         ServiceAdapter::AlibabaChatCompletions,
@@ -380,7 +380,7 @@ const ALIBABA_TOKEN_PLAN_SERVICES: &[ProviderServiceDefinition] = &[
 ];
 
 const OPENAI_SERVICES: &[ProviderServiceDefinition] = &[
-    text_service(
+    multimodal_service(
         "openai_responses",
         "OpenAI Responses",
         ServiceAdapter::OpenAiResponses,
@@ -413,7 +413,7 @@ const OPENAI_SERVICES: &[ProviderServiceDefinition] = &[
 ];
 
 const GEMINI_SERVICES: &[ProviderServiceDefinition] = &[
-    text_service(
+    multimodal_service(
         "gemini_generate_content",
         "Gemini Generate Content",
         ServiceAdapter::GeminiGenerateContent,
@@ -467,7 +467,7 @@ const MICROSOFT_SERVICES: &[ProviderServiceDefinition] = &[translation_service(
 )];
 
 const GROQ_SERVICES: &[ProviderServiceDefinition] = &[
-    text_service(
+    multimodal_service(
         "groq_chat_completions",
         "Groq Chat Completions",
         ServiceAdapter::OpenAiChatCompletions {
@@ -498,7 +498,7 @@ const OPENROUTER_SERVICES: &[ProviderServiceDefinition] = &[multimodal_service(
     SupportLevel::ProtocolCompatible,
 )];
 
-const DEEPSEEK_SERVICES: &[ProviderServiceDefinition] = &[text_service(
+const DEEPSEEK_SERVICES: &[ProviderServiceDefinition] = &[multimodal_service(
     "deepseek_chat_completions",
     "DeepSeek Chat Completions",
     ServiceAdapter::OpenAiChatCompletions {

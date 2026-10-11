@@ -30,11 +30,52 @@ pub(super) fn network_error(error: reqwest::Error) -> LlmError {
 }
 
 pub(super) fn invalid_response(error: reqwest::Error) -> LlmError {
+    if error.is_timeout() || error.is_body() {
+        return network_error(error);
+    }
+    // Response::bytes() also wraps body collection failures as Decode errors.
+    let mut source = std::error::Error::source(&error);
+    while let Some(cause) = source {
+        if cause.is::<std::io::Error>()
+            || cause
+                .downcast_ref::<serde_json::Error>()
+                .is_some_and(|error| error.is_io())
+            || cause
+                .downcast_ref::<reqwest::Error>()
+                .is_some_and(|error| error.is_timeout() || error.is_body())
+        {
+            return network_error(error);
+        }
+        source = cause.source();
+    }
     LlmError {
         code: "llm.invalid_response",
         detail: error.to_string(),
         retryable: false,
     }
+}
+
+pub(super) fn max_serialized_body(
+    body: &Value,
+    max_bytes: usize,
+    limit_name: &str,
+) -> Result<(), LlmError> {
+    let bytes = serde_json::to_vec(body).map_err(|error| LlmError {
+        code: "llm.request_failed",
+        detail: format!("Could not serialize {limit_name}: {error}"),
+        retryable: false,
+    })?;
+    if bytes.len() > max_bytes {
+        return Err(LlmError {
+            code: "llm.request_failed",
+            detail: format!(
+                "{limit_name} exceeds the serialized JSON body limit: {} bytes > {max_bytes} bytes. Reduce the image or prompt size; this request cannot be retried unchanged.",
+                bytes.len()
+            ),
+            retryable: false,
+        });
+    }
+    Ok(())
 }
 
 pub(super) async fn response_status_error(
@@ -126,6 +167,19 @@ fn extract_model_ids(value: &Value) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn serialized_body_limit_counts_utf8_escaping_and_json_overhead() {
+        let body = json!({"text": "你好\n\"\\", "image": "data:image/png;base64,cG5n"});
+        let bytes = serde_json::to_vec(&body).unwrap();
+        max_serialized_body(&body, bytes.len(), "Test request").unwrap();
+        let error = max_serialized_body(&body, bytes.len() - 1, "Test request").unwrap_err();
+        assert_eq!(error.code, "llm.request_failed");
+        assert!(!error.retryable);
+        assert!(error.detail.contains("serialized JSON body limit"));
+        assert!(error.detail.contains("cannot be retried unchanged"));
+        assert!(error.detail.contains(&bytes.len().to_string()));
+    }
 
     #[test]
     fn extracts_and_normalizes_model_ids() {

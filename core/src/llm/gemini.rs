@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD, Engine};
 use futures_util::StreamExt;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
@@ -16,20 +17,65 @@ pub(super) async fn generate(
     request: LlmRequest<'_>,
     on_progress: Option<&LlmProgress>,
 ) -> Result<String, LlmError> {
-    let model = model_id(request.model)?;
-    let method = if on_progress.is_some() {
+    let body = request_body(&request);
+    let request = generation_request(
+        http,
+        profile,
+        api_key,
+        request.model,
+        &body,
+        on_progress.is_some(),
+    )?;
+    generate_response(request, on_progress).await
+}
+
+pub(super) async fn generate_with_image(
+    http: &reqwest::Client,
+    profile: &ApiProfile,
+    api_key: &str,
+    request: LlmRequest<'_>,
+    image: &[u8],
+) -> Result<String, LlmError> {
+    let body = image_request_body(&request, image);
+    let request = generation_request(http, profile, api_key, request.model, &body, false)?;
+    generate_response(request, None).await
+}
+
+fn generation_request(
+    http: &reqwest::Client,
+    profile: &ApiProfile,
+    api_key: &str,
+    model: &str,
+    body: &Value,
+    streaming: bool,
+) -> Result<reqwest::RequestBuilder, LlmError> {
+    let model = model_id(model)?;
+    if body["contents"].as_array().is_some_and(|contents| {
+        contents.iter().any(|content| {
+            content["parts"]
+                .as_array()
+                .is_some_and(|parts| parts.iter().any(|part| part.get("inlineData").is_some()))
+        })
+    }) {
+        super::http::max_serialized_body(body, 20_000_000, "Gemini inline request (20 MB)")?;
+    }
+    let method = if streaming {
         "streamGenerateContent?alt=sse"
     } else {
         "generateContent"
     };
-    let response = http
+    Ok(http
         .post(format!("{BASE_URL}/models/{model}:{method}"))
         .timeout(Duration::from_millis(profile.timeout_ms))
         .header("x-goog-api-key", api_key)
-        .json(&request_body(&request))
-        .send()
-        .await
-        .map_err(network_error)?;
+        .json(body))
+}
+
+async fn generate_response(
+    request: reqwest::RequestBuilder,
+    on_progress: Option<&LlmProgress>,
+) -> Result<String, LlmError> {
+    let response = request.send().await.map_err(network_error)?;
     let status = response.status();
     if !status.is_success() {
         return Err(response_error(response).await);
@@ -65,6 +111,17 @@ pub(super) async fn list_models(
         });
     }
     Ok(models)
+}
+
+fn image_request_body(request: &LlmRequest<'_>, image: &[u8]) -> Value {
+    let mut body = request_body(request);
+    // Vision uses a hard total generation limit, including thinking tokens.
+    body["generationConfig"]["maxOutputTokens"] = json!(request.max_output_tokens);
+    body["contents"][0]["parts"] = json!([
+        { "text": request.input },
+        { "inlineData": { "mimeType": "image/png", "data": STANDARD.encode(image) } }
+    ]);
+    body
 }
 
 fn request_body(request: &LlmRequest<'_>) -> Value {
@@ -335,6 +392,163 @@ fn status_error(status: StatusCode, value: &Value) -> LlmError {
 mod tests {
     use super::*;
 
+    #[test]
+    fn builds_native_image_request_without_streaming() {
+        let profile = ApiProfile {
+            timeout_ms: 12_345,
+            ..ApiProfile::default()
+        };
+        let request = LlmRequest {
+            model: "models/gemini-2.5-flash",
+            instructions: "Describe the image",
+            input: "What is visible?",
+            max_output_tokens: 256,
+            thinking_enabled: false,
+        };
+        let body = image_request_body(&request, b"\x89PNG\r\n\x1a\n");
+        assert_eq!(
+            body,
+            json!({
+                "systemInstruction": { "parts": [{ "text": "Describe the image" }] },
+                "contents": [{ "role": "user", "parts": [
+                    { "text": "What is visible?" },
+                    { "inlineData": { "mimeType": "image/png", "data": "iVBORw0KGgo=" } }
+                ] }],
+                "generationConfig": {
+                    "maxOutputTokens": 256,
+                    "thinkingConfig": { "thinkingBudget": 0 }
+                }
+            })
+        );
+        let http = reqwest::Client::new();
+        let built = generation_request(&http, &profile, "test-key", request.model, &body, false)
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(built.method(), reqwest::Method::POST);
+        assert_eq!(
+            built.url().as_str(),
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        );
+        assert_eq!(built.headers()["x-goog-api-key"], "test-key");
+        assert_eq!(built.timeout(), Some(&Duration::from_millis(12_345)));
+        let sent: Value =
+            serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).unwrap();
+        assert_eq!(sent, body);
+        assert!(built.url().query().is_none());
+        assert!(sent.get("stream").is_none());
+
+        let text_body = request_body(&request);
+        assert_eq!(
+            text_body["contents"][0]["parts"],
+            json!([{ "text": "What is visible?" }])
+        );
+        let stream_request =
+            generation_request(&http, &profile, "test-key", request.model, &text_body, true)
+                .unwrap()
+                .build()
+                .unwrap();
+        assert!(stream_request
+            .url()
+            .path()
+            .ends_with(":streamGenerateContent"));
+        assert_eq!(stream_request.url().query(), Some("alt=sse"));
+    }
+
+    #[test]
+    fn image_body_preserves_model_thinking_and_output_budgets() {
+        for (model, thinking_enabled) in [
+            ("gemini-2.5-flash", false),
+            ("gemini-2.5-flash", true),
+            ("gemini-2.5-pro", false),
+            ("gemini-2.5-pro", true),
+            ("gemini-3.7-flash", false),
+            ("gemini-3.7-flash", true),
+        ] {
+            let request = LlmRequest {
+                model,
+                instructions: "Describe the image",
+                input: "What is visible?",
+                max_output_tokens: 256,
+                thinking_enabled,
+            };
+            let body = image_request_body(&request, b"png");
+            let mut expected = request_body(&request);
+            assert!(
+                expected["generationConfig"]["maxOutputTokens"]
+                    .as_u64()
+                    .unwrap()
+                    >= 512
+            );
+            expected["generationConfig"]["maxOutputTokens"] = json!(256);
+            expected["contents"][0]["parts"] = body["contents"][0]["parts"].clone();
+            assert_eq!(body, expected);
+        }
+    }
+
+    #[test]
+    fn inline_limit_counts_the_complete_encoded_json_body() {
+        let profile = ApiProfile::default();
+        let http = reqwest::Client::new();
+        let request = LlmRequest {
+            model: "gemini-2.5-flash",
+            instructions: "Describe",
+            input: "",
+            max_output_tokens: 256,
+            thinking_enabled: false,
+        };
+        let mut body = image_request_body(&request, b"png");
+        let overhead = serde_json::to_vec(&body).unwrap().len();
+        body["contents"][0]["parts"][0]["text"] = json!("a".repeat(20_000_000 - overhead));
+        let _ = generation_request(&http, &profile, "key", request.model, &body, false).unwrap();
+        // A newline takes two bytes in JSON, even though it is one input byte.
+        body["systemInstruction"]["parts"][0]["text"] = json!("Describe\n");
+        let error =
+            generation_request(&http, &profile, "key", request.model, &body, false).unwrap_err();
+        assert!(error.detail.contains("20 MB"));
+        assert!(error.detail.contains("20000002 bytes > 20000000 bytes"));
+        assert!(!error.retryable);
+        // The same large prompt has no inline-protocol limit when sent as text.
+        body["contents"][0]["parts"].as_array_mut().unwrap().pop();
+        let _ = generation_request(&http, &profile, "key", request.model, &body, false).unwrap();
+        drop(body);
+
+        let encoded = image_request_body(&request, &vec![0; 15_000_000]);
+        let error =
+            generation_request(&http, &profile, "key", request.model, &encoded, false).unwrap_err();
+        assert!(error.detail.contains("serialized JSON body limit"));
+        assert!(!error.retryable);
+    }
+
+    #[test]
+    fn parses_image_answers_with_completion_and_text_only_parts() {
+        let response = json!({"candidates": [{
+            "finishReason": "STOP",
+            "content": {"parts": [
+                { "thought": true, "text": "private reasoning" },
+                { "inlineData": { "mimeType": "image/png", "data": "cG5n" } },
+                { "text": " A blue" },
+                { "text": " sign. " }
+            ]}
+        }]});
+        assert_eq!(parse_response(&response).unwrap(), "A blue sign.");
+        let mut unfinished = response.clone();
+        unfinished["candidates"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("finishReason");
+        let error = parse_response(&unfinished).unwrap_err();
+        assert!(error.detail.contains("without a completion signal"));
+        assert!(error.retryable);
+        let blocked = json!({
+            "promptFeedback": { "blockReason": "SAFETY" },
+            "candidates": response["candidates"]
+        });
+        let error = parse_response(&blocked).unwrap_err();
+        assert!(error.detail.contains("SAFETY"));
+        assert!(!error.retryable);
+    }
+
     fn sse_response(chunks: Vec<Vec<u8>>) -> reqwest::Response {
         let body = reqwest::Body::wrap_stream(futures_util::stream::iter(
             chunks.into_iter().map(Ok::<_, std::io::Error>),
@@ -423,11 +637,9 @@ mod tests {
                 thinking_enabled: thinking,
             });
             assert_eq!(body["generationConfig"]["thinkingConfig"], expected_config);
-            assert!(
-                body["generationConfig"]["maxOutputTokens"]
-                    .as_u64()
-                    .unwrap()
-                    >= 256 + reserve
+            assert_eq!(
+                body["generationConfig"]["maxOutputTokens"],
+                json!(512 + reserve)
             );
         }
     }

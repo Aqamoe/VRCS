@@ -263,9 +263,15 @@ mod tests {
     fn image_capability_is_explicit_and_uses_existing_profile_validation() {
         use crate::providers::{
             catalog, profile_capabilities, supports_llm_models, CAPABILITY_IMAGE_UNDERSTANDING,
-            LM_STUDIO_PROVIDER, OPENROUTER_PROVIDER,
+            GEMINI_PROVIDER, GROQ_PROVIDER, LM_STUDIO_PROVIDER, OPENAI_PROVIDER,
+            OPENROUTER_PROVIDER,
         };
         let supported = [
+            ALIBABA_PROVIDER,
+            DEEPSEEK_PROVIDER,
+            GEMINI_PROVIDER,
+            GROQ_PROVIDER,
+            OPENAI_PROVIDER,
             OPENAI_COMPATIBLE_PROVIDER,
             OPENROUTER_PROVIDER,
             LM_STUDIO_PROVIDER,
@@ -289,6 +295,9 @@ mod tests {
             profile.is_local = provider.category == super::super::ProviderCategory::LocalService;
             if provider.id == OPENAI_COMPATIBLE_PROVIDER {
                 profile.base_url = Some("https://example.com/v1".into());
+            }
+            if provider.id == ALIBABA_PROVIDER {
+                profile.region = Some("singapore".into());
             }
             assert_eq!(
                 validate_capabilities(&profile).is_ok(),

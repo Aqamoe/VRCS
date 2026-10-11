@@ -488,32 +488,44 @@ fn run_stream(
                 timeline_frames += frames_per_chunk as u64;
                 let chunk_end = origin + native_duration(timeline_frames);
                 let frame: Vec<f32> = pending.drain(..frames_per_chunk).collect();
-                let chunk = resample_linear(&frame, output_rate, stream.native.sample_rate);
-                if !chunk.is_empty() {
-                    match tx.try_reserve() {
-                        Ok(permit) => {
-                            if let Some(tap) = microphone_tap {
-                                if output_rate == 16_000 {
-                                    tap.push(&chunk, chunk_start, chunk_end);
-                                } else {
-                                    let tap_chunk =
-                                        resample_linear(&frame, 16_000, stream.native.sample_rate);
-                                    tap.push(&tap_chunk, chunk_start, chunk_end);
-                                }
-                            }
-                            permit.send(chunk);
-                        }
-                        Err(_) => {
-                            if let Some(tap) = microphone_tap {
-                                tap.discontinuity("Microphone audio frames were dropped");
-                            }
-                        }
-                    }
-                }
+                publish_chunk(
+                    &frame,
+                    stream.native.sample_rate,
+                    output_rate,
+                    chunk_start,
+                    chunk_end,
+                    tx,
+                    microphone_tap,
+                );
             }
         }
     }
     Ok(())
+}
+
+fn publish_chunk(
+    frame: &[f32],
+    native_rate: u32,
+    output_rate: u32,
+    start: std::time::Instant,
+    end: std::time::Instant,
+    tx: &mpsc::Sender<Vec<f32>>,
+    microphone_tap: Option<&crate::vision::MicrophoneTap>,
+) {
+    let chunk = resample_linear(frame, output_rate, native_rate);
+    if let Some(tap) = microphone_tap {
+        if output_rate == 16_000 {
+            tap.push(&chunk, start, end);
+        } else {
+            let tap_chunk = resample_linear(frame, 16_000, native_rate);
+            tap.push(&tap_chunk, start, end);
+        }
+    }
+    if !chunk.is_empty() {
+        if let Ok(permit) = tx.try_reserve() {
+            permit.send(chunk);
+        }
+    }
 }
 
 pub(crate) fn capture_main(
@@ -631,6 +643,54 @@ mod tests {
         default_endpoint_changed, map_initialize_error, should_recover_default, CaptureTiming,
         INITIALIZE_PLANS,
     };
+
+    #[tokio::test]
+    async fn microphone_tap_is_independent_of_full_or_closed_ordinary_queue() {
+        for output_rate in [16_000, 48_000] {
+            for closed in [false, true] {
+                let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+                tx.try_send(vec![9.0]).unwrap();
+                if closed {
+                    rx.close();
+                }
+                let tap = crate::vision::MicrophoneTap::default();
+                tap.started();
+                let start = std::time::Instant::now();
+                let mut window = tap.begin(1).unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                let middle = std::time::Instant::now();
+                super::publish_chunk(
+                    &[0.1; 96],
+                    48_000,
+                    output_rate,
+                    start,
+                    middle,
+                    &tx,
+                    Some(&tap),
+                );
+                window.reader().check().unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                window.release();
+                super::publish_chunk(
+                    &[0.2; 96],
+                    48_000,
+                    output_rate,
+                    middle,
+                    std::time::Instant::now(),
+                    &tx,
+                    Some(&tap),
+                );
+                let samples = window.finish().await.unwrap();
+                assert!(samples.contains(&0.1));
+                assert!(samples.contains(&0.2));
+                assert!(samples
+                    .iter()
+                    .all(|sample| *sample == 0.1 || *sample == 0.2));
+                assert_eq!(rx.try_recv().unwrap(), vec![9.0]);
+                assert!(rx.try_recv().is_err());
+            }
+        }
+    }
 
     #[test]
     fn out_of_memory_does_not_repeat_identical_startup() {

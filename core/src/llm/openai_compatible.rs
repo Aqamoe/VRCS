@@ -44,21 +44,15 @@ pub(super) async fn generate_with_image(
     request: LlmRequest<'_>,
     image: &[u8],
     provider_name: &str,
+    behavior: OpenAiProtocolBehavior,
 ) -> Result<String, LlmError> {
-    if image.is_empty() {
-        return Err(LlmError {
-            code: "llm.request_failed",
-            detail: "Image input must not be empty".into(),
-            retryable: false,
-        });
-    }
     generate_chat_completion(
         http,
         chat_completions_url(profile)?,
         api_key,
         request,
         provider_name,
-        OpenAiProtocolBehavior::Standard,
+        behavior,
         Some(profile),
         None,
         Some(image),
@@ -125,14 +119,12 @@ pub(super) async fn test_streaming(
     on_progress: &LlmProgress,
 ) -> Result<String, LlmError> {
     let body = chat_completion_body(&request, behavior, true);
-    let response = apply_profile_request(
-        http.post(chat_completions_url(profile)?).json(&body),
-        profile,
-        api_key,
-    )?
-    .send()
-    .await
-    .map_err(network_error)?;
+    let endpoint = chat_completions_url(profile)?;
+    check_request_size(&endpoint, &body)?;
+    let response = apply_profile_request(http.post(endpoint).json(&body), profile, api_key)?
+        .send()
+        .await
+        .map_err(network_error)?;
     let status = response.status();
     if !status.is_success() {
         return Err(response_status_error(response, status).await);
@@ -176,6 +168,7 @@ async fn generate_chat_completion(
             }
         ]);
     }
+    check_request_size(&endpoint, &body)?;
     let builder = http.post(endpoint).json(&body);
     let builder = if let Some(profile) = profile {
         apply_profile_request(builder, profile, api_key)?
@@ -193,7 +186,7 @@ async fn generate_chat_completion(
     }
     let value: Value = response.json().await.map_err(invalid_response)?;
     trace_usage(&value, provider_name, request.model);
-    check_completion_status(&value, provider_name, behavior)?;
+    check_completion_status(&value, provider_name)?;
     let text = extract_text(&value).ok_or_else(|| LlmError {
         code: "llm.invalid_response",
         detail: format!("{provider_name} response did not contain text"),
@@ -287,7 +280,6 @@ async fn stream_chat_completion(
                 filter.as_mut(),
                 on_progress,
                 provider_name,
-                behavior,
                 model,
             )? {
                 return completed_filtered_stream(output, filter, on_progress, provider_name);
@@ -301,7 +293,6 @@ async fn stream_chat_completion(
             filter.as_mut(),
             on_progress,
             provider_name,
-            behavior,
             model,
         )?;
     }
@@ -314,7 +305,6 @@ fn process_sse_line(
     filter: Option<&mut InlineReasoningFilter>,
     on_progress: &LlmProgress,
     provider_name: &str,
-    behavior: OpenAiProtocolBehavior,
     model: &str,
 ) -> Result<bool, LlmError> {
     let line = std::str::from_utf8(line).map_err(|error| LlmError {
@@ -334,7 +324,7 @@ fn process_sse_line(
         retryable: false,
     })?;
     trace_usage(&value, provider_name, model);
-    check_completion_status(&value, provider_name, behavior)?;
+    check_completion_status(&value, provider_name)?;
     if let Some(delta) = extract_delta(&value) {
         let delta = match filter {
             Some(filter) => filter.push(&delta),
@@ -348,16 +338,15 @@ fn process_sse_line(
     Ok(false)
 }
 
-fn check_completion_status(
-    value: &Value,
-    provider_name: &str,
-    behavior: OpenAiProtocolBehavior,
-) -> Result<(), LlmError> {
-    if behavior == OpenAiProtocolBehavior::Alibaba
-        && value
-            .pointer("/choices/0/finish_reason")
-            .and_then(Value::as_str)
-            == Some("length")
+fn check_completion_status(value: &Value, provider_name: &str) -> Result<(), LlmError> {
+    if value
+        .get("choices")
+        .and_then(Value::as_array)
+        .is_some_and(|choices| {
+            choices
+                .iter()
+                .any(|choice| choice.get("finish_reason").and_then(Value::as_str) == Some("length"))
+        })
     {
         return Err(LlmError {
             code: "llm.request_failed",
@@ -406,8 +395,40 @@ fn is_event_stream(response: &reqwest::Response) -> bool {
         .is_some_and(|value| value.contains("text/event-stream"))
 }
 
+fn check_request_size(endpoint: &str, body: &Value) -> Result<(), LlmError> {
+    let Ok(url) = reqwest::Url::parse(endpoint) else {
+        return Ok(());
+    };
+    if url.path() != "/compatible-mode/v1/chat/completions" {
+        return Ok(());
+    }
+    let host = url.host_str().unwrap_or_default();
+    if host.ends_with(".maas.aliyuncs.com") {
+        // The 20 MB JSON body cap also bounds every embedded Data URI to 20 MB.
+        super::http::max_serialized_body(
+            body,
+            20_000_000,
+            "Alibaba MaaS request and Data URI (20 MB)",
+        )?;
+    } else if matches!(
+        host,
+        "dashscope.aliyuncs.com" | "dashscope-intl.aliyuncs.com" | "dashscope-us.aliyuncs.com"
+    ) {
+        super::http::max_serialized_body(
+            body,
+            16 * 1024 * 1024,
+            "Alibaba DashScope request (16 MiB)",
+        )?;
+    }
+    Ok(())
+}
+
 fn chat_completions_url(profile: &ApiProfile) -> Result<String, LlmError> {
-    let base_url = providers::effective_base_url(profile).map_err(invalid_profile)?;
+    let base_url = if profile.provider == providers::ALIBABA_PROVIDER {
+        super::alibaba::base_url(profile)?
+    } else {
+        providers::effective_base_url(profile).map_err(invalid_profile)?
+    };
     let base_url = base_url.trim_end_matches('/');
     if base_url.ends_with("/chat/completions") {
         Ok(base_url.into())
@@ -528,6 +549,172 @@ mod tests {
     use crate::config::{ApiAuthMode, HttpHeaderConfig};
     use crate::providers::{GROQ_PROVIDER, OPENAI_COMPATIBLE_PROVIDER};
 
+    #[tokio::test]
+    async fn image_requests_preserve_provider_reasoning_and_final_answer_filtering() {
+        use axum::{routing::post, Json, Router};
+
+        for (behavior, model, reply) in [
+            (
+                OpenAiProtocolBehavior::DeepSeek,
+                "deepseek-flash",
+                "Visible answer",
+            ),
+            (
+                OpenAiProtocolBehavior::Groq,
+                "qwen/qwen3.8-27b",
+                "<think>private</think>Visible answer",
+            ),
+            (
+                OpenAiProtocolBehavior::Alibaba,
+                "qwen3.8-max",
+                "Visible answer",
+            ),
+        ] {
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            let sender = Arc::new(Mutex::new(Some(sender)));
+            let app = Router::new().route(
+                "/v1/chat/completions",
+                post(move |Json(body): Json<Value>| async move {
+                    sender.lock().unwrap().take().unwrap().send(body).unwrap();
+                    Json(json!({"choices": [{"finish_reason": "stop", "message": {"content": reply}}]}))
+                }),
+            );
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let profile = ApiProfile {
+                provider: OPENAI_COMPATIBLE_PROVIDER.into(),
+                base_url: Some(format!("http://{address}/v1")),
+                auth_mode: ApiAuthMode::None,
+                timeout_ms: 1_000,
+                ..ApiProfile::default()
+            };
+            let request = LlmRequest {
+                model,
+                instructions: "Answer briefly",
+                input: "What is visible?",
+                max_output_tokens: 256,
+                thinking_enabled: false,
+            };
+            let output = generate_with_image(
+                &reqwest::Client::new(),
+                &profile,
+                "",
+                request,
+                b"\x89PNG\r\n\x1a\n",
+                "Test",
+                behavior,
+            )
+            .await
+            .unwrap();
+            let body = receiver.await.unwrap();
+            server.abort();
+            assert_eq!(output, "Visible answer");
+            assert_eq!(body["stream"], false);
+            assert_eq!(body["max_tokens"], 256);
+            assert_eq!(
+                body["messages"][1]["content"],
+                json!([
+                    {"type": "text", "text": "What is visible?"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}}
+                ])
+            );
+            match behavior {
+                OpenAiProtocolBehavior::DeepSeek => {
+                    assert_eq!(body["thinking"]["type"], "disabled")
+                }
+                OpenAiProtocolBehavior::Groq => {
+                    assert_eq!(body["reasoning_format"], "hidden");
+                    assert_eq!(body["reasoning_effort"], "none");
+                }
+                OpenAiProtocolBehavior::Alibaba => assert_eq!(body["enable_thinking"], false),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn image_chat_endpoints_follow_provider_connections() {
+        for (provider, region, workspace, expected) in [
+            (providers::DEEPSEEK_PROVIDER, None, None, "https://api.deepseek.com/v1/chat/completions"),
+            (GROQ_PROVIDER, None, None, "https://api.groq.com/openai/v1/chat/completions"),
+            (providers::ALIBABA_PROVIDER, Some("singapore"), None, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"),
+            (providers::ALIBABA_PROVIDER, Some("china_beijing"), Some("ws-example"), "https://ws-example.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions"),
+        ] {
+            let profile = ApiProfile {
+                provider: provider.into(),
+                region: region.map(str::to_owned),
+                workspace_id: workspace.map(str::to_owned),
+                ..ApiProfile::default()
+            };
+            assert_eq!(chat_completions_url(&profile).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn alibaba_limits_use_the_serialized_body_and_confirmed_endpoint() {
+        let mut body = json!({"messages": [{"content": [
+            {"type": "text", "text": ""},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,cG5n"}}
+        ]}]});
+        let overhead = serde_json::to_vec(&body).unwrap().len();
+        for (endpoint, limit, name) in [
+            (
+                "https://ws.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+                20_000_000,
+                "20 MB",
+            ),
+            (
+                "https://ws.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+                20_000_000,
+                "20 MB",
+            ),
+            (
+                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                16 * 1024 * 1024,
+                "16 MiB",
+            ),
+            (
+                "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+                16 * 1024 * 1024,
+                "16 MiB",
+            ),
+        ] {
+            body["messages"][0]["content"][0]["text"] = json!("a".repeat(limit - overhead));
+            check_request_size(endpoint, &body).unwrap();
+
+            body["messages"][0]["content"][0]["text"] = json!("a".repeat(limit - overhead + 1));
+            let error = check_request_size(endpoint, &body).unwrap_err();
+            assert!(error.detail.contains(name));
+            assert!(error.detail.contains("serialized JSON body limit"));
+            assert!(!error.retryable);
+        }
+        body["messages"][0]["content"][0]["text"] = json!("");
+        body["messages"][0]["content"][1]["image_url"]["url"] =
+            json!(format!("data:image/png;base64,{}", "A".repeat(20_000_000)));
+        let error = check_request_size(
+            "https://ws.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+            &body,
+        )
+        .unwrap_err();
+        assert!(error.detail.contains("Data URI (20 MB)"));
+        assert!(!error.retryable);
+        for endpoint in [
+            "https://api.openai.com/v1/chat/completions",
+            "https://api.groq.com/openai/v1/chat/completions",
+            "https://api.deepseek.com/v1/chat/completions",
+            "https://maas.qianwenaiapi.com/compatible-mode/v1/chat/completions",
+            "https://custom.example/compatible-mode/v1/chat/completions",
+            "https://ws.cn-beijing.maas.aliyuncs.com.example/compatible-mode/v1/chat/completions",
+            "https://custom-dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            "https://dashscope.aliyuncs.com/other/chat/completions",
+        ] {
+            check_request_size(endpoint, &body).unwrap();
+        }
+    }
+
     #[test]
     fn filters_openrouter_models_to_text_output_and_excludes_batch_variants() {
         let models = extract_openrouter_models(&json!({ "data": [
@@ -617,6 +804,14 @@ mod tests {
             qwen_enabled.get("reasoning_effort"),
             Some(&json!("default"))
         );
+        let vision_enabled = chat_completion_body(
+            &request("qwen/qwen3.8-27b", true),
+            OpenAiProtocolBehavior::Groq,
+            false,
+        );
+        assert_eq!(vision_enabled["reasoning_format"], "hidden");
+        assert_eq!(vision_enabled["reasoning_effort"], "medium");
+        assert!(vision_enabled.get("include_reasoning").is_none());
     }
 
     #[test]
@@ -678,7 +873,11 @@ mod tests {
         }
     }
 
-    async fn alibaba_fixture_result(body: String, streaming: bool) -> Result<String, LlmError> {
+    async fn chat_fixture_result(
+        body: String,
+        streaming: bool,
+        behavior: OpenAiProtocolBehavior,
+    ) -> Result<String, LlmError> {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}/chat/completions", listener.local_addr().unwrap());
         let content_type = if streaming {
@@ -710,8 +909,8 @@ mod tests {
                 max_output_tokens: 128,
                 thinking_enabled: true,
             },
-            "Alibaba Cloud",
-            OpenAiProtocolBehavior::Alibaba,
+            "Test provider",
+            behavior,
             streaming.then_some(&progress as &LlmProgress),
         )
         .await;
@@ -720,44 +919,102 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn alibaba_truncated_json_reports_output_exhaustion() {
-        for content in ["", "Partial translation"] {
+    async fn truncated_json_reports_output_exhaustion_for_every_chat_behavior() {
+        for behavior in [
+            OpenAiProtocolBehavior::Standard,
+            OpenAiProtocolBehavior::Alibaba,
+            OpenAiProtocolBehavior::DeepSeek,
+            OpenAiProtocolBehavior::Groq,
+        ] {
+            for content in ["", "Partial translation"] {
+                let body = json!({ "choices": [{
+                    "finish_reason": "length",
+                    "message": { "content": content, "reasoning_content": "Private reasoning" }
+                }] })
+                .to_string();
+                let error = chat_fixture_result(body, false, behavior)
+                    .await
+                    .unwrap_err();
+                assert_eq!(error.code, "llm.request_failed");
+                assert!(error.detail.contains("finish_reason=length"));
+                assert!(!error.retryable);
+                assert!(!error.detail.contains("Private reasoning"));
+            }
             let body = json!({ "choices": [{
-                "finish_reason": "length",
-                "message": { "content": content, "reasoning_content": "Private reasoning" }
+                "finish_reason": "stop", "message": { "content": "Hello" }
             }] })
             .to_string();
-            let error = alibaba_fixture_result(body, false).await.unwrap_err();
-            assert_eq!(error.code, "llm.request_failed");
-            assert!(error.detail.contains("finish_reason=length"));
-            assert!(!error.retryable);
-            assert!(!error.detail.contains("Private reasoning"));
+            assert_eq!(
+                chat_fixture_result(body, false, behavior).await.unwrap(),
+                "Hello"
+            );
         }
-        let body = json!({ "choices": [{
-            "finish_reason": "stop", "message": { "content": "Hello" }
-        }] })
-        .to_string();
-        assert_eq!(alibaba_fixture_result(body, false).await.unwrap(), "Hello");
     }
 
     #[tokio::test]
-    async fn alibaba_truncated_sse_reports_output_exhaustion() {
-        for content in ["", "Partial translation"] {
-            let body = format!(
-                "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
-                json!({ "choices": [{ "delta": { "content": content, "reasoning_content": "Private reasoning" } }] }),
-                json!({ "choices": [{ "delta": {}, "finish_reason": "length" }] }),
+    async fn truncated_sse_reports_output_exhaustion_for_every_chat_behavior() {
+        for behavior in [
+            OpenAiProtocolBehavior::Standard,
+            OpenAiProtocolBehavior::Alibaba,
+            OpenAiProtocolBehavior::DeepSeek,
+            OpenAiProtocolBehavior::Groq,
+        ] {
+            for content in ["", "Partial translation"] {
+                let body = format!(
+                    "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+                    json!({ "choices": [{ "delta": { "content": content, "reasoning_content": "Private reasoning" } }] }),
+                    json!({ "choices": [{ "delta": {}, "finish_reason": "length" }] }),
+                );
+                let error = chat_fixture_result(body, true, behavior).await.unwrap_err();
+                assert_eq!(error.code, "llm.request_failed");
+                assert!(error.detail.contains("finish_reason=length"));
+                assert!(!error.retryable);
+            }
+            let body = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+            assert_eq!(
+                chat_fixture_result(body.into(), true, behavior)
+                    .await
+                    .unwrap(),
+                "Hello"
             );
-            let error = alibaba_fixture_result(body, true).await.unwrap_err();
-            assert_eq!(error.code, "llm.request_failed");
-            assert!(error.detail.contains("finish_reason=length"));
-            assert!(!error.retryable);
         }
-        let body = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
-        assert_eq!(
-            alibaba_fixture_result(body.into(), true).await.unwrap(),
-            "Hello"
-        );
+    }
+
+    #[tokio::test]
+    async fn rejects_length_in_the_last_sse_line_without_a_newline() {
+        let response = tokio_tungstenite::tungstenite::http::Response::builder()
+            .header("content-type", "text/event-stream")
+            .body(concat!(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"Partial\"}}]}\n\n",
+                "data: {\"choices\":[{\"finish_reason\":\"length\",\"delta\":{}}]}"
+            ))
+            .unwrap()
+            .into();
+        let error = stream_chat_completion(
+            response,
+            &|_| {},
+            "Test",
+            OpenAiProtocolBehavior::Standard,
+            "test-model",
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "llm.request_failed");
+        assert!(error.detail.contains("finish_reason=length"));
+        assert!(!error.retryable);
+    }
+
+    #[test]
+    fn checks_length_in_all_choices() {
+        let error = check_completion_status(
+            &json!({"choices": [
+                {"finish_reason": "stop"}, {"finish_reason": "length"}
+            ]}),
+            "Test",
+        )
+        .unwrap_err();
+        assert!(error.detail.contains("finish_reason=length"));
+        assert!(!error.retryable);
     }
 
     #[test]
@@ -774,7 +1031,6 @@ mod tests {
             None,
             &progress,
             "DeepSeek",
-            OpenAiProtocolBehavior::DeepSeek,
             "deepseek-v4-flash",
         )
         .unwrap());
@@ -784,7 +1040,6 @@ mod tests {
             None,
             &progress,
             "DeepSeek",
-            OpenAiProtocolBehavior::DeepSeek,
             "deepseek-v4-flash",
         )
         .unwrap());
@@ -796,7 +1051,6 @@ mod tests {
             None,
             &progress,
             "DeepSeek",
-            OpenAiProtocolBehavior::DeepSeek,
             "deepseek-v4-flash",
         )
         .unwrap());
@@ -829,7 +1083,6 @@ mod tests {
                 Some(&mut filter),
                 &progress,
                 "Groq",
-                OpenAiProtocolBehavior::Groq,
                 "qwen/qwen3.6-27b",
             )
             .unwrap();

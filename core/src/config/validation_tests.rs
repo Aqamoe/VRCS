@@ -51,6 +51,32 @@ fn vision_requires_image_capability_but_does_not_infer_it_from_model_names() {
 }
 
 #[test]
+fn vision_accepts_all_registered_image_providers() {
+    for provider in crate::providers::catalog() {
+        if !provider.capabilities.supports_image_understanding {
+            continue;
+        }
+        let mut config = AppConfig::default();
+        config.asr.api_profiles.push(ApiProfile {
+            id: "images".into(),
+            name: "Images".into(),
+            provider: provider.id.into(),
+            enabled_capabilities: vec![crate::providers::CAPABILITY_IMAGE_UNDERSTANDING.into()],
+            auth_mode: provider.connection.auth_mode,
+            is_local: provider.category == crate::providers::ProviderCategory::LocalService,
+            region: (provider.id == crate::providers::ALIBABA_PROVIDER).then(|| "singapore".into()),
+            base_url: (provider.id == crate::providers::OPENAI_COMPATIBLE_PROVIDER)
+                .then(|| "https://example.com/v1".into()),
+            ..ApiProfile::default()
+        });
+        config.vision.profile_id = Some("images".into());
+        config.vision.model = "user-selected-model".into();
+        config.vision.enabled = true;
+        assert!(config.validate_settings().is_ok(), "{}", provider.id);
+    }
+}
+
+#[test]
 fn vision_rejects_unknown_fields_and_missing_profiles() {
     assert!(serde_json::from_value::<super::ocr::VisionConfig>(
         serde_json::json!({"unknown": true})

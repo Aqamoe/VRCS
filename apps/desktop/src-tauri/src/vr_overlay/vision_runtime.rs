@@ -151,6 +151,9 @@ impl VisionRuntime {
         {
             self.fail("Recording timed out. Release the trigger and ask again.".into());
         }
+        if let Some(error) = self.session.as_ref().and_then(VisionSession::error) {
+            self.fail(error);
+        }
         if let (Some(session), Some(view)) = (&self.session, &mut self.view) {
             view.source = session.draft();
         }
@@ -330,14 +333,20 @@ impl VisionRuntime {
         }
     }
 
-    pub fn render(&mut self, backend: &mut OpenVrBackend) -> Result<(), String> {
+    pub fn invalidate_render(&mut self) {
+        self.rendered = None;
+        self.buttons.clear();
+        self.pointer = Pointer::default();
+    }
+
+    pub fn render(&mut self, backend: &mut OpenVrBackend) -> Result<bool, String> {
         let (Some(view), Some(config)) = (&mut self.view, &self.configuration) else {
-            return Ok(());
+            return Ok(false);
         };
         // Use an independent default, never the subtitle or OCR wrist configuration.
         let wrist = config.wrist.clone().unwrap_or_default();
         if !backend.ensure_ocr_wrist(&wrist)?.available {
-            return Ok(());
+            return Ok(false);
         }
         if self.rendered.as_ref() != Some(view) {
             let rendered = ocr_wrist_renderer::render(view, wrist.font_size_px, 0.9)?;
@@ -348,7 +357,8 @@ impl VisionRuntime {
             self.rendered = Some(view.clone());
         }
         backend.set_opacity(OverlayKind::OcrWrist, wrist.opacity)?;
-        backend.show(OverlayKind::OcrWrist)
+        backend.show(OverlayKind::OcrWrist)?;
+        Ok(true)
     }
 }
 
@@ -436,6 +446,22 @@ mod tests {
         assert!(view.pinned);
         assert_eq!(view.page, 2);
         assert_eq!(view.translation, "answer");
+    }
+
+    #[test]
+    fn render_reset_keeps_the_answer_and_requires_a_fresh_upload() {
+        let mut runtime = VisionRuntime::new();
+        let view = VisionRuntime::view("Ready", "question", "answer");
+        runtime.view = Some(view.clone());
+        runtime.rendered = Some(view.clone());
+        runtime.buttons.push(Button {
+            action: Action::Close,
+            bounds: [0.0, 0.0, 1.0, 1.0],
+        });
+        runtime.invalidate_render();
+        assert_eq!(runtime.view.as_ref(), Some(&view));
+        assert!(runtime.rendered.is_none());
+        assert!(runtime.buttons.is_empty());
     }
 
     #[test]

@@ -30,7 +30,7 @@ test("translation profile switching remembers edited models across remounts and 
         const profiles = ['deepseek', 'openai'].map(id => ({
           id, name: id, provider: id, provider_display_name: id,
           enabled_capabilities: ['text_generation', 'text_translation'],
-          capabilities: { supports_model_listing: true, supports_text_generation: true,
+          capabilities: { supports_model_listing: true, supports_text_generation: true, supports_image_understanding: false,
             supports_translation: true, supported_languages: ['en', 'ja'], supports_custom_translation_language: true }
         }));
         window.savedTargets = [{ target_language: 'ja', profile_id: 'deepseek', model: 'deepseek-v4-pro', thinking_enabled: false }];

@@ -21,7 +21,7 @@ const profile: ApiProfileView = {
   active: true,
   translation_active: false,
   credential: { configured: true, stored_configured: true, environment_override: false, source: "credential_manager" },
-  capabilities: { supports_streaming: false, supports_model_listing: true, requires_api_key: true, is_local: false, supports_context: false, supports_translation: false, supports_asr: true, supports_text_generation: false, supports_custom_translation_language: false, supported_languages: [] },
+  capabilities: { supports_streaming: false, supports_model_listing: true, requires_api_key: true, is_local: false, supports_context: false, supports_translation: false, supports_asr: true, supports_text_generation: false, supports_image_understanding: false, supports_custom_translation_language: false, supported_languages: [] },
   support_levels: { asr: "native", translation: null },
 };
 

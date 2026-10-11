@@ -1,10 +1,13 @@
 use std::time::Duration;
 
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 
 use crate::config::ApiProfile;
 
-use super::http::{invalid_response, list_models as parse_models, network_error, status_error};
+use super::http::{
+    invalid_response, list_models as parse_models, network_error, response_status_error,
+};
 use super::{LlmError, LlmRequest};
 
 const MAX_RETRY_OUTPUT_TOKENS: u32 = 16_384;
@@ -14,25 +17,50 @@ pub(super) async fn generate(
     api_key: &str,
     request: LlmRequest<'_>,
 ) -> Result<String, LlmError> {
+    let body = request_body(&request, request.max_output_tokens);
+    generate_response(http, api_key, request, body, None, true).await
+}
+
+pub(super) async fn generate_with_image(
+    http: &reqwest::Client,
+    profile: &ApiProfile,
+    api_key: &str,
+    request: LlmRequest<'_>,
+    image: &[u8],
+) -> Result<String, LlmError> {
+    let body = image_request_body(&request, request.max_output_tokens, image);
+    generate_response(
+        http,
+        api_key,
+        request,
+        body,
+        Some(Duration::from_millis(profile.timeout_ms)),
+        false,
+    )
+    .await
+}
+
+async fn generate_response(
+    http: &reqwest::Client,
+    api_key: &str,
+    request: LlmRequest<'_>,
+    mut body: Value,
+    timeout: Option<Duration>,
+    allow_budget_retry: bool,
+) -> Result<String, LlmError> {
     let mut max_output_tokens = request.max_output_tokens;
     for attempt in 0..=1 {
-        let response = http
-            .post("https://api.openai.com/v1/responses")
-            .bearer_auth(api_key)
-            .json(&request_body(&request, max_output_tokens))
+        body["max_output_tokens"] = json!(max_output_tokens);
+        let response = generation_request(http, api_key, &body, timeout)
             .send()
             .await
             .map_err(network_error)?;
-        let status = response.status();
-        let value: Value = response.json().await.map_err(invalid_response)?;
-        if !status.is_success() {
-            return Err(status_error(status, &value));
-        }
-        match parse_response(&value)? {
+        match parse_http_response(response).await? {
             ParsedResponse::Complete(text) => return Ok(text),
             ParsedResponse::Incomplete(reason) => {
                 if attempt == 0 {
-                    if let Some(retry_limit) = retry_output_token_limit(&reason, max_output_tokens)
+                    if let Some(retry_limit) =
+                        retry_output_token_limit(&reason, max_output_tokens, allow_budget_retry)
                     {
                         tracing::warn!(
                             model = request.model,
@@ -49,6 +77,32 @@ pub(super) async fn generate(
         }
     }
     unreachable!("OpenAI response loop returns after at most one retry")
+}
+
+fn generation_request(
+    http: &reqwest::Client,
+    api_key: &str,
+    body: &Value,
+    timeout: Option<Duration>,
+) -> reqwest::RequestBuilder {
+    let request = http
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(api_key)
+        .json(body);
+    if let Some(timeout) = timeout {
+        request.timeout(timeout)
+    } else {
+        request
+    }
+}
+
+fn image_request_body(request: &LlmRequest<'_>, max_output_tokens: u32, image: &[u8]) -> Value {
+    let mut body = request_body(request, max_output_tokens);
+    body["input"] = json!([{ "role": "user", "content": [
+        { "type": "input_text", "text": request.input },
+        { "type": "input_image", "image_url": format!("data:image/png;base64,{}", STANDARD.encode(image)) }
+    ] }]);
+    body
 }
 
 fn request_body(request: &LlmRequest<'_>, max_output_tokens: u32) -> Value {
@@ -101,8 +155,8 @@ fn is_model_or_snapshot(model: &str, family: &str) -> bool {
             .is_some_and(|suffix| suffix.starts_with("-20"))
 }
 
-fn retry_output_token_limit(reason: &str, current: u32) -> Option<u32> {
-    if reason != "max_output_tokens" {
+fn retry_output_token_limit(reason: &str, current: u32, allow_budget_retry: bool) -> Option<u32> {
+    if !allow_budget_retry || reason != "max_output_tokens" {
         return None;
     }
     let next = current.saturating_mul(2).min(MAX_RETRY_OUTPUT_TOKENS);
@@ -120,6 +174,15 @@ fn incomplete_error(reason: &str) -> LlmError {
         detail: format!("OpenAI response was incomplete: {reason}"),
         retryable: false,
     }
+}
+
+async fn parse_http_response(response: reqwest::Response) -> Result<ParsedResponse, LlmError> {
+    let status = response.status();
+    if !status.is_success() {
+        return Err(response_status_error(response, status).await);
+    }
+    let value: Value = response.json().await.map_err(invalid_response)?;
+    parse_response(&value)
 }
 
 fn parse_response(value: &Value) -> Result<ParsedResponse, LlmError> {
@@ -153,10 +216,7 @@ pub(super) async fn list_models(
 }
 
 fn extract_text(value: &Value) -> Option<String> {
-    if let Some(text) = value.get("output_text").and_then(Value::as_str) {
-        return Some(text.trim().to_owned()).filter(|text| !text.is_empty());
-    }
-    value
+    let text = value
         .get("output")?
         .as_array()?
         .iter()
@@ -166,15 +226,266 @@ fn extract_text(value: &Value) -> Option<String> {
                 .into_iter()
                 .flatten()
         })
-        .find_map(|content| content.get("text").and_then(Value::as_str))
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(str::to_owned)
+        .filter(|content| content.get("type").and_then(Value::as_str) == Some("output_text"))
+        .filter_map(|content| content.get("text").and_then(Value::as_str))
+        .collect::<String>();
+    Some(text.trim().to_owned()).filter(|text| !text.is_empty())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn builds_native_image_request_with_profile_timeout() {
+        let profile = ApiProfile {
+            timeout_ms: 12_345,
+            ..ApiProfile::default()
+        };
+        let request = LlmRequest {
+            model: "gpt-5.4-mini",
+            instructions: "Describe the image",
+            input: "What is visible?",
+            max_output_tokens: 1_024,
+            thinking_enabled: false,
+        };
+        let body = image_request_body(&request, request.max_output_tokens, b"\x89PNG\r\n\x1a\n");
+        assert_eq!(
+            body,
+            json!({
+                "model": "gpt-5.4-mini",
+                "instructions": "Describe the image",
+                "input": [{ "role": "user", "content": [
+                    { "type": "input_text", "text": "What is visible?" },
+                    { "type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo=" }
+                ] }],
+                "max_output_tokens": 1_024,
+                "reasoning": { "effort": "none" }
+            })
+        );
+        let http = reqwest::Client::new();
+        let built = generation_request(
+            &http,
+            "test-key",
+            &body,
+            Some(Duration::from_millis(profile.timeout_ms)),
+        )
+        .build()
+        .unwrap();
+        assert_eq!(built.method(), reqwest::Method::POST);
+        assert_eq!(built.url().as_str(), "https://api.openai.com/v1/responses");
+        assert_eq!(built.headers()["authorization"], "Bearer test-key");
+        assert_eq!(built.timeout(), Some(&Duration::from_millis(12_345)));
+        let sent: Value =
+            serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).unwrap();
+        assert_eq!(sent, body);
+        assert!(sent.get("stream").is_none());
+
+        let text_body = request_body(&request, request.max_output_tokens);
+        let text_request = generation_request(&http, "test-key", &text_body, None)
+            .build()
+            .unwrap();
+        assert_eq!(text_body["input"], "What is visible?");
+        assert!(text_request.timeout().is_none());
+    }
+
+    #[test]
+    fn image_body_preserves_reasoning_and_hard_output_budget() {
+        for (model, thinking_enabled) in [("gpt-5-mini", true), ("gpt-4o-mini", false)] {
+            let request = LlmRequest {
+                model,
+                instructions: "Describe the image",
+                input: "What is visible?",
+                max_output_tokens: 1_024,
+                thinking_enabled,
+            };
+            let body = image_request_body(&request, 1_024, b"png");
+            assert_eq!(body["max_output_tokens"], 1_024);
+            assert_eq!(
+                retry_output_token_limit("max_output_tokens", 1_024, false),
+                None
+            );
+            let mut text_body = request_body(&request, 1_024);
+            text_body["input"] = body["input"].clone();
+            assert_eq!(body, text_body);
+        }
+    }
+
+    #[test]
+    fn parses_image_answers_and_rejects_responses_without_text() {
+        let response = json!({
+            "status": "completed",
+            "output": [
+                { "type": "reasoning", "summary": [] },
+                { "type": "message", "content": [
+                    { "type": "output_text", "text": " A blue sign. " }
+                ] }
+            ]
+        });
+        let ParsedResponse::Complete(text) = parse_response(&response).unwrap() else {
+            panic!("expected a complete response");
+        };
+        assert_eq!(text, "A blue sign.");
+        for response in [
+            json!({"status": "completed", "output": []}),
+            json!({"status": "completed", "output_text": "  "}),
+        ] {
+            let error = match parse_response(&response) {
+                Err(error) => error,
+                Ok(_) => panic!("expected a response without text to fail"),
+            };
+            assert_eq!(error.code, "llm.invalid_response");
+            assert!(!error.retryable);
+        }
+    }
+
+    #[test]
+    fn concatenates_all_output_text_parts_in_order_without_other_text_fields() {
+        let value = json!({
+            "output_text": "Do not use this aggregate field",
+            "text": "Do not use this text field",
+            "output": [
+                {"type": "reasoning", "summary": [{"text": "private reasoning"}]},
+                {"type": "message", "content": [
+                    {"type": "refusal", "text": "Not body text"},
+                    {"text": "Untyped text"},
+                    {"type": "output_text", "text": " A"},
+                    {"type": "output_text", "text": " blue"}
+                ]},
+                {"type": "message", "content": [
+                    {"type": "output_text", "text": " sign. "}
+                ]}
+            ]
+        });
+        assert_eq!(extract_text(&value).as_deref(), Some("A blue sign."));
+        assert_eq!(
+            extract_text(&json!({"output_text": "aggregate only"})),
+            None
+        );
+        assert_eq!(
+            extract_text(&json!({"output": [{"content": [
+                {"type": "refusal", "text": "not an answer"},
+                {"type": "output_text", "text": "  "}
+            ]}]})),
+            None
+        );
+    }
+
+    async fn http_error(response: reqwest::Response) -> LlmError {
+        match parse_http_response(response).await {
+            Err(error) => error,
+            Ok(_) => panic!("expected HTTP response parsing to fail"),
+        }
+    }
+
+    #[tokio::test]
+    async fn checks_http_status_before_parsing_json() {
+        for (status, code, retryable) in [
+            (503, "llm.provider_unavailable", true),
+            (429, "llm.rate_limited", true),
+            (403, "llm.authentication_failed", false),
+        ] {
+            let response = tokio_tungstenite::tungstenite::http::Response::builder()
+                .status(status)
+                .body("<html>upstream error</html>")
+                .unwrap()
+                .into();
+            let error = http_error(response).await;
+            assert_eq!(error.code, code);
+            assert_eq!(error.retryable, retryable);
+            assert!(error.detail.contains(&status.to_string()));
+        }
+        let response = tokio_tungstenite::tungstenite::http::Response::builder()
+            .status(401)
+            .body(r#"{"error":{"message":"Invalid key"}}"#)
+            .unwrap()
+            .into();
+        let error = http_error(response).await;
+        assert_eq!(error.code, "llm.authentication_failed");
+        assert_eq!(error.detail, "Invalid key");
+        assert!(!error.retryable);
+    }
+
+    #[tokio::test]
+    async fn distinguishes_body_transport_errors_from_invalid_json() {
+        let body = reqwest::Body::wrap_stream(futures_util::stream::iter([Err::<Vec<u8>, _>(
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "body interrupted"),
+        )]));
+        let response: reqwest::Response = tokio_tungstenite::tungstenite::http::Response::builder()
+            .body(body)
+            .unwrap()
+            .into();
+        // This in-memory stream exercises the Decode -> Body -> IO error chain.
+        let raw_error = response.json::<Value>().await.unwrap_err();
+        assert!(raw_error.is_decode());
+        assert!(!raw_error.is_body());
+        let mut source = std::error::Error::source(&raw_error);
+        let mut saw_io_error = false;
+        while let Some(cause) = source {
+            if let Some(error) = cause.downcast_ref::<std::io::Error>() {
+                assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+                saw_io_error = true;
+            }
+            source = cause.source();
+        }
+        assert!(saw_io_error);
+        let error = invalid_response(raw_error);
+        assert_eq!(error.code, "llm.network_failed");
+        assert!(error.retryable);
+
+        for body in [
+            "not JSON",
+            r#"{"output":"#,
+            r#"{"output": [}"#,
+            r#"{"output": [],}"#,
+        ] {
+            let response: reqwest::Response =
+                tokio_tungstenite::tungstenite::http::Response::builder()
+                    .body(body)
+                    .unwrap()
+                    .into();
+            let raw_error = response.json::<Value>().await.unwrap_err();
+            assert!(raw_error.is_decode());
+            let json_error = std::error::Error::source(&raw_error)
+                .unwrap()
+                .downcast_ref::<serde_json::Error>()
+                .unwrap();
+            assert!(!json_error.is_io());
+            assert!(json_error.is_syntax() || json_error.is_eof());
+            let error = invalid_response(raw_error);
+            assert_eq!(error.code, "llm.invalid_response");
+            assert!(!error.retryable);
+        }
+    }
+
+    #[tokio::test]
+    async fn json_body_timeout_is_a_retryable_network_error() {
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::get(|| async {
+                axum::body::Body::from_stream(futures_util::stream::once(async {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    Ok::<_, std::io::Error>("{}")
+                }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let response = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(endpoint)
+            .timeout(Duration::from_millis(500))
+            .send()
+            .await
+            .unwrap();
+        let error = http_error(response).await;
+        server.abort();
+        assert_eq!(error.code, "llm.timeout");
+        assert!(error.retryable);
+    }
 
     #[test]
     fn extracts_responses_api_text() {
@@ -220,15 +531,21 @@ mod tests {
     #[test]
     fn limits_output_budget_retry_to_one_bounded_increase() {
         assert_eq!(
-            retry_output_token_limit("max_output_tokens", 1_024),
+            retry_output_token_limit("max_output_tokens", 1_024, true),
             Some(2_048)
         );
         assert_eq!(
-            retry_output_token_limit("max_output_tokens", 10_000),
+            retry_output_token_limit("max_output_tokens", 10_000, true),
             Some(16_384)
         );
-        assert_eq!(retry_output_token_limit("max_output_tokens", 16_384), None);
-        assert_eq!(retry_output_token_limit("content_filter", 1_024), None);
+        assert_eq!(
+            retry_output_token_limit("max_output_tokens", 16_384, true),
+            None
+        );
+        assert_eq!(
+            retry_output_token_limit("content_filter", 1_024, true),
+            None
+        );
     }
 
     #[test]

@@ -28,6 +28,9 @@ struct Window {
     samples: Vec<f32>,
     spans: Vec<(Instant, Instant, usize, usize, usize)>,
     covered_start: bool,
+    allow_startup_gap: bool,
+    owns_capture: bool,
+    complete: bool,
     error: Option<String>,
 }
 
@@ -44,11 +47,26 @@ pub(crate) struct AudioReader {
 }
 
 impl MicrophoneTap {
+    #[cfg(test)]
     pub(crate) fn begin(&self, max_seconds: u32) -> Result<AudioWindow, String> {
         self.begin_at(max_seconds, Instant::now())
     }
 
+    pub(crate) fn begin_capture(&self, max_seconds: u32) -> Result<AudioWindow, String> {
+        self.create_window(max_seconds, Instant::now(), true)
+    }
+
+    #[cfg(test)]
     fn begin_at(&self, max_seconds: u32, start: Instant) -> Result<AudioWindow, String> {
+        self.create_window(max_seconds, start, false)
+    }
+
+    fn create_window(
+        &self,
+        max_seconds: u32,
+        start: Instant,
+        allow_startup_gap: bool,
+    ) -> Result<AudioWindow, String> {
         let limit = RATE
             .checked_mul(max_seconds as usize)
             .filter(|n| *n > 0)
@@ -57,7 +75,7 @@ impl MicrophoneTap {
             .checked_add(Duration::from_secs(max_seconds as u64))
             .ok_or("Invalid audio window duration")?;
         let mut state = self.inner.lock().expect("microphone tap lock");
-        if !state.running {
+        if !state.running && !allow_startup_gap {
             return Err("Microphone capture is not running".into());
         }
         if state.window.is_some() {
@@ -74,6 +92,9 @@ impl MicrophoneTap {
             samples: Vec::new(),
             spans: Vec::new(),
             covered_start: false,
+            allow_startup_gap,
+            owns_capture: allow_startup_gap,
+            complete: false,
             error: None,
         });
         Ok(AudioWindow {
@@ -89,12 +110,30 @@ impl MicrophoneTap {
     }
 
     pub(crate) fn stopped(&self, reason: &str) {
+        self.stop_with_error(reason, false);
+    }
+
+    pub(crate) fn failed(&self, reason: &str) {
+        self.stop_with_error(reason, true);
+    }
+
+    fn stop_with_error(&self, reason: &str, terminal: bool) {
         let mut state = self.inner.lock().expect("microphone tap lock");
         state.running = false;
         state.watermark = None;
         if let Some(window) = &mut state.window {
-            window.error.get_or_insert_with(|| reason.to_owned());
-            window.samples.clear();
+            // Startup attempts may retry before the first PCM chunk. A complete
+            // owned window no longer depends on the device or its shutdown.
+            let preserve =
+                window.owns_capture && (window.complete || (!terminal && !window.covered_start));
+            if !preserve {
+                if terminal {
+                    window.error = Some(reason.to_owned());
+                } else {
+                    window.error.get_or_insert_with(|| reason.to_owned());
+                }
+                window.samples.clear();
+            }
         }
         self.changed.notify_one();
     }
@@ -103,8 +142,11 @@ impl MicrophoneTap {
         let mut state = self.inner.lock().expect("microphone tap lock");
         state.watermark = None;
         if let Some(window) = &mut state.window {
-            window.error.get_or_insert_with(|| reason.to_owned());
-            window.samples.clear();
+            // A later gap cannot invalidate PCM already collected through release.
+            if !window.complete {
+                window.error.get_or_insert_with(|| reason.to_owned());
+                window.samples.clear();
+            }
         }
         self.changed.notify_one();
     }
@@ -118,12 +160,21 @@ impl MicrophoneTap {
         let discontinuous = state.watermark.is_some_and(|previous| previous != start);
         state.watermark = Some(end);
         if let Some(window) = &mut state.window {
+            if window.complete {
+                return;
+            }
             if discontinuous {
                 window.error.get_or_insert_with(|| {
                     "Microphone audio has missing or overlapping frames".into()
                 });
             }
             if window.error.is_none() && end > window.start && !window.covered_start {
+                // A new device stream cannot cover time spent opening the device.
+                // Only its first chunk may move the start; later gaps still fail.
+                if window.allow_startup_gap {
+                    window.start = window.start.max(start);
+                    window.allow_startup_gap = false;
+                }
                 if start > window.start {
                     window.error = Some("Microphone audio did not cover the window start".into());
                 } else {
@@ -174,6 +225,8 @@ impl MicrophoneTap {
             }
             if window.error.is_some() {
                 window.samples.clear();
+            } else if window.end.is_some_and(|stop| end >= stop) {
+                window.complete = true;
             }
         }
         self.changed.notify_one();
@@ -207,6 +260,7 @@ impl AudioWindow {
 
     fn release_at(&mut self, end: Instant) {
         let mut state = self.tap.inner.lock().expect("microphone tap lock");
+        let watermark = state.watermark;
         if let Some(window) = state.window.as_mut().filter(|window| window.id == self.id) {
             if window.end.is_none() {
                 window.end = Some(end);
@@ -232,6 +286,8 @@ impl AudioWindow {
                     window.error = Some("Audio window exceeded its duration limit".into());
                     window.samples.clear();
                 }
+                window.complete =
+                    window.error.is_none() && watermark.is_some_and(|mark| mark >= end);
             }
         }
         self.tap.changed.notify_one();
@@ -244,7 +300,6 @@ impl AudioWindow {
                 let notified = self.tap.changed.notified();
                 {
                     let mut state = self.tap.inner.lock().expect("microphone tap lock");
-                    let watermark = state.watermark;
                     let window = state
                         .window
                         .as_mut()
@@ -253,10 +308,10 @@ impl AudioWindow {
                     if let Some(error) = &window.error {
                         return Err(error.clone());
                     }
-                    let end = window
+                    window
                         .end
                         .ok_or("Release the audio window before finishing")?;
-                    if watermark.is_some_and(|watermark| watermark >= end) {
+                    if window.complete {
                         if window.samples.is_empty() {
                             return Err("No microphone audio covered the window".into());
                         }
@@ -285,6 +340,34 @@ impl AudioWindow {
 }
 
 impl AudioReader {
+    /// Seal a released window before shutting down its dedicated producer.
+    pub(crate) fn finish_capture(&self) -> Result<bool, String> {
+        let mut state = self.tap.inner.lock().expect("microphone tap lock");
+        let window = state
+            .window
+            .as_mut()
+            .filter(|window| window.id == self.id)
+            .ok_or("Audio window is no longer active")?;
+        if let Some(error) = &window.error {
+            return Err(error.clone());
+        }
+        if window.complete {
+            state.running = false;
+            return Ok(true);
+        }
+        let now = Instant::now();
+        if window.end.is_none() && now > window.deadline {
+            return Err("Audio window exceeded its duration limit".into());
+        }
+        if window
+            .end
+            .is_some_and(|end| now.saturating_duration_since(end) >= Duration::from_secs(1))
+        {
+            return Err("Timed out waiting for microphone audio".into());
+        }
+        Ok(false)
+    }
+
     pub(crate) fn check(&self) -> Result<(), String> {
         let state = self.tap.inner.lock().expect("microphone tap lock");
         let window = state
@@ -327,9 +410,7 @@ impl AudioReader {
                 if window.end.is_none() && now > window.deadline {
                     return Err("Audio window exceeded its duration limit".into());
                 }
-                let complete = window
-                    .end
-                    .is_some_and(|end| state.watermark.is_some_and(|mark| mark >= end));
+                let complete = window.complete;
                 if window.end.is_some() {
                     let since = self.released_since.get_or_insert(now);
                     if !complete && since.elapsed() >= Duration::from_secs(1) {
@@ -390,6 +471,119 @@ mod tests {
         let tap = MicrophoneTap::default();
         tap.started();
         (tap, Instant::now())
+    }
+
+    #[tokio::test]
+    async fn dedicated_capture_allows_startup_and_stops_only_after_release_tail() {
+        let tap = MicrophoneTap::default();
+        let mut window = tap.begin_capture(1).unwrap();
+        let mut reader = window.reader();
+        let status = window.reader();
+        assert!(!status.finish_capture().unwrap());
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        tap.started();
+        let start = Instant::now();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let first_end = Instant::now();
+        tap.push(&[0.1; 160], start, first_end);
+        assert_eq!(reader.next().await.unwrap().unwrap().len(), 160);
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        window.release();
+        assert!(!status.finish_capture().unwrap());
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        tap.push(&[0.2; 64], first_end, Instant::now());
+        // Device shutdown can race the control worker after release is covered.
+        tap.stopped("Device changed before the control worker stopped capture");
+        assert!(status.finish_capture().unwrap());
+        tap.stopped("Dedicated microphone capture stopped");
+        assert!(reader
+            .next()
+            .await
+            .unwrap()
+            .unwrap()
+            .iter()
+            .all(|sample| *sample == 0.2));
+        assert!(reader.next().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn release_before_device_start_does_not_capture_later_speech() {
+        let tap = MicrophoneTap::default();
+        let mut window = tap.begin_capture(1).unwrap();
+        window.release();
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        tap.started();
+        let start = Instant::now();
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        tap.push(&[0.1; 32], start, Instant::now());
+        assert!(window.reader().finish_capture().unwrap());
+        tap.stopped("Dedicated microphone capture stopped");
+        assert_eq!(
+            window.reader().next().await.unwrap_err(),
+            "No microphone audio covered the window"
+        );
+    }
+
+    #[test]
+    fn failed_startup_attempt_can_retry_before_the_first_chunk() {
+        let tap = MicrophoneTap::default();
+        let window = tap.begin_capture(1).unwrap();
+        tap.stopped("First startup attempt failed");
+        window.reader().check().unwrap();
+        tap.started();
+        let start = Instant::now();
+        tap.push(&[0.1; 160], start, start + Duration::from_millis(10));
+        window.reader().check().unwrap();
+        tap.stopped("Device failed after capture began");
+        assert_eq!(
+            window.reader().check().unwrap_err(),
+            "Device failed after capture began"
+        );
+    }
+
+    #[test]
+    fn final_startup_error_replaces_the_generic_attempt_stop() {
+        let tap = MicrophoneTap::default();
+        let window = tap.begin_capture(1).unwrap();
+        tap.stopped("Microphone capture stopped");
+        tap.failed("Visual question microphone: audio.permission_denied: Access denied");
+        assert_eq!(
+            window.reader().check().unwrap_err(),
+            "Visual question microphone: audio.permission_denied: Access denied"
+        );
+    }
+
+    #[test]
+    fn terminal_capture_error_survives_producer_shutdown() {
+        let tap = MicrophoneTap::default();
+        let window = tap.begin_capture(1).unwrap();
+        tap.failed("Timed out waiting for microphone audio");
+        tap.stopped("Microphone capture stopped");
+        assert_eq!(
+            window.reader().check().unwrap_err(),
+            "Timed out waiting for microphone audio"
+        );
+    }
+
+    #[test]
+    fn startup_allowance_does_not_hide_later_capture_gaps() {
+        let tap = MicrophoneTap::default();
+        let window = tap.begin_capture(1).unwrap();
+        tap.started();
+        let start = Instant::now();
+        let end = start + Duration::from_millis(10);
+        tap.push(&[0.1; 160], start, end);
+        window.reader().check().unwrap();
+        tap.push(
+            &[0.1; 160],
+            end + Duration::from_millis(1),
+            end + Duration::from_millis(11),
+        );
+        assert!(window
+            .reader()
+            .check()
+            .unwrap_err()
+            .contains("missing or overlapping frames"));
     }
 
     #[tokio::test]
@@ -520,6 +714,86 @@ mod tests {
             tap.started();
             assert_eq!(window.finish().await.unwrap_err(), reason);
         }
+    }
+
+    #[tokio::test]
+    async fn complete_released_window_survives_later_discontinuities() {
+        for release_before_push in [false, true] {
+            for explicit_gap in [false, true] {
+                let tap = MicrophoneTap::default();
+                tap.started();
+                let base = Instant::now() - Duration::from_millis(10);
+                let mut window = tap.begin_at(1, base).unwrap();
+                let mut reader = window.reader();
+                if release_before_push {
+                    window.release_at(base + Duration::from_millis(1));
+                }
+                tap.push(&[0.1; 32], base, base + Duration::from_millis(2));
+                if !release_before_push {
+                    window.release_at(base + Duration::from_millis(1));
+                }
+                if explicit_gap {
+                    tap.discontinuity("Later capture timing gap");
+                }
+                tap.push(
+                    &[0.2; 16],
+                    base + Duration::from_millis(3),
+                    base + Duration::from_millis(4),
+                );
+                reader.check().unwrap();
+                assert_eq!(reader.next().await.unwrap().unwrap(), vec![0.1; 16]);
+                assert!(reader.next().await.unwrap().is_none());
+                assert_eq!(window.finish().await.unwrap(), vec![0.1; 16]);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn active_and_incomplete_released_windows_fail_on_discontinuity() {
+        for released in [false, true] {
+            for explicit_gap in [false, true] {
+                let (tap, base) = running();
+                let mut window = tap.begin_at(1, base).unwrap();
+                let mut reader = window.reader();
+                tap.push(&[0.1; 16], base, base + Duration::from_millis(1));
+                if released {
+                    window.release_at(base + Duration::from_millis(3));
+                }
+                if explicit_gap {
+                    tap.discontinuity("Capture timing gap");
+                }
+                tap.push(
+                    &[0.2; 16],
+                    base + Duration::from_millis(2),
+                    base + Duration::from_millis(3),
+                );
+                assert!(reader.check().is_err());
+                assert!(reader.next().await.is_err());
+                assert!(tap
+                    .inner
+                    .lock()
+                    .unwrap()
+                    .window
+                    .as_ref()
+                    .unwrap()
+                    .samples
+                    .is_empty());
+                if !released {
+                    window.release_at(base + Duration::from_millis(3));
+                }
+                assert!(window.finish().await.is_err());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn stopping_capture_still_invalidates_a_complete_released_window() {
+        let (tap, base) = running();
+        let mut window = tap.begin_at(1, base).unwrap();
+        tap.push(&[0.1; 16], base, base + Duration::from_millis(1));
+        window.release_at(base + Duration::from_millis(1));
+        tap.stopped("Capture stopped");
+        assert_eq!(window.finish().await.unwrap_err(), "Capture stopped");
     }
 
     #[tokio::test]

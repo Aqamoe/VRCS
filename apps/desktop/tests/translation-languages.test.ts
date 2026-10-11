@@ -23,6 +23,7 @@ function profileCapabilities(
       supports_translation: true,
       supports_asr: false,
       supports_text_generation: false,
+      supports_image_understanding: false,
       supports_custom_translation_language: supportsCustom,
       supported_languages: supportedLanguages,
     },

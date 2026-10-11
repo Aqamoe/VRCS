@@ -30,8 +30,7 @@ export const VISION_LIMITS = {
 
 // Protocol support does not guarantee that the selected model accepts images.
 export function supportsVision(profile: ApiProfile): boolean {
-  return ["openai_compatible", "openrouter", "lm_studio", "ollama"].includes(profile.provider)
-    && profile.enabled_capabilities.includes("image_understanding");
+  return profile.enabled_capabilities.includes("image_understanding");
 }
 
 export function patchVision(settings: Settings, patch: Partial<VisionSettings>): Settings {

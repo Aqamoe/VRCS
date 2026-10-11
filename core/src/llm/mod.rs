@@ -61,7 +61,8 @@ impl LlmClient {
     }
 
     /// Generates a non-streaming text answer from text and PNG bytes.
-    /// The caller is responsible for image validation and payload size limits.
+    /// The caller validates the image. Adapters enforce known encoded request limits.
+    /// `max_output_tokens` is a hard total generation limit, including thinking.
     pub async fn generate_with_image(
         &self,
         profile: &ApiProfile,
@@ -76,10 +77,21 @@ impl LlmClient {
                     detail,
                     retryable: false,
                 })?;
+        if image.is_empty() {
+            return Err(LlmError {
+                code: "llm.request_failed",
+                detail: "Image input must not be empty".into(),
+                retryable: false,
+            });
+        }
         match resolved.service.adapter {
-            ServiceAdapter::OpenAiChatCompletions {
-                behavior: OpenAiProtocolBehavior::Standard,
-            } => {
+            ServiceAdapter::OpenAiResponses => {
+                openai::generate_with_image(&self.http, profile, api_key, request, image).await
+            }
+            ServiceAdapter::GeminiGenerateContent => {
+                gemini::generate_with_image(&self.http, profile, api_key, request, image).await
+            }
+            ServiceAdapter::OpenAiChatCompletions { behavior } => {
                 openai_compatible::generate_with_image(
                     &self.http,
                     profile,
@@ -87,6 +99,19 @@ impl LlmClient {
                     request,
                     image,
                     resolved.provider.display_name,
+                    behavior,
+                )
+                .await
+            }
+            ServiceAdapter::AlibabaChatCompletions => {
+                openai_compatible::generate_with_image(
+                    &self.http,
+                    profile,
+                    api_key,
+                    request,
+                    image,
+                    resolved.provider.display_name,
+                    OpenAiProtocolBehavior::Alibaba,
                 )
                 .await
             }
@@ -399,13 +424,18 @@ mod tests {
             assert_eq!(error.code, "llm.unsupported_provider");
             assert!(!error.retryable);
         }
-        profile.provider = providers::OPENAI_COMPATIBLE_PROVIDER.into();
-        let error = client
-            .generate_with_image(&profile, "", request(), &[])
-            .await
-            .unwrap_err();
-        assert_eq!(error.code, "llm.request_failed");
-        assert!(!error.retryable);
+        for provider in providers::catalog() {
+            if !provider.capabilities.supports_image_understanding {
+                continue;
+            }
+            profile.provider = provider.id.into();
+            let error = client
+                .generate_with_image(&profile, "", request(), &[])
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "llm.request_failed", "{}", provider.id);
+            assert!(!error.retryable);
+        }
     }
 
     #[tokio::test]

@@ -39,7 +39,7 @@ pub(super) async fn list_models(
     .await
 }
 
-fn base_url(profile: &ApiProfile) -> Result<String, LlmError> {
+pub(super) fn base_url(profile: &ApiProfile) -> Result<String, LlmError> {
     if profile.provider == crate::providers::QWEN_AI_PROVIDER {
         return crate::providers::effective_base_url(profile).map_err(|detail| LlmError {
             code: "llm.invalid_profile",

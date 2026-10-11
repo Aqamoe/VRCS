@@ -53,6 +53,18 @@ pub(crate) async fn transcribe_result(
     language: &str,
     samples: &[f32],
 ) -> Result<Transcription, String> {
+    transcribe_result_with_empty(http, profile, api_key, settings, language, samples, false).await
+}
+
+pub(super) async fn transcribe_result_with_empty(
+    http: &reqwest::Client,
+    profile: &ApiProfile,
+    api_key: &str,
+    settings: &RecognitionServiceSettings,
+    language: &str,
+    samples: &[f32],
+    allow_empty: bool,
+) -> Result<Transcription, String> {
     let response =
         request_transcription(http, profile, api_key, settings, language, samples).await?;
     let text = response.text;
@@ -74,7 +86,7 @@ pub(crate) async fn transcribe_result(
     } else {
         text.trim()
     };
-    if text.is_empty() && profile.provider != providers::QWEN_LOCAL_PROVIDER {
+    if text.is_empty() && !allow_empty && profile.provider != providers::QWEN_LOCAL_PROVIDER {
         return Err("Transcription response did not contain text".into());
     }
     Ok(Transcription {

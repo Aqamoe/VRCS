@@ -307,12 +307,20 @@ impl OcrRuntime {
         }
         let wrist_result = if self.vision.visible() {
             self.wrist_view = None;
-            self.vision.render(backend)
+            self.vision.render(backend).map(|visible| {
+                self.status.wrist_state = if visible {
+                    OcrWristState::Visible
+                } else {
+                    OcrWristState::DeviceUnavailable
+                };
+                self.status.wrist_error = None;
+            })
         } else {
             self.update_wrist(backend, config, wrist)
         };
         if let Err(error) = wrist_result {
             backend.reset(OverlayKind::OcrWrist);
+            self.vision.invalidate_render();
             self.wrist_view = None;
             self.status.wrist_state = OcrWristState::Error;
             self.status.wrist_error = Some(error);

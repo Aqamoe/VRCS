@@ -31,10 +31,11 @@ export async function initializeCoreTransport(): Promise<void> {
   }
 }
 
-export async function timedCoreFetch(
+async function consumeCoreFetch<T>(
   path: string,
-  init?: CoreRequestInit,
-): Promise<Response> {
+  init: CoreRequestInit | undefined,
+  consume: (response: Response) => T | Promise<T>,
+): Promise<T> {
   const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...fetchInit } = init ?? {};
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort(fetchInit.signal?.reason);
@@ -45,15 +46,26 @@ export async function timedCoreFetch(
     timeoutMs,
   );
   try {
-    return await fetch(`${connection.httpUrl}${path}`, {
+    const response = await fetch(`${connection.httpUrl}${path}`, {
       ...fetchInit,
       headers: requestHeaders(fetchInit.headers),
       signal: controller.signal,
     });
+    const result = await consume(response);
+    controller.signal.throwIfAborted();
+    return result;
+  } catch (error) {
+    // Error-body parsing can swallow aborts; preserve the request's abort reason.
+    controller.signal.throwIfAborted();
+    throw error;
   } finally {
     window.clearTimeout(timer);
     fetchInit.signal?.removeEventListener("abort", abortFromCaller);
   }
+}
+
+export function timedCoreFetch(path: string, init?: CoreRequestInit): Promise<Response> {
+  return consumeCoreFetch(path, init, (response) => response);
 }
 
 export function rawCoreFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -64,9 +76,10 @@ export function rawCoreFetch(path: string, init?: RequestInit): Promise<Response
 }
 
 export async function request<T>(path: string, init?: CoreRequestInit): Promise<T> {
-  const response = await timedCoreFetch(path, init);
-  if (!response.ok) throw await apiErrorFromResponse(response);
-  return (await response.json()) as T;
+  return consumeCoreFetch(path, init, async (response) => {
+    if (!response.ok) throw await apiErrorFromResponse(response);
+    return (await response.json()) as T;
+  });
 }
 
 export function coreWebSocketUrl(): string {

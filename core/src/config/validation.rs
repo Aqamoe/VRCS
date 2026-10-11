@@ -157,15 +157,11 @@ fn validate_vision(config: &AppConfig) -> Result<(), String> {
             .iter()
             .find(|profile| &profile.id == id)
             .ok_or_else(|| format!("Unknown vision.profile_id: {id}"))?;
-        if !["openai_compatible", "openrouter", "lm_studio", "ollama"]
-            .contains(&profile.provider.as_str())
-            || !profile
-                .enabled_capabilities
-                .iter()
-                .any(|capability| capability == "image_understanding")
-        {
-            return Err("vision.profile_id must enable image_understanding on a supported Chat Completions provider".into());
-        }
+        crate::providers::resolve_profile_capability(
+            profile,
+            crate::providers::CAPABILITY_IMAGE_UNDERSTANDING,
+        )
+        .map_err(|detail| format!("vision.profile_id requires image_understanding: {detail}"))?;
     }
     if vision.enabled && (vision.profile_id.is_none() || vision.model.trim().is_empty()) {
         return Err("Enabled vision requires a profile and an image-capable model".into());

@@ -4,9 +4,11 @@ import test from "node:test";
 import {
   defaultEnabledCapabilities,
   groupedProviderOptions,
+  profileEnabledCapabilities,
+  profileSupportsCapability,
   providerCapabilities,
 } from "../src/provider-catalog.ts";
-import type { ApiCapability, ProviderDefinition } from "../src/providers/types.ts";
+import type { ApiCapability, ApiProfileView, ProviderDefinition } from "../src/providers/types.ts";
 
 function definition(
   id: string,
@@ -44,11 +46,71 @@ function definition(
       supports_translation: capabilities.includes("text_translation"),
       supports_asr: capabilities.includes("speech_to_text"),
       supports_text_generation: capabilities.includes("text_generation"),
+      supports_image_understanding: capabilities.includes("image_understanding"),
       supports_custom_translation_language: false,
       supported_languages: [],
     },
   };
 }
+
+function profile(
+  enabledCapabilities: ApiCapability[],
+  supportedCapabilities: ApiCapability[],
+): ApiProfileView {
+  return {
+    id: "profile",
+    name: "Profile",
+    provider: "provider",
+    enabled_capabilities: enabledCapabilities,
+    provider_display_name: "Provider",
+    active: false,
+    translation_active: false,
+    credential: { configured: false, stored_configured: false, environment_override: false, source: null },
+    capabilities: definition("provider", "cloud_provider", supportedCapabilities).capabilities,
+    support_levels: { asr: null, translation: null },
+  };
+}
+
+test("empty enabled capabilities fall back to individual flags including image understanding", () => {
+  const allCapabilities: ApiCapability[] = [
+    "text_generation", "text_translation", "speech_to_text", "image_understanding",
+  ];
+  const view = profile([], allCapabilities);
+  assert.deepEqual(profileEnabledCapabilities(view), allCapabilities);
+  for (const capability of allCapabilities) {
+    assert.equal(profileSupportsCapability(view, capability), true, capability);
+  }
+  assert.deepEqual(profileEnabledCapabilities(profile([], ["image_understanding"])), ["image_understanding"]);
+  assert.deepEqual(profileEnabledCapabilities(profile([], [])), []);
+});
+
+test("explicit enabled capabilities are preserved without merging compatibility flags", () => {
+  const view = profile(["text_generation"], ["text_generation", "image_understanding"]);
+  assert.equal(profileEnabledCapabilities(view), view.enabled_capabilities);
+  assert.deepEqual(profileEnabledCapabilities(view), ["text_generation"]);
+});
+
+test("image and text support remain independent in explicit capabilities and compatibility flags", () => {
+  for (const enabled of [[], ["text_generation"]] satisfies ApiCapability[][]) {
+    const textOnly = profile(enabled, ["text_generation"]);
+    assert.equal(profileSupportsCapability(textOnly, "text_generation"), true);
+    assert.equal(profileSupportsCapability(textOnly, "image_understanding"), false);
+  }
+  for (const enabled of [[], ["image_understanding"]] satisfies ApiCapability[][]) {
+    const imageOnly = profile(enabled, ["image_understanding"]);
+    assert.equal(profileSupportsCapability(imageOnly, "image_understanding"), true);
+    assert.equal(profileSupportsCapability(imageOnly, "text_generation"), false);
+  }
+  assert.equal(profileSupportsCapability(profile(["image_understanding"], []), "image_understanding"), true);
+  assert.equal(profileSupportsCapability(profile(["text_generation"], ["image_understanding"]), "image_understanding"), true);
+});
+
+test("other capability flags retain their fallback behavior with a nonempty enabled list", () => {
+  const view = profile(["image_understanding"], ["text_generation", "text_translation", "speech_to_text"]);
+  for (const capability of ["text_generation", "text_translation", "speech_to_text"] as const) {
+    assert.equal(profileSupportsCapability(view, capability), true, capability);
+  }
+});
 
 test("provider capabilities are derived from services", () => {
   const provider = definition("alpha", "cloud_provider", ["speech_to_text", "text_translation"]);

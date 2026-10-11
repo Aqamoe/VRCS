@@ -138,15 +138,17 @@ pub(super) async fn recognize_live_session(
                 samples.extend_from_slice(&chunk);
                 if last_preview.elapsed() >= Duration::from_millis(750)
                     && validate_audio(&samples).is_ok()
+                    && reader.released_at().is_none()
                 {
-                    let preview = recognize_snapshot(upload, share_audio(samples.clone())).await?;
+                    let preview =
+                        recognize_snapshot(upload, share_audio(samples.clone()), true).await?;
                     *draft.lock().expect("question draft lock") = preview;
                     last_preview = Instant::now();
                 }
             }
             validate_audio(&samples)?;
             // Always recognize the exact released window. A preview is never final.
-            let text = recognize_snapshot(upload, share_audio(samples)).await?;
+            let text = recognize_snapshot(upload, share_audio(samples), false).await?;
             *draft.lock().expect("question draft lock") = text.clone();
             Ok(text)
         }
@@ -156,9 +158,14 @@ pub(super) async fn recognize_live_session(
 async fn recognize_snapshot(
     upload: &mut super::segmented_upload::SegmentedUploadSession,
     samples: SharedAudio,
+    preview: bool,
 ) -> Result<String, String> {
     upload.send(samples).await?;
-    let expected_id = upload.commit().await?;
+    let expected_id = if preview {
+        upload.commit_preview().await?
+    } else {
+        upload.commit().await?
+    };
     let mut events = Vec::new();
     loop {
         let event = upload
@@ -171,7 +178,7 @@ async fn recognize_snapshot(
         }
         events.push(event);
         if complete {
-            return merge_finals(events);
+            return merge_finals_with_empty(events, preview);
         }
     }
 }
@@ -218,6 +225,10 @@ pub(super) async fn recognize_session(
 }
 
 fn merge_finals(events: Vec<CloudEvent>) -> Result<String, String> {
+    merge_finals_with_empty(events, false)
+}
+
+fn merge_finals_with_empty(events: Vec<CloudEvent>, allow_empty: bool) -> Result<String, String> {
     let mut utterances: Vec<(String, Option<String>)> = Vec::new();
     for event in events {
         let (id, text) = match event {
@@ -251,7 +262,7 @@ fn merge_finals(events: Vec<CloudEvent>) -> Result<String, String> {
         .filter_map(|(_, text)| text.filter(|text| !text.is_empty()))
         .collect::<Vec<_>>()
         .join(" ");
-    if text.is_empty() {
+    if text.is_empty() && !allow_empty {
         return Err("Question recognition returned no final source text".into());
     }
     Ok(text)
@@ -332,6 +343,34 @@ mod tests {
         ])
         .unwrap_err()
         .contains("broken"));
+    }
+
+    #[test]
+    fn preview_allows_only_empty_completed_source_text() {
+        assert_eq!(
+            merge_finals_with_empty(vec![final_event("one", " ")], true).unwrap(),
+            ""
+        );
+        assert!(merge_finals_with_empty(
+            vec![CloudEvent::Partial {
+                utterance_id: "one".into(),
+                text: String::new(),
+                language: None,
+            }],
+            true,
+        )
+        .is_err());
+        assert!(merge_finals_with_empty(
+            vec![CloudEvent::Failed {
+                utterance_id: None,
+                reset_session: false,
+                code: "fatal".into(),
+                detail: "Transcription response did not contain text: malformed response".into(),
+            }],
+            true,
+        )
+        .unwrap_err()
+        .contains("malformed response"));
     }
 
     #[test]

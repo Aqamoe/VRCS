@@ -82,6 +82,7 @@ function profile(id: string, provider: string, enabled: ApiProfileView["enabled_
       supports_translation: enabled.includes("text_translation"),
       supports_asr: enabled.includes("speech_to_text"),
       supports_text_generation: enabled.includes("text_generation"),
+      supports_image_understanding: enabled.includes("image_understanding"),
       supports_custom_translation_language: false,
       supported_languages: [],
     },
@@ -100,7 +101,7 @@ const definitions: ProviderDefinition[] = [
       { id: "alpha-batch", display_name: "Alpha Batch", capabilities: ["speech_to_text"], adapter: "alpha", recognition_transport: "segmented_upload", partial_results: false, models: ["alpha-2"], model_listing: false, supports_context: false },
     ],
     support_levels: { asr: "native", translation: null },
-    capabilities: { supports_streaming: true, supports_model_listing: false, requires_api_key: true, is_local: false, supports_context: true, supports_translation: false, supports_asr: true, supports_text_generation: false, supports_custom_translation_language: false, supported_languages: [] },
+    capabilities: { supports_streaming: true, supports_model_listing: false, requires_api_key: true, is_local: false, supports_context: true, supports_translation: false, supports_asr: true, supports_text_generation: false, supports_image_understanding: false, supports_custom_translation_language: false, supported_languages: [] },
   },
 ];
 

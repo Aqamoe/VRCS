@@ -45,6 +45,7 @@ export interface ProviderCapabilities {
   supports_translation: boolean;
   supports_asr: boolean;
   supports_text_generation: boolean;
+  supports_image_understanding: boolean;
   supports_custom_translation_language: boolean;
   supported_languages: string[];
 }

@@ -51,6 +51,7 @@ export function profileEnabledCapabilities(profile: ApiProfileView): ApiCapabili
   if (profile.capabilities.supports_text_generation) capabilities.push("text_generation");
   if (profile.capabilities.supports_translation) capabilities.push("text_translation");
   if (profile.capabilities.supports_asr) capabilities.push("speech_to_text");
+  if (profile.capabilities.supports_image_understanding) capabilities.push("image_understanding");
   return capabilities;
 }
 
@@ -61,6 +62,7 @@ export function profileSupportsCapability(
   if (profileEnabledCapabilities(profile).includes(capability)) return true;
   if (capability === "speech_to_text") return profile.capabilities.supports_asr;
   if (capability === "text_translation") return profile.capabilities.supports_translation;
+  if (capability === "image_understanding") return profile.capabilities.supports_image_understanding;
   return profile.capabilities.supports_text_generation;
 }
 

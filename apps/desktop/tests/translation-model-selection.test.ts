@@ -34,6 +34,7 @@ function profile(provider: string, supportsModelListing = true): ApiProfileView 
       supports_translation: true,
       supports_asr: false,
       supports_text_generation: true,
+      supports_image_understanding: false,
       supports_custom_translation_language: true,
       supported_languages: [],
     },

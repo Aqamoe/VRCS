@@ -5,7 +5,7 @@ import { DEFAULT_OCR_SETTINGS, DEFAULT_OCR_WRIST_SETTINGS } from "../src/setting
 import { DEFAULT_FEATURE_SETTINGS } from "../src/settings/feature-availability.ts";
 import { applyVrDashboardAction } from "../src/vr-dashboard/settings-actions.ts";
 import type { Settings } from "../src/settings/types.ts";
-import type { ApiProfile, ApiProfileView } from "../src/providers/types.ts";
+import type { ApiCapability, ApiProfile, ApiProfileView } from "../src/providers/types.ts";
 
 const settings = {
   schema_version: 31,
@@ -14,8 +14,8 @@ const settings = {
   vision: { ...DEFAULT_VISION_SETTINGS },
 } as unknown as Settings;
 
-function profile(provider: string, capability: string = "image_understanding"): ApiProfile {
-  return { id: "images", name: "Images", provider, enabled_capabilities: [capability] } as ApiProfile;
+function profile(provider: string, capability: ApiCapability = "image_understanding"): ApiProfile {
+  return { id: "images", name: "Images", provider, enabled_capabilities: [capability] };
 }
 
 test("vision defaults are explicit, flat and opt-in", () => {
@@ -38,14 +38,24 @@ test("vision defaults are explicit, flat and opt-in", () => {
   }
 });
 
-test("vision profiles need explicit image capability and an allowed protocol", () => {
-  for (const provider of ["openai_compatible", "openrouter", "lm_studio", "ollama"]) {
-    assert.equal(supportsVision(profile(provider)), true);
-    assert.equal(supportsVision(profile(provider, "text_generation")), false);
-    assert.equal(supportsVision(profile(provider, "text_translation")), false);
+test("vision profiles with explicit image capability are selectable across supported providers", () => {
+  for (const provider of [
+    "deepseek", "groq", "alibaba_cloud", "openai", "gemini",
+    "openai_compatible", "openrouter", "lm_studio", "ollama",
+  ]) {
+    assert.equal(supportsVision(profile(provider)), true, provider);
+    assert.equal(supportsVision(profile(provider, "text_generation")), false, provider);
+    assert.equal(supportsVision(profile(provider, "text_translation")), false, provider);
+    assert.equal(supportsVision(profile(provider, "speech_to_text")), false, provider);
+    assert.equal(supportsVision({ ...profile(provider), enabled_capabilities: [] }), false, provider);
   }
-  assert.equal(supportsVision(profile("openai")), false);
-  assert.equal(supportsVision(profile("gemini")), false);
+});
+
+test("vision selection uses image capability rather than a provider whitelist", () => {
+  assert.equal(supportsVision(profile("future_provider")), true);
+  for (const provider of ["qwen_ai", "alibaba_token_plan"]) {
+    assert.equal(supportsVision(profile(provider, "text_generation")), false, provider);
+  }
 });
 
 test("vision edits preserve OCR and profile changes do not reuse an unverified model", () => {

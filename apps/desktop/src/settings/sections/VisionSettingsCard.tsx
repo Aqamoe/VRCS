@@ -26,11 +26,16 @@ export function VisionSettingsCard({ config, profiles, vrAvailable, disabled, on
   const [testError, setTestError] = useState("");
   const testController = useRef<AbortController | null>(null);
   useEffect(() => {
-    testController.current?.abort();
+    const cancelTest = () => {
+      const controller = testController.current;
+      testController.current = null;
+      controller?.abort();
+    };
+    cancelTest();
     setTesting(false);
     setTestResult("");
     setTestError("");
-    return () => testController.current?.abort();
+    return cancelTest;
   }, [config.profile_id, config.model]);
   const testImage = async () => {
     if (testController.current) return;
@@ -44,9 +49,9 @@ export function VisionSettingsCard({ config, profiles, vrAvailable, disabled, on
         method: "POST", signal: controller.signal,
         timeoutMs: config.request_timeout_seconds * 1000 + 2000,
       });
-      if (!controller.signal.aborted) setTestResult(result.answer);
+      if (testController.current === controller && !controller.signal.aborted) setTestResult(result.answer);
     } catch (error) {
-      if (!controller.signal.aborted) setTestError(error instanceof Error ? error.message : t("settings.vision.testFailed"));
+      if (testController.current === controller && !controller.signal.aborted) setTestError(error instanceof Error ? error.message : t("settings.vision.testFailed"));
     } finally {
       if (testController.current === controller) {
         testController.current = null;

@@ -80,6 +80,11 @@ impl VrchatMuteSync {
     pub fn status(&self) -> VrchatMuteStatus {
         self.status.lock().expect("VRChat mute status lock").clone()
     }
+
+    #[cfg(test)]
+    pub(crate) fn set_muted_for_test(&self, muted: bool) {
+        set_status(&self.state, &self.status, connected(muted));
+    }
 }
 
 async fn run(

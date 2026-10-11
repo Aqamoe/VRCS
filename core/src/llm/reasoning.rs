@@ -54,7 +54,7 @@ pub(super) fn should_filter_inline_reasoning(
     behavior == OpenAiProtocolBehavior::Groq
         && matches!(
             normalized_model(model),
-            "qwen/qwen3.6-27b" | "minimaxai/minimax-m2.7"
+            "qwen/qwen3.6-27b" | "qwen/qwen3.8-27b" | "minimaxai/minimax-m2.7"
         )
 }
 
@@ -81,6 +81,10 @@ fn apply_groq_reasoning(body: &mut Value, model: &str, enabled: bool) {
             body["reasoning_format"] = json!("hidden");
             body["reasoning_effort"] = json!(if enabled { "default" } else { "none" });
         }
+        "qwen/qwen3.8-27b" => {
+            body["reasoning_format"] = json!("hidden");
+            body["reasoning_effort"] = json!(if enabled { "medium" } else { "none" });
+        }
         "minimaxai/minimax-m2.7" => {
             body["reasoning_format"] = json!("hidden");
         }
@@ -90,7 +94,7 @@ fn apply_groq_reasoning(body: &mut Value, model: &str, enabled: bool) {
 
 fn groq_thinking_control(model: &str) -> ThinkingControl {
     match normalized_model(model) {
-        "qwen/qwen3.6-27b" => ThinkingControl::DisableSupported,
+        "qwen/qwen3.6-27b" | "qwen/qwen3.8-27b" => ThinkingControl::DisableSupported,
         "openai/gpt-oss-20b"
         | "openai/gpt-oss-120b"
         | "openai/gpt-oss-safeguard-20b"

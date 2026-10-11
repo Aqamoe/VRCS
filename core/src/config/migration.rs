@@ -460,7 +460,8 @@ fn normalize_profile_capabilities(
             *capability,
             CAPABILITY_TEXT_GENERATION | CAPABILITY_TEXT_TRANSLATION
         ),
-        Some("shared") | None => true,
+        // Legacy purposes predate image input; keep it opt-in.
+        Some("shared") | None => *capability != providers::CAPABILITY_IMAGE_UNDERSTANDING,
         Some(_) => false,
     };
     let capabilities = supported

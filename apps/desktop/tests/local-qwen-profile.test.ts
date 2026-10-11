@@ -36,6 +36,7 @@ test("local Qwen ASR profile starts with a longer transcription timeout and no k
       supports_translation: false,
       supports_asr: true,
       supports_text_generation: false,
+      supports_image_understanding: false,
       supports_custom_translation_language: false,
       supported_languages: [],
     },
