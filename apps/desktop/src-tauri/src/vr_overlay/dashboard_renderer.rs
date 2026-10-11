@@ -302,42 +302,54 @@ fn render_display(
         state.control_enabled(DashboardControl::WristPosition),
     )?;
 
-    if !view.ocr_available {
+    if !view.ocr_available && !view.vision_available {
         return Ok(());
     }
     canvas.card(Rect::new(48, 724, 1392, 852));
-    canvas.heading(&view.labels.ocr, Rect::new(78, 738, 320, 790), 24)?;
-    canvas.text(
-        &view.ocr.backend,
-        Rect::new(78, 788, 320, 830),
-        18,
-        TEXT_SECONDARY,
-        Align::Left,
-    )?;
-    canvas.toggle(
-        Rect::new(340, 760, 418, 808),
-        view.ocr.enabled,
-        visual(state, DashboardControl::OcrEnabled),
-    );
-    canvas.text(
-        &view.labels.gesture,
-        Rect::new(486, 752, 728, 816),
-        22,
-        TEXT,
-        Align::Left,
-    )?;
-    canvas.toggle(
-        Rect::new(740, 760, 818, 808),
-        view.ocr.gesture,
-        visual(state, DashboardControl::OcrGesture),
-    );
+    if view.ocr_available {
+        canvas.heading(&view.labels.ocr, Rect::new(78, 738, 320, 790), 24)?;
+        canvas.text(
+            &view.ocr.backend,
+            Rect::new(78, 788, 320, 830),
+            18,
+            TEXT_SECONDARY,
+            Align::Left,
+        )?;
+        canvas.toggle(
+            Rect::new(340, 760, 418, 808),
+            view.ocr.enabled,
+            visual(state, DashboardControl::OcrEnabled),
+        );
+        canvas.text(
+            &view.labels.gesture,
+            Rect::new(486, 752, 728, 816),
+            22,
+            TEXT,
+            Align::Left,
+        )?;
+        canvas.toggle(
+            Rect::new(740, 760, 818, 808),
+            view.ocr.gesture,
+            visual(state, DashboardControl::OcrGesture),
+        );
+        canvas.divider(Rect::new(466, 750, 467, 826));
+    }
+    if view.vision_available {
+        canvas.heading(&view.labels.vision, Rect::new(844, 738, 1024, 782), 18)?;
+        canvas.toggle(
+            Rect::new(890, 788, 968, 830),
+            view.vision.enabled,
+            visual(state, DashboardControl::VisionEnabled),
+        );
+    }
     canvas.button(
         Rect::new(1040, 752, 1362, 824),
         &view.labels.bindings,
         visual(state, DashboardControl::OcrBindings),
     )?;
-    canvas.divider(Rect::new(466, 750, 467, 826));
-    canvas.divider(Rect::new(938, 750, 939, 826));
+    if !view.vision_available {
+        canvas.divider(Rect::new(938, 750, 939, 826));
+    }
 
     Ok(())
 }
@@ -1876,6 +1888,8 @@ mod tests {
     fn view(error: Option<String>) -> DashboardViewModel {
         DashboardViewModel {
             ocr_available: true,
+            vision_available: false,
+            vision: super::super::dashboard::DashboardVision::default(),
             osc_available: true,
             labels: DashboardLabels {
                 title: "VRCS".into(),

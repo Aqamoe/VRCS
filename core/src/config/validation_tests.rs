@@ -2,6 +2,69 @@ use super::validation::validate_glossary;
 use super::*;
 
 #[test]
+fn vision_defaults_and_limits_are_validated_even_when_disabled() {
+    let mut config = AppConfig::default();
+    assert!(config.validate_settings().is_ok());
+    config.vision.image_max_bytes = 0;
+    assert!(config
+        .validate_settings()
+        .unwrap_err()
+        .contains("vision.image_max_bytes"));
+    config.vision = super::ocr::VisionConfig::default();
+    config.vision.display_seconds = f32::NAN;
+    assert!(config.validate_settings().is_err());
+    config.vision = super::ocr::VisionConfig::default();
+    config.vision.wrist.as_mut().unwrap().offset_x_m = 0.6;
+    assert!(config
+        .validate_settings()
+        .unwrap_err()
+        .contains("vision.wrist"));
+    config.vision = super::ocr::VisionConfig::default();
+    config.vision.enabled = true;
+    assert!(config
+        .validate_settings()
+        .unwrap_err()
+        .contains("Enabled vision"));
+}
+
+#[test]
+fn vision_requires_image_capability_but_does_not_infer_it_from_model_names() {
+    let mut config = AppConfig::default();
+    config.asr.api_profiles.push(ApiProfile {
+        id: "images".into(),
+        name: "Images".into(),
+        provider: "openai_compatible".into(),
+        base_url: Some("https://example.com/v1".into()),
+        enabled_capabilities: vec!["image_understanding".into()],
+        ..ApiProfile::default()
+    });
+    config.vision.profile_id = Some("images".into());
+    config.vision.model = "user-selected-model".into();
+    config.vision.enabled = true;
+    assert!(config.validate_settings().is_ok());
+    config.asr.api_profiles[0].enabled_capabilities = vec!["text_generation".into()];
+    config.vision.model = "vision-in-the-name".into();
+    assert!(config
+        .validate_settings()
+        .unwrap_err()
+        .contains("image_understanding"));
+}
+
+#[test]
+fn vision_rejects_unknown_fields_and_missing_profiles() {
+    assert!(serde_json::from_value::<super::ocr::VisionConfig>(
+        serde_json::json!({"unknown": true})
+    )
+    .is_err());
+    let mut config = AppConfig::default();
+    config.vision.profile_id = Some("missing".into());
+    assert!(config
+        .validate_settings()
+        .unwrap_err()
+        .contains("vision.profile_id"));
+}
+
+#[test]
 fn managed_qwen_gpu_device_is_accepted_and_persisted() {
     let mut config = AppConfig::default();
     config.asr.backend = QWEN_MANAGED_BACKEND.into();

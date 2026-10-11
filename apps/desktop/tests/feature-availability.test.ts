@@ -5,7 +5,7 @@ import { DEFAULT_FEATURE_SETTINGS, resolveSettingsCategory, visibleSettingsCateg
 
 test("all modules retain the existing settings categories by default", () => {
   assert.deepEqual(visibleSettingsCategories(DEFAULT_FEATURE_SETTINGS), [
-    "system", "audio", "recognition", "translation", "glossary", "api", "learning", "connections", "ocr", "vr_overlay", "debug",
+    "system", "audio", "recognition", "translation", "glossary", "api", "learning", "connections", "vision", "vr_overlay", "debug",
   ]);
 });
 
@@ -14,6 +14,15 @@ test("disabled modules disappear while core settings remain available", () => {
   assert.deepEqual(visibleSettingsCategories(features), ["system", "audio", "recognition", "translation", "api", "debug"]);
   assert.equal(resolveSettingsCategory("ocr", features), "system");
   assert.equal(resolveSettingsCategory("translation", features), "translation");
+});
+
+test("vision is independently visible and legacy OCR requests resolve to vision", () => {
+  const features = { ...DEFAULT_FEATURE_SETTINGS, ocr: false, visual_question_answering: true, vr_overlay: false };
+  assert.equal(visibleSettingsCategories(features).includes("vision"), true);
+  assert.equal(resolveSettingsCategory("ocr", features), "vision");
+  assert.equal(resolveSettingsCategory("vision", features), "vision");
+  assert.equal(DEFAULT_FEATURE_SETTINGS.visual_question_answering, false);
+  assert.equal(resolveSettingsCategory("ocr", DEFAULT_FEATURE_SETTINGS), "vision");
 });
 
 test("connections remain visible when any integration is available", () => {
@@ -26,6 +35,6 @@ test("connections remain visible when any integration is available", () => {
 
 test("desktop OCR settings remain available when VR is disabled", () => {
   const features = { ...DEFAULT_FEATURE_SETTINGS, vr_overlay: false };
-  assert.equal(visibleSettingsCategories(features).includes("ocr"), true);
+  assert.equal(visibleSettingsCategories(features).includes("vision"), true);
   assert.equal(resolveSettingsCategory("vr_overlay", features), "system");
 });

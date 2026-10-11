@@ -75,6 +75,7 @@ enum StreamingInput {
     Audio(SharedAudio),
     AudioActivity(SharedAudio, bool),
     Commit(oneshot::Sender<Result<(), String>>),
+    FinishQuestion(oneshot::Sender<Result<(), String>>),
 }
 
 pub struct StreamingSession {
@@ -124,6 +125,61 @@ impl StreamingSession {
 
     pub async fn recv(&mut self) -> Option<CloudEvent> {
         self.events.recv().await
+    }
+
+    pub(crate) fn cancel(&self) {
+        let _ = self.stop.send(true);
+        self.task.abort();
+    }
+
+    pub(crate) async fn transcribe_question_audio(
+        &mut self,
+        samples: SharedAudio,
+    ) -> Result<Vec<CloudEvent>, String> {
+        let audio = self.audio.clone();
+        let sending = async move {
+            audio
+                .send(StreamingInput::Audio(samples))
+                .await
+                .map_err(|_| "Question recognition session is closed".to_string())?;
+            // The FIFO commit acknowledgement is a barrier for all queued PCM.
+            let (tx, rx) = oneshot::channel();
+            audio
+                .send(StreamingInput::Commit(tx))
+                .await
+                .map_err(|_| "Question recognition session is closed".to_string())?;
+            rx.await
+                .map_err(|_| "Question audio commit was cancelled".to_string())??;
+            let (tx, rx) = oneshot::channel();
+            audio
+                .send(StreamingInput::FinishQuestion(tx))
+                .await
+                .map_err(|_| "Question recognition session is closed".to_string())?;
+            rx.await
+                .map_err(|_| "Question recognition finish was cancelled".to_string())?
+        };
+        tokio::pin!(sending);
+        let mut collected = Vec::new();
+        loop {
+            tokio::select! {
+                result = &mut sending => {
+                    result?;
+                    while let Ok(event) = self.events.try_recv() {
+                        collected.push(event);
+                    }
+                    return Ok(collected);
+                }
+                event = self.events.recv() => match event {
+                    Some(CloudEvent::Failed { code, detail, .. }) => return Err(format!("{code}: {detail}")),
+                    Some(event) => collected.push(event),
+                    None => {
+                        // The finish acknowledgement can become ready with channel closure.
+                        sending.await?;
+                        return Ok(collected);
+                    }
+                }
+            }
+        }
     }
 
     pub async fn stop(self) {
@@ -381,6 +437,9 @@ async fn run_with_reconnect(
             }
             other => other,
         };
+        if matches!(&outcome, Ok(SessionEnd::QuestionFinished)) {
+            break;
+        }
         if *stop.borrow() || audio.is_closed() {
             if let Err(detail) = outcome {
                 let _ = events
@@ -440,6 +499,7 @@ async fn run_with_reconnect(
 
 enum SessionEnd {
     Closed,
+    QuestionFinished,
     Idle(idle::ResumeBuffer),
 }
 
@@ -550,6 +610,7 @@ async fn run_session_inner(
                                 }
                             }
                             StreamingInput::Commit(result) => { let _ = result.send(Ok(())); }
+                            StreamingInput::FinishQuestion(result) => { let _ = result.send(Err("Question session was stopped".into())); }
                         }
                     }
                 }
@@ -589,6 +650,11 @@ async fn run_session_inner(
                             tracing::info!("Live translation suspended after 30 seconds without speech");
                             return Ok(SessionEnd::Idle(resume));
                         }
+                    }
+                    Some(StreamingInput::FinishQuestion(result)) => {
+                        let outcome = finish_question(provider, socket, config, task_id, normalization, events).await;
+                        let _ = result.send(outcome);
+                        return Ok(SessionEnd::QuestionFinished);
                     }
                     Some(StreamingInput::Commit(result)) => {
                         let commit = async {
@@ -777,6 +843,44 @@ async fn commit_utterance(provider: Provider, socket: &mut Socket) -> Result<(),
         .send(message)
         .await
         .map_err(|error| format!("Failed to commit cloud recognition audio: {error}"))
+}
+
+async fn finish_question(
+    provider: Provider,
+    socket: &mut Socket,
+    config: &AsrConfig,
+    task_id: Option<&str>,
+    state: &mut NormalizationState,
+    events: &mpsc::Sender<CloudEvent>,
+) -> Result<(), String> {
+    if !matches!(provider, Provider::Qwen | Provider::FunAsr) {
+        return Err("Unsupported question recognition completion protocol".into());
+    }
+    let message = provider
+        .finish_message(task_id)
+        .ok_or_else(|| "Question recognition has no finish message".to_string())?;
+    socket
+        .send(message)
+        .await
+        .map_err(|error| format!("Failed to finish question recognition: {error}"))?;
+    // Only the protocol completion event proves that the server drained the PCM.
+    // The caller owns the timeout; cancellation aborts this session's worker.
+    loop {
+        let value = receive_event(socket).await?;
+        let finished = provider.is_finished(&value);
+        if let Some(event) = provider.normalize_event(config, &value, state)? {
+            if let CloudEvent::Failed { code, detail, .. } = &event {
+                return Err(format!("{code}: {detail}"));
+            }
+            events
+                .send(event)
+                .await
+                .map_err(|_| "Question result receiver is closed".to_string())?;
+        }
+        if finished {
+            return Ok(());
+        }
+    }
 }
 
 async fn finish(
@@ -1061,6 +1165,166 @@ mod tests {
         assert_eq!(originals[0].transcript.text, "Original tail");
         assert_eq!(translated.len(), 1);
         assert_eq!(translated[0].transcript.translation, "译文尾部");
+    }
+
+    async fn mock_question_session(
+        provider: Provider,
+    ) -> (StreamingSession, WebSocketStream<TcpStream>) {
+        let (mut socket, server) = socket_pair().await;
+        let (audio, mut audio_rx) = mpsc::channel(32);
+        let (events_tx, events) = mpsc::channel(32);
+        let (stop, mut stop_rx) = watch::channel(false);
+        let task = tokio::spawn(async move {
+            let result = run_session(
+                provider,
+                &AsrConfig::default(),
+                &mut socket,
+                Some("question-task"),
+                &mut audio_rx,
+                &events_tx,
+                &mut stop_rx,
+            )
+            .await;
+            assert!(matches!(result, Ok(SessionEnd::QuestionFinished)));
+        });
+        (
+            StreamingSession {
+                audio,
+                events,
+                stop,
+                task,
+                segmentation_mode: provider.segmentation_mode(),
+            },
+            server,
+        )
+    }
+
+    #[tokio::test]
+    async fn question_realtime_flushes_pcm_and_waits_for_explicit_completion() {
+        for provider in [Provider::Qwen, Provider::FunAsr] {
+            let (session, mut server) = mock_question_session(provider).await;
+            let server_task = tokio::spawn(async move {
+                let mut bytes = 0;
+                let mut committed = false;
+                loop {
+                    let message = server.next().await.unwrap().unwrap();
+                    if let Message::Binary(data) = &message {
+                        bytes += data.len();
+                        continue;
+                    }
+                    let value: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+                    match value["type"].as_str() {
+                        Some("input_audio_buffer.append") => {
+                            bytes += base64::Engine::decode(
+                                &base64::engine::general_purpose::STANDARD,
+                                value["audio"].as_str().unwrap(),
+                            )
+                            .unwrap()
+                            .len();
+                        }
+                        Some("input_audio_buffer.commit") => {
+                            assert_eq!(bytes, 3207 * 2);
+                            committed = true;
+                        }
+                        Some("session.finish") => {
+                            assert!(committed);
+                            break;
+                        }
+                        _ if value["header"]["action"] == "finish-task" => {
+                            assert_eq!(bytes, 3207 * 2);
+                            break;
+                        }
+                        _ => panic!("Unexpected question frame: {value}"),
+                    }
+                }
+                // More than the event queue capacity also checks concurrent draining.
+                for index in 0..40 {
+                    let event = if provider == Provider::Qwen {
+                        serde_json::json!({"type":"conversation.item.input_audio_transcription.completed", "item_id":format!("id-{index}"), "transcript":format!("word-{index}")})
+                    } else {
+                        serde_json::json!({"header":{"event":"result-generated"}, "payload":{"output":{"sentence":{"sentence_id":index,"sentence_end":true,"text":format!("word-{index}")}}}})
+                    };
+                    server.send(json_frame(event, false)).await.unwrap();
+                }
+                let completed = if provider == Provider::Qwen {
+                    serde_json::json!({"type":"session.finished"})
+                } else {
+                    serde_json::json!({"header":{"event":"task-finished"}})
+                };
+                server.send(json_frame(completed, false)).await.unwrap();
+            });
+            let text = tokio::time::timeout(
+                Duration::from_secs(2),
+                super::super::question::recognize_session(
+                    super::super::CloudRecognitionSession::Realtime(session),
+                    super::super::share_audio(vec![0.1; 3207]),
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(
+                text,
+                (0..40)
+                    .map(|index| format!("word-{index}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+            server_task.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn question_disconnect_after_final_is_not_success() {
+        let (session, mut server) = mock_question_session(Provider::Qwen).await;
+        let server_task = tokio::spawn(async move {
+            while let Some(Ok(message)) = server.next().await {
+                let value: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+                if value["type"] == "session.finish" {
+                    server
+                        .send(json_frame(
+                            serde_json::json!({
+                                "type":"conversation.item.input_audio_transcription.completed",
+                                "item_id":"one", "transcript":"not sufficient"
+                            }),
+                            false,
+                        ))
+                        .await
+                        .unwrap();
+                    server.close(None).await.unwrap();
+                    break;
+                }
+            }
+        });
+        let result = super::super::question::recognize_session(
+            super::super::CloudRecognitionSession::Realtime(session),
+            super::super::share_audio(vec![0.1; 320]),
+        )
+        .await;
+        assert!(result.is_err());
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn question_timeout_aborts_the_realtime_worker() {
+        let (session, _server) = mock_question_session(Provider::Qwen).await;
+        let worker = session.task.abort_handle();
+        let result = tokio::time::timeout(
+            Duration::from_millis(25),
+            super::super::question::recognize_session(
+                super::super::CloudRecognitionSession::Realtime(session),
+                super::super::share_audio(vec![0.1; 320]),
+            ),
+        )
+        .await;
+        assert!(result.is_err());
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !worker.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
     }
 
     async fn socket_pair() -> (Socket, WebSocketStream<TcpStream>) {

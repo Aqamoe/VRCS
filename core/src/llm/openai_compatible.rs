@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use base64::{engine::general_purpose::STANDARD, Engine};
 use futures_util::StreamExt;
 use reqwest::header;
 use serde_json::{json, Value};
@@ -31,6 +32,36 @@ pub(super) async fn generate(
         behavior,
         Some(profile),
         on_progress,
+        None,
+    )
+    .await
+}
+
+pub(super) async fn generate_with_image(
+    http: &reqwest::Client,
+    profile: &ApiProfile,
+    api_key: &str,
+    request: LlmRequest<'_>,
+    image: &[u8],
+    provider_name: &str,
+) -> Result<String, LlmError> {
+    if image.is_empty() {
+        return Err(LlmError {
+            code: "llm.request_failed",
+            detail: "Image input must not be empty".into(),
+            retryable: false,
+        });
+    }
+    generate_chat_completion(
+        http,
+        chat_completions_url(profile)?,
+        api_key,
+        request,
+        provider_name,
+        OpenAiProtocolBehavior::Standard,
+        Some(profile),
+        None,
+        Some(image),
     )
     .await
 }
@@ -53,6 +84,7 @@ pub(super) async fn generate_standard(
         behavior,
         None,
         on_progress,
+        None,
     )
     .await
 }
@@ -132,8 +164,18 @@ async fn generate_chat_completion(
     behavior: OpenAiProtocolBehavior,
     profile: Option<&ApiProfile>,
     on_progress: Option<&LlmProgress>,
+    image: Option<&[u8]>,
 ) -> Result<String, LlmError> {
-    let body = chat_completion_body(&request, behavior, on_progress.is_some());
+    let mut body = chat_completion_body(&request, behavior, on_progress.is_some());
+    if let Some(image) = image {
+        body["messages"][1]["content"] = json!([
+            { "type": "text", "text": request.input },
+            {
+                "type": "image_url",
+                "image_url": { "url": format!("data:image/png;base64,{}", STANDARD.encode(image)) }
+            }
+        ]);
+    }
     let builder = http.post(endpoint).json(&body);
     let builder = if let Some(profile) = profile {
         apply_profile_request(builder, profile, api_key)?

@@ -7,6 +7,7 @@ import type { ApiProfileView } from "../providers/types";
 import { liveTranslationServiceName } from "../recognition-services";
 import { localizedLanguageName } from "../translation-languages";
 import { supportsTranslation } from "../api-profile-purpose";
+import { supportsVision } from "../settings/vision-settings";
 import { VR_OVERLAY_POSITION_RANGES, type VrOverlayDisplayKind, type VrOverlayPositionField } from "../settings/vr-overlay-settings";
 import {
   getVrOverlayStatus,
@@ -64,7 +65,7 @@ export function useVrDashboardBridge(
     const handleAction = async (action: VrDashboardAction) => {
       const current = settingsRef.current;
       if (!current?.features.vr_overlay) return;
-      if (action === "open_ocr_bindings" && !current.features.ocr) return;
+      if (action === "open_ocr_bindings" && !current.features.ocr && !current.features.visual_question_answering) return;
       if (action === "preview_headset" || action === "preview_wrist") {
         const kind = action === "preview_headset" ? "headset" : "wrist";
         const visible = statusRef.current?.[kind].sample_visible ?? false;
@@ -141,6 +142,7 @@ export function useVrDashboardBridge(
         headset: t("settings.vrDashboard.headset"),
         wrist: t("settings.vrDashboard.wrist"),
         ocr: t("settings.vrDashboard.ocr"),
+        vision: t("settings.vision.title"),
         content: t("settings.vrOverlay.translationDisplay"),
         hand: t("settings.vrDashboard.hand"),
         width: t("settings.vrDashboard.width"),
@@ -176,6 +178,7 @@ export function useVrDashboardBridge(
       },
       enabled: overlay.enabled,
       ocr_available: settings.features.ocr,
+      vision_available: settings.features.visual_question_answering,
       osc_available: settings.features.osc_chatbox,
       headset: {
         enabled: overlay.headset.enabled,
@@ -200,6 +203,12 @@ export function useVrDashboardBridge(
         enabled: settings.ocr.enabled,
         backend: t(`settings.vrOcr.backends.${settings.ocr.backend}`),
         gesture: settings.ocr.hand_gesture_enabled,
+      },
+      vision: {
+        enabled: settings.vision.enabled,
+        configured: Boolean(settings.vision.model.trim() && profiles.some((profile) =>
+          profile.id === settings.vision.profile_id && supportsVision(profile))),
+        model: settings.vision.model,
       },
       language: {
         recognition: {

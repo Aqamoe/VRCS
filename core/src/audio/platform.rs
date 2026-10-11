@@ -45,6 +45,7 @@ pub(crate) fn capture_main(
     _stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     _tx: tokio::sync::mpsc::Sender<Vec<f32>>,
     ready: std::sync::mpsc::Sender<Result<AudioDevice, AudioError>>,
+    _microphone_tap: Option<crate::vision::MicrophoneTap>,
 ) {
     let _ = ready.send(Err(AudioError::with_code(
         "audio.unsupported_platform",

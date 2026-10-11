@@ -10,6 +10,7 @@ export type SettingsCategory =
   | "learning"
   | "connections"
   | "ocr"
+  | "vision"
   | "vr_overlay"
   | "debug";
 

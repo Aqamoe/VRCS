@@ -64,6 +64,13 @@ impl CloudRecognitionSession {
         }
     }
 
+    pub(crate) fn cancel(&self) {
+        match self {
+            Self::Realtime(session) => session.cancel(),
+            Self::Segmented(session) => session.cancel(),
+        }
+    }
+
     pub async fn stop(self) {
         match self {
             Self::Realtime(session) => session.stop().await,

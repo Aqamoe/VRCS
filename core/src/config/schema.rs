@@ -6,7 +6,7 @@ use super::{
     VadConfig, VrOcrConfig, VrOverlayConfig, VrcxConfig,
 };
 
-pub const SCHEMA_VERSION: u32 = 30;
+pub const SCHEMA_VERSION: u32 = 31;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -44,6 +44,8 @@ pub struct AppConfig {
     pub vr_overlay: VrOverlayConfig,
     #[serde(default)]
     pub ocr: VrOcrConfig,
+    #[serde(default)]
+    pub vision: super::ocr::VisionConfig,
 }
 
 fn schema_version() -> u32 {
@@ -69,6 +71,7 @@ impl Default for AppConfig {
             external_api: ExternalApiConfig::default(),
             vrcx: VrcxConfig::default(),
             vr_overlay: VrOverlayConfig::default(),
+            vision: super::ocr::VisionConfig::default(),
             ocr: VrOcrConfig {
                 wrist: Some(super::VrOcrWristConfig::default()),
                 ..Default::default()
@@ -103,6 +106,7 @@ mod tests {
                 "storage",
                 "translation",
                 "vad",
+                "vision",
                 "vr_overlay",
                 "vrcx",
             ],
@@ -271,6 +275,27 @@ mod tests {
                 "port",
             ],
         );
+        assert_keys(
+            &value["vision"],
+            [
+                "answer_language",
+                "asr_finalize_timeout_ms",
+                "display_seconds",
+                "enabled",
+                "image_max_bytes",
+                "image_max_edge",
+                "max_capture_seconds",
+                "max_output_tokens",
+                "model",
+                "profile_id",
+                "request_timeout_seconds",
+                "system_prompt",
+                "wrist",
+            ],
+        );
+        assert_eq!(value["vision"]["answer_language"], "zh-Hans");
+        assert_eq!(value["vision"]["image_max_bytes"], 4_194_304);
+        assert_eq!(value["vision"]["wrist"], value["ocr"]["wrist"]);
         assert_eq!(value["schema_version"], SCHEMA_VERSION);
 
         let round_trip: AppConfig = serde_json::from_value(value).unwrap();

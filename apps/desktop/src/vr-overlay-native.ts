@@ -32,6 +32,7 @@ export interface VrDashboardViewModel {
     headset: string;
     wrist: string;
     ocr: string;
+    vision: string;
     content: string;
     hand: string;
     width: string;
@@ -67,10 +68,12 @@ export interface VrDashboardViewModel {
   };
   enabled: boolean;
   ocr_available: boolean;
+  vision_available: boolean;
   osc_available: boolean;
   headset: { enabled: boolean; content: string; width: string; opacity: string; position: VrDashboardNumberField[] };
   wrist: { enabled: boolean; hand: string; content: string; width: string; opacity: string; position: VrDashboardNumberField[] };
   ocr: { enabled: boolean; backend: string; gesture: boolean };
+  vision: { enabled: boolean; configured: boolean; model: string };
   language: {
     recognition: VrDashboardChoice; mode: VrDashboardChoice;
     speaker_targets: VrDashboardChoice[]; microphone_targets: VrDashboardChoice[];

@@ -8,8 +8,9 @@ use crate::asr;
 use crate::config::ApiProfile;
 use crate::providers::{
     self, ProviderServiceDefinition, ServiceAdapter, ALIBABA_PROVIDER, ALIBABA_TOKEN_PLAN_PROVIDER,
-    CAPABILITY_SPEECH_TO_TEXT, CAPABILITY_TEXT_GENERATION, CAPABILITY_TEXT_TRANSLATION,
-    DEEPSEEK_PROVIDER, GEMINI_PROVIDER, GROQ_PROVIDER, OPENAI_PROVIDER, OPENROUTER_PROVIDER,
+    CAPABILITY_IMAGE_UNDERSTANDING, CAPABILITY_SPEECH_TO_TEXT, CAPABILITY_TEXT_GENERATION,
+    CAPABILITY_TEXT_TRANSLATION, DEEPSEEK_PROVIDER, GEMINI_PROVIDER, GROQ_PROVIDER,
+    OPENAI_PROVIDER, OPENROUTER_PROVIDER,
 };
 
 const OPENAI_DIAGNOSTIC_MODELS: &[&str] = &["gpt-4.1-mini", "gpt-4o-mini", "gpt-5-mini"];
@@ -107,6 +108,31 @@ pub(super) async fn credential_test(
         }
         CAPABILITY_TEXT_TRANSLATION => {
             test_translation(&state, profile, service, &config, query.model.as_deref()).await?;
+        }
+        CAPABILITY_IMAGE_UNDERSTANDING => {
+            let model = query
+                .model
+                .as_deref()
+                .filter(|model| !model.trim().is_empty())
+                .ok_or_else(|| {
+                    diagnostic_invalid("Select an image-capable model to test".into())
+                })?;
+            let key = profile_api_key(profile)?;
+            crate::llm::LlmClient::new(reqwest::Client::new())
+                .generate_with_image(
+                    profile,
+                    &key,
+                    crate::llm::LlmRequest {
+                        model,
+                        instructions: "Describe the supplied test image briefly.",
+                        input: "What color is the image?",
+                        max_output_tokens: 128,
+                        thinking_enabled: false,
+                    },
+                    &crate::vision::test_png(),
+                )
+                .await
+                .map_err(|error| api_error(StatusCode::BAD_GATEWAY, error.code, error.detail))?;
         }
         _ => {
             return Err(diagnostic_invalid(format!(

@@ -99,6 +99,7 @@ pub struct AudioCapture {
     source: CaptureSource,
     session: Option<CaptureSession>,
     device: Option<AudioDevice>,
+    microphone_tap: Option<crate::vision::MicrophoneTap>,
 }
 
 impl AudioCapture {
@@ -108,7 +109,15 @@ impl AudioCapture {
             source,
             session: None,
             device: None,
+            microphone_tap: None,
         }
+    }
+
+    pub(crate) fn with_microphone_tap(mut self, tap: crate::vision::MicrophoneTap) -> Self {
+        if self.source == CaptureSource::Microphone {
+            self.microphone_tap = Some(tap);
+        }
+        self
     }
 
     #[allow(dead_code)]
@@ -178,10 +187,18 @@ impl AudioCapture {
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = Arc::clone(&stop);
         let output_rate = self.output_rate;
+        let microphone_tap = self.microphone_tap.clone();
         let join = std::thread::Builder::new()
             .name("vrcs-audio-capture".into())
             .spawn(move || {
-                platform::capture_main(target, output_rate, thread_stop, tx, ready_tx);
+                platform::capture_main(
+                    target,
+                    output_rate,
+                    thread_stop,
+                    tx,
+                    ready_tx,
+                    microphone_tap,
+                );
             })
             .map_err(|error| {
                 AudioError::with_code(

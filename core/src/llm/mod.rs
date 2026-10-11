@@ -3,7 +3,10 @@
 use std::time::Instant;
 
 use crate::config::ApiProfile;
-use crate::providers::{self, ServiceAdapter, CAPABILITY_TEXT_GENERATION};
+use crate::providers::{
+    self, OpenAiProtocolBehavior, ServiceAdapter, CAPABILITY_IMAGE_UNDERSTANDING,
+    CAPABILITY_TEXT_GENERATION,
+};
 
 mod alibaba;
 mod gemini;
@@ -55,6 +58,40 @@ impl LlmClient {
             on_progress,
         )
         .await
+    }
+
+    /// Generates a non-streaming text answer from text and PNG bytes.
+    /// The caller is responsible for image validation and payload size limits.
+    pub async fn generate_with_image(
+        &self,
+        profile: &ApiProfile,
+        api_key: &str,
+        request: LlmRequest<'_>,
+        image: &[u8],
+    ) -> Result<String, LlmError> {
+        let resolved =
+            providers::resolve_profile_capability(profile, CAPABILITY_IMAGE_UNDERSTANDING)
+                .map_err(|detail| LlmError {
+                    code: "llm.unsupported_provider",
+                    detail,
+                    retryable: false,
+                })?;
+        match resolved.service.adapter {
+            ServiceAdapter::OpenAiChatCompletions {
+                behavior: OpenAiProtocolBehavior::Standard,
+            } => {
+                openai_compatible::generate_with_image(
+                    &self.http,
+                    profile,
+                    api_key,
+                    request,
+                    image,
+                    resolved.provider.display_name,
+                )
+                .await
+            }
+            adapter => Err(unsupported_adapter(adapter)),
+        }
     }
 
     pub(crate) async fn generate_for_capability(
@@ -122,13 +159,14 @@ impl LlmClient {
         let resolved = [
             CAPABILITY_TEXT_GENERATION,
             providers::CAPABILITY_TEXT_TRANSLATION,
+            CAPABILITY_IMAGE_UNDERSTANDING,
         ]
         .into_iter()
         .find_map(|capability| providers::resolve_profile_capability(profile, capability).ok())
         .ok_or_else(|| LlmError {
             code: "llm.models_unsupported",
             detail: format!(
-                "API profile {} has not enabled an LLM text capability",
+                "API profile {} has not enabled an LLM capability",
                 profile.id
             ),
             retryable: false,
@@ -231,6 +269,169 @@ impl LlmClient {
             on_progress,
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{ApiAuthMode, HttpHeaderConfig};
+    use axum::{http::HeaderMap, routing::post, Json, Router};
+    use serde_json::{json, Value};
+
+    fn request() -> LlmRequest<'static> {
+        LlmRequest {
+            model: "vision-model",
+            instructions: "Answer briefly",
+            input: "What is visible?",
+            max_output_tokens: 256,
+            thinking_enabled: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn image_and_text_requests_preserve_profile_connection_and_text_behavior() {
+        for auth_mode in [ApiAuthMode::Bearer, ApiAuthMode::None] {
+            for with_image in [true, false] {
+                let (sender, receiver) = tokio::sync::oneshot::channel();
+                let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
+                let app = Router::new().route(
+                    "/custom/v1/chat/completions",
+                    post(
+                        move |headers: HeaderMap, Json(body): Json<Value>| async move {
+                            sender
+                                .lock()
+                                .unwrap()
+                                .take()
+                                .unwrap()
+                                .send((headers, body))
+                                .unwrap();
+                            Json(json!({"choices": [{"message": {"content": "Visible answer"}}]}))
+                        },
+                    ),
+                );
+                let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                    .await
+                    .unwrap();
+                let address = listener.local_addr().unwrap();
+                let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+                let profile = ApiProfile {
+                    provider: providers::OPENAI_COMPATIBLE_PROVIDER.into(),
+                    enabled_capabilities: vec![if with_image {
+                        CAPABILITY_IMAGE_UNDERSTANDING.into()
+                    } else {
+                        CAPABILITY_TEXT_GENERATION.into()
+                    }],
+                    base_url: Some(format!("http://{address}/custom/v1/chat/completions")),
+                    auth_mode,
+                    timeout_ms: 1000,
+                    headers: vec![HttpHeaderConfig {
+                        name: "X-Test-Client".into(),
+                        value: "VRCS".into(),
+                    }],
+                    ..ApiProfile::default()
+                };
+                let client = LlmClient::new(reqwest::Client::new());
+                let output = if with_image {
+                    client
+                        .generate_with_image(&profile, "test-key", request(), b"\x89PNG\r\n\x1a\n")
+                        .await
+                } else {
+                    client.generate(&profile, "test-key", request(), None).await
+                }
+                .unwrap();
+                let (headers, body) = receiver.await.unwrap();
+                server.abort();
+                assert_eq!(output, "Visible answer");
+                assert_eq!(headers["x-test-client"], "VRCS");
+                if auth_mode == ApiAuthMode::Bearer {
+                    assert_eq!(headers["authorization"], "Bearer test-key");
+                } else {
+                    assert!(!headers.contains_key("authorization"));
+                }
+                assert_eq!(body["model"], "vision-model");
+                assert_eq!(body["max_tokens"], 256);
+                assert_eq!(body["stream"], false);
+                assert_eq!(
+                    body["messages"][0],
+                    json!({"role": "system", "content": "Answer briefly"})
+                );
+                assert_eq!(body["messages"][1]["role"], "user");
+                if with_image {
+                    assert_eq!(
+                        body["messages"][1]["content"],
+                        json!([
+                            {"type": "text", "text": "What is visible?"},
+                            {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}}
+                        ])
+                    );
+                } else {
+                    assert_eq!(body["messages"][1]["content"], "What is visible?");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_disabled_unsupported_and_empty_image_inputs_before_http() {
+        let client = LlmClient::new(reqwest::Client::new());
+        let mut profile = ApiProfile {
+            provider: providers::OPENAI_COMPATIBLE_PROVIDER.into(),
+            enabled_capabilities: vec![CAPABILITY_TEXT_GENERATION.into()],
+            ..ApiProfile::default()
+        };
+        let error = client
+            .generate_with_image(&profile, "", request(), b"png")
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "llm.unsupported_provider");
+        assert!(!error.retryable);
+        profile.enabled_capabilities = vec![CAPABILITY_IMAGE_UNDERSTANDING.into()];
+        for provider in providers::catalog() {
+            if provider.capabilities.supports_image_understanding {
+                continue;
+            }
+            profile.provider = provider.id.into();
+            let error = client
+                .generate_with_image(&profile, "", request(), b"png")
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "llm.unsupported_provider");
+            assert!(!error.retryable);
+        }
+        profile.provider = providers::OPENAI_COMPATIBLE_PROVIDER.into();
+        let error = client
+            .generate_with_image(&profile, "", request(), &[])
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "llm.request_failed");
+        assert!(!error.retryable);
+    }
+
+    #[tokio::test]
+    async fn image_only_profile_can_list_models() {
+        let app = Router::new().route(
+            "/v1/models",
+            axum::routing::get(|| async { Json(json!({"data": [{"id": "vision-model"}]})) }),
+        );
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let profile = ApiProfile {
+            provider: providers::OPENAI_COMPATIBLE_PROVIDER.into(),
+            enabled_capabilities: vec![CAPABILITY_IMAGE_UNDERSTANDING.into()],
+            base_url: Some(format!("http://{address}/v1")),
+            auth_mode: ApiAuthMode::None,
+            ..ApiProfile::default()
+        };
+        let models = LlmClient::new(reqwest::Client::new())
+            .list_models(&profile, "")
+            .await
+            .unwrap();
+        server.abort();
+        assert_eq!(models, ["vision-model"]);
     }
 }
 

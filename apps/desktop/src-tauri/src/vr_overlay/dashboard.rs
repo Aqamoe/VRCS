@@ -13,11 +13,15 @@ pub struct DashboardViewModel {
     pub enabled: bool,
     #[serde(default = "available_by_default")]
     pub ocr_available: bool,
+    #[serde(default)]
+    pub vision_available: bool,
     #[serde(default = "available_by_default")]
     pub osc_available: bool,
     pub headset: DashboardHeadset,
     pub wrist: DashboardWrist,
     pub ocr: DashboardOcr,
+    #[serde(default)]
+    pub vision: DashboardVision,
     pub language: DashboardLanguage,
     pub osc: DashboardOsc,
     pub status: String,
@@ -39,6 +43,8 @@ pub struct DashboardLabels {
     pub headset: String,
     pub wrist: String,
     pub ocr: String,
+    #[serde(default)]
+    pub vision: String,
     pub content: String,
     pub hand: String,
     pub width: String,
@@ -182,6 +188,13 @@ pub struct DashboardOcr {
     pub gesture: bool,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct DashboardVision {
+    pub enabled: bool,
+    pub configured: bool,
+    pub model: String,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DashboardSaveState {
@@ -211,6 +224,7 @@ pub enum DashboardAction {
     WristOpacityUp,
     PreviewWrist,
     ToggleOcr,
+    ToggleVision,
     ToggleOcrGesture,
     OpenOcrBindings,
     ToggleOsc,
@@ -302,6 +316,7 @@ pub(super) enum DashboardControl {
     PositionPreview,
     PositionReset,
     OcrEnabled,
+    VisionEnabled,
     OcrGesture,
     OcrBindings,
 }
@@ -549,6 +564,10 @@ const CONTROLS: &[(DashboardControl, Rect)] = &[
         },
     ),
     (
+        DashboardControl::VisionEnabled,
+        Rect::new(844., 738., 1024., 836.),
+    ),
+    (
         DashboardControl::OcrBindings,
         Rect {
             left: 1040.,
@@ -668,6 +687,9 @@ fn control_page(control: DashboardControl) -> Option<DashboardPage> {
 pub struct DashboardState {
     interactive: bool,
     ocr_available: bool,
+    vision_available: bool,
+    vision_enabled: bool,
+    vision_configured: bool,
     osc_available: bool,
     hovered: Option<DashboardControl>,
     pressed: Option<DashboardControl>,
@@ -684,6 +706,9 @@ impl DashboardState {
         Self {
             interactive: true,
             ocr_available: true,
+            vision_available: false,
+            vision_enabled: false,
+            vision_configured: false,
             osc_available: true,
             hovered: None,
             pressed: None,
@@ -700,6 +725,9 @@ impl DashboardState {
         // The frontend serializes saves, so pending persistence must not block input.
         self.set_interactive(true);
         self.ocr_available = view.ocr_available;
+        self.vision_available = view.vision_available;
+        self.vision_enabled = view.vision.enabled;
+        self.vision_configured = view.vision.configured;
         self.osc_available = view.osc_available;
         if !view.osc_available && self.page == DashboardPage::Osc {
             self.page = DashboardPage::Display;
@@ -839,10 +867,17 @@ impl DashboardState {
         if !self.ocr_available
             && matches!(
                 control,
-                DashboardControl::OcrEnabled
-                    | DashboardControl::OcrGesture
-                    | DashboardControl::OcrBindings
+                DashboardControl::OcrEnabled | DashboardControl::OcrGesture
             )
+        {
+            return false;
+        }
+        if control == DashboardControl::VisionEnabled
+            && (!self.vision_available || (!self.vision_enabled && !self.vision_configured))
+        {
+            return false;
+        }
+        if control == DashboardControl::OcrBindings && !self.ocr_available && !self.vision_available
         {
             return false;
         }
@@ -1058,6 +1093,7 @@ fn action_for(control: DashboardControl) -> Option<DashboardAction> {
         DashboardControl::WristOpacityUp => DashboardAction::WristOpacityUp,
         DashboardControl::WristPreview => DashboardAction::PreviewWrist,
         DashboardControl::OcrEnabled => DashboardAction::ToggleOcr,
+        DashboardControl::VisionEnabled => DashboardAction::ToggleVision,
         DashboardControl::OcrGesture => DashboardAction::ToggleOcrGesture,
         DashboardControl::OcrBindings => DashboardAction::OpenOcrBindings,
         _ => return None,
@@ -1071,6 +1107,35 @@ mod tests {
     fn click(state: &mut DashboardState, x: f32, y: f32) -> Option<DashboardAction> {
         state.pointer_down(x, y);
         state.pointer_up(x, y)
+    }
+
+    #[test]
+    fn vision_toggle_is_independent_of_ocr_and_requires_configuration_to_enable() {
+        let mut state = DashboardState {
+            ocr_available: false,
+            vision_available: true,
+            ..DashboardState::default()
+        };
+        assert_eq!(click(&mut state, 920., 808.), None);
+        state.vision_configured = true;
+        assert_eq!(
+            click(&mut state, 920., 808.),
+            Some(DashboardAction::ToggleVision)
+        );
+        assert_eq!(
+            serde_json::to_string(&DashboardAction::ToggleVision).unwrap(),
+            "\"toggle_vision\""
+        );
+        state.vision_configured = false;
+        state.vision_enabled = true;
+        assert_eq!(
+            click(&mut state, 920., 808.),
+            Some(DashboardAction::ToggleVision)
+        );
+        assert_eq!(
+            click(&mut state, 1200., 790.),
+            Some(DashboardAction::OpenOcrBindings)
+        );
     }
 
     #[test]

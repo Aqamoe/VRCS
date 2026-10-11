@@ -26,6 +26,7 @@ mod startup;
 mod subtitle_output;
 mod translation;
 mod vad;
+pub mod vision;
 mod vrchat_mute_sync;
 mod vrcx;
 mod yomitan;
@@ -42,8 +43,8 @@ use crate::server::AppState;
 use crate::startup::{RuntimeAssembly, RuntimeTasks, StartupPlan};
 
 pub use crate::config::{
-    FeatureConfig, FeatureKey, VrOcrBackend, VrOcrConfig, VrOcrDisplayMode, VrOcrWristConfig,
-    VrOverlayConfig, VrOverlayHeadsetConfig, VrOverlayWristConfig,
+    FeatureConfig, FeatureKey, VisionConfig, VrOcrBackend, VrOcrConfig, VrOcrDisplayMode,
+    VrOcrWristConfig, VrOverlayConfig, VrOverlayHeadsetConfig, VrOverlayWristConfig,
 };
 pub use crate::models::{
     LiveTranslation, LiveTranslationPreview, SpeakerIdentity, Subtitle, SubtitleTranslation,
@@ -142,6 +143,10 @@ impl CoreHandle {
             self.state.content.translation_service.clone(),
             self.state.config.local_ocr.clone(),
         )
+    }
+
+    pub fn vision_service(&self) -> vision::VisionService {
+        vision::VisionService::new(Arc::clone(&self.state))
     }
 
     pub fn vad_backend(&self) -> &'static str {

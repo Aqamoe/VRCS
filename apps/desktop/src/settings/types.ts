@@ -9,7 +9,7 @@ import type {
 import type { AsrSettings } from "../providers/types";
 
 export interface Settings {
-  schema_version: 30;
+  schema_version: 31;
   features: FeatureSettings;
   server: {
     host: string;
@@ -46,6 +46,7 @@ export interface Settings {
   vrcx: VrcxSettings;
   vr_overlay: VrOverlaySettings;
   ocr: VrOcrSettings;
+  vision: VisionSettings;
 }
 
 export interface FeatureSettings {
@@ -55,11 +56,28 @@ export interface FeatureSettings {
   osc_chatbox: boolean;
   vrcx: boolean;
   ocr: boolean;
+  visual_question_answering: boolean;
   vr_overlay: boolean;
   external_api: boolean;
 }
 
 export type FeatureKey = keyof FeatureSettings;
+
+export interface VisionSettings {
+  enabled: boolean;
+  profile_id: string | null;
+  model: string;
+  answer_language: string;
+  system_prompt: string;
+  max_capture_seconds: number;
+  asr_finalize_timeout_ms: number;
+  request_timeout_seconds: number;
+  max_output_tokens: number;
+  image_max_edge: number;
+  image_max_bytes: number;
+  display_seconds: number;
+  wrist: import("../integrations/types").VrOcrWristSettings | null;
+}
 
 export interface TranslationSettings {
   mode: "disabled" | "manual" | "automatic";

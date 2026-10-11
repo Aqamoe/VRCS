@@ -12,7 +12,9 @@ fn feature_switches_default_on_when_upgrading_v29() {
     let raw = serde_json::json!({"schema_version": 29});
     let config = config_from_value(&raw).unwrap();
     let value = serde_json::to_value(config).unwrap();
-    assert_eq!(value["schema_version"], 30);
+    assert_eq!(value["schema_version"], 31);
+    assert_eq!(value["features"]["visual_question_answering"], false);
+    assert_eq!(value["vision"]["enabled"], false);
     for key in [
         "glossary",
         "learning",
@@ -25,6 +27,37 @@ fn feature_switches_default_on_when_upgrading_v29() {
     ] {
         assert_eq!(value["features"][key], true, "{key}");
     }
+}
+
+#[test]
+fn v30_vision_migration_preserves_ocr_and_copies_its_wrist() {
+    let mut raw = serde_json::to_value(AppConfig::default()).unwrap();
+    raw["schema_version"] = serde_json::json!(30);
+    raw.as_object_mut().unwrap().remove("vision");
+    raw["features"]
+        .as_object_mut()
+        .unwrap()
+        .remove("visual_question_answering");
+    raw["ocr"]["enabled"] = serde_json::json!(true);
+    raw["ocr"]["shortcut"] = serde_json::json!("Ctrl+Alt+P");
+    raw["ocr"]["wrist"]["offset_x_m"] = serde_json::json!(0.2);
+    let ocr: super::VrOcrConfig = serde_json::from_value(raw["ocr"].clone()).unwrap();
+    let config = config_from_value(&raw).unwrap();
+    assert_eq!(config.schema_version, 31);
+    assert!(!config.features.visual_question_answering);
+    assert!(!config.vision.enabled);
+    assert_eq!(config.vision.profile_id, None);
+    assert!(config.vision.model.is_empty());
+    assert_eq!(config.vision.wrist, config.ocr.wrist);
+    assert_eq!(config.ocr, ocr);
+    let round_trip = config_from_value(&serde_json::to_value(&config).unwrap()).unwrap();
+    assert_eq!(round_trip, config);
+}
+
+#[test]
+fn vision_wrist_defaults_when_old_ocr_has_no_layout() {
+    let config = config_from_value(&serde_json::json!({"schema_version": 30})).unwrap();
+    assert_eq!(config.vision.wrist, Some(VrOcrWristConfig::default()));
 }
 
 #[test]

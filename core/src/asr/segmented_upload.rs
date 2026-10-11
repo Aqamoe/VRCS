@@ -139,6 +139,10 @@ impl SegmentedUploadSession {
         self.events.recv().await
     }
 
+    pub(crate) fn cancel(&self) {
+        self.task.abort();
+    }
+
     pub async fn stop(self) {
         drop(self.jobs);
         self.task.abort();
@@ -308,6 +312,51 @@ mod tests {
             model: "whisper-test".into(),
             context: String::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn isolated_question_upload_returns_only_final_source_text() {
+        let (mut profile, requests) = mock_profile(1).await;
+        profile.provider = crate::providers::QWEN_LOCAL_PROVIDER.into();
+        let session =
+            SegmentedUploadSession::spawn(profile, String::new(), settings(), "auto".into());
+        let result = super::super::question::recognize_session(
+            super::super::CloudRecognitionSession::Segmented(session),
+            super::super::share_audio(vec![0.1; 320]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, "result-0");
+        assert_eq!(requests.await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn question_drop_aborts_the_upload_worker() {
+        let session = SegmentedUploadSession::spawn(
+            ApiProfile::default(),
+            String::new(),
+            settings(),
+            "auto".into(),
+        );
+        let worker = session.task.abort_handle();
+        let mut future = Box::pin(super::super::question::recognize_session(
+            super::super::CloudRecognitionSession::Segmented(session),
+            super::super::share_audio(vec![0.1; 320]),
+        ));
+        // Poll exactly once to install the scope guard, without timing sleeps.
+        std::future::poll_fn(|cx| {
+            let _ = std::future::Future::poll(future.as_mut(), cx);
+            std::task::Poll::Ready(())
+        })
+        .await;
+        drop(future);
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !worker.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

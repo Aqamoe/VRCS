@@ -524,17 +524,50 @@
       }
     },
     "settings": {
-    "features": {
-      "title": "機能の選択",
-      "glossary": "用語集",
-      "learning": "辞書と学習",
-      "anki": "Anki",
-      "osc_chatbox": "OSC Chatbox",
-      "vrcx": "VRCX-0 連携",
-      "ocr": "OCR",
-      "vr_overlay": "VR Overlay",
-      "external_api": "外部 API"
-    },
+      "vision": {
+        "title": "画像質問応答",
+        "description": "取得した VR 画像について質問します。",
+        "enable": "VR 画像質問応答を有効にする",
+        "profile": "API プロファイル",
+        "noProfile": "プロファイル未選択",
+        "noProfiles": "利用できるプロファイルがありません。API 設定で OpenAI 互換、OpenRouter、LM Studio、または Ollama の画像理解を有効にしてください。",
+        "unavailableProfile": "選択したプロファイルは利用できません",
+        "model": "画像対応モデル",
+        "imageRequired": "サービスとモデルは Chat Completions で画像を受け取る必要があります。モデル名だけでは画像対応を確認できません。",
+        "answerLanguage": "回答言語",
+        "systemPrompt": "システムプロンプト",
+        "limits": "収音、タイムアウト、画像の制限",
+        "imageTest": "画像入力テスト",
+        "testDescription": "保存済み設定でアプリ内のテスト画像を送信します。現在の選択範囲は読み取りません。API 料金が発生する場合があります。",
+        "testButton": "画像入力をテスト",
+        "testing": "テスト中…",
+        "testFailed": "画像入力テストに失敗しました。",
+        "asrSupport": "先にマイクの文字起こしを開始してください。この版はトリガーを押している間に収音し、放した後に認識します。リアルタイムの下書きは表示しません。ローカル Qwen、Groq などの互換バッチ認識、Qwen realtime、FunASR に対応します。リアルタイム翻訳、OpenAI realtime、Gemini、Token Plan は未対応です。",
+        "wristTitle": "回答の手首パネル",
+        "wristDescription": "OCR の手首パネルとは独立した配置です。",
+        "vrUnavailable": "画像質問応答には VR Overlay 機能を有効にしてください。",
+        "controls": "有効な選択枠で左トリガーを押して質問を収音し、放すと認識後に送信します。パネルを閉じるかキャンセル操作で破棄できます。収音のタイムアウトでは自動送信しません。",
+        "privacy": "選択範囲の画像と質問は選択したサービスへ送信されます。クラウド ASR には音声も送信され、独立した認識に追加料金が発生する場合があります。タイムアウトは API プロファイルの上限にも制限されます。",
+        "max_capture_seconds": "最大収音時間（秒）",
+        "asr_finalize_timeout_ms": "ASR 確定のタイムアウト（ミリ秒）",
+        "request_timeout_seconds": "リクエストのタイムアウト（秒）",
+        "max_output_tokens": "最大出力トークン数",
+        "image_max_edge": "画像の最大辺（ピクセル）",
+        "image_max_bytes": "画像サイズの上限",
+        "display_seconds": "回答の表示時間（秒）"
+      },
+      "features": {
+        "title": "機能の選択",
+        "glossary": "用語集",
+        "learning": "辞書と学習",
+        "anki": "Anki",
+        "osc_chatbox": "OSC Chatbox",
+        "vrcx": "VRCX-0 連携",
+        "visual_question_answering": "画像質問応答",
+        "ocr": "OCR",
+        "vr_overlay": "VR Overlay",
+        "external_api": "外部 API"
+      },
       "vrDashboard": {
         "resetPosition": "位置と回転をリセット",
         "displayTab": "表示と OCR",
@@ -664,6 +697,7 @@
         "learning": "学習",
         "connections": "接続",
         "vrOverlay": "VR Overlay",
+        "vision": "ビジョン",
         "ocr": "OCR"
       },
       "vrOverlay": {
@@ -1003,6 +1037,8 @@
           "customProtocol": "カスタムプロトコル"
         },
         "capabilities": {
+          "image_understanding": "画像理解",
+          "image_understanding_description": "画像対応モデルで画像についての質問に回答します。",
           "label": "有効な機能",
           "description": "この API 設定を使用できる機能を選択します。",
           "required": "この手順で必須",

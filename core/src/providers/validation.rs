@@ -260,6 +260,62 @@ mod tests {
     }
 
     #[test]
+    fn image_capability_is_explicit_and_uses_existing_profile_validation() {
+        use crate::providers::{
+            catalog, profile_capabilities, supports_llm_models, CAPABILITY_IMAGE_UNDERSTANDING,
+            LM_STUDIO_PROVIDER, OPENROUTER_PROVIDER,
+        };
+        let supported = [
+            OPENAI_COMPATIBLE_PROVIDER,
+            OPENROUTER_PROVIDER,
+            LM_STUDIO_PROVIDER,
+            OLLAMA_PROVIDER,
+        ];
+        for provider in catalog() {
+            let expected = supported.contains(&provider.id);
+            assert_eq!(
+                provider.capabilities.supports_image_understanding, expected,
+                "{}",
+                provider.id
+            );
+            assert_eq!(
+                serde_json::to_value(provider.capabilities).unwrap()
+                    ["supports_image_understanding"],
+                expected
+            );
+            let mut profile = profile(provider.id);
+            profile.enabled_capabilities = vec![CAPABILITY_IMAGE_UNDERSTANDING.into()];
+            profile.auth_mode = provider.connection.auth_mode;
+            profile.is_local = provider.category == super::super::ProviderCategory::LocalService;
+            if provider.id == OPENAI_COMPATIBLE_PROVIDER {
+                profile.base_url = Some("https://example.com/v1".into());
+            }
+            assert_eq!(
+                validate_capabilities(&profile).is_ok(),
+                expected,
+                "{}",
+                provider.id
+            );
+            if expected {
+                assert!(validate_profile(&profile).is_ok());
+                let capabilities = profile_capabilities(&profile).unwrap();
+                assert!(capabilities.supports_image_understanding);
+                assert!(!capabilities.supports_text_generation);
+                assert!(!capabilities.supports_translation);
+                assert!(supports_llm_models(&profile));
+                profile.enabled_capabilities = vec![CAPABILITY_TEXT_GENERATION.into()];
+                assert!(
+                    !profile_capabilities(&profile)
+                        .unwrap()
+                        .supports_image_understanding
+                );
+                profile.enabled_capabilities = vec![CAPABILITY_IMAGE_UNDERSTANDING.into(); 2];
+                assert!(validate_capabilities(&profile).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn legacy_preset_does_not_control_brand_validation() {
         let mut profile = profile(DEEPSEEK_PROVIDER);
         profile.preset_id = Some("custom-legacy-value".into());

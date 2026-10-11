@@ -195,6 +195,7 @@ fn launch_core(app: &tauri::AppHandle) -> Result<(), String> {
                     vr_overlay_config,
                     core.subscribe_features(),
                     ocr_service,
+                    core.vision_service(),
                 ) {
                     tracing::warn!(%error, "VR Overlay startup failed");
                 }

@@ -68,6 +68,7 @@ pub(crate) struct CaptureRuntime {
     pub(crate) speaker_pipeline: AsyncMutex<TranscriptionPipeline>,
     pub(crate) microphone_pipeline: AsyncMutex<TranscriptionPipeline>,
     pub(crate) microphone_monitor: AsyncMutex<MicrophoneMonitor>,
+    pub(crate) microphone_tap: crate::vision::MicrophoneTap,
 }
 
 pub(crate) struct CaptureRuntimeInput {
@@ -86,6 +87,7 @@ impl CaptureRuntime {
                 .vad_model_path
                 .with_file_name(smart_turn::MODEL_FILENAME),
         );
+        let microphone_tap = crate::vision::MicrophoneTap::default();
         Self {
             live_tx: input.live_tx,
             vad_runtime: input.vad_runtime.clone(),
@@ -101,14 +103,18 @@ impl CaptureRuntime {
                 smart_turn_runtime.clone(),
                 input.shutdown.clone(),
             )),
-            microphone_pipeline: AsyncMutex::new(TranscriptionPipeline::new(
-                crate::audio::CaptureSource::Microphone,
-                "microphone",
-                input.vad_model_path,
-                input.vad_runtime,
-                smart_turn_runtime,
-                input.shutdown,
-            )),
+            microphone_pipeline: AsyncMutex::new(
+                TranscriptionPipeline::new(
+                    crate::audio::CaptureSource::Microphone,
+                    "microphone",
+                    input.vad_model_path,
+                    input.vad_runtime,
+                    smart_turn_runtime,
+                    input.shutdown,
+                )
+                .with_microphone_tap(microphone_tap.clone()),
+            ),
+            microphone_tap,
             microphone_monitor: AsyncMutex::new(MicrophoneMonitor::new()),
         }
     }

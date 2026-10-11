@@ -211,6 +211,7 @@ impl Manager {
         mut config: watch::Receiver<(VrOverlayConfig, VrOcrConfig)>,
         features: watch::Receiver<vrcs_core::FeatureConfig>,
         ocr_service: Option<vrcs_core::ocr::VrOcrService>,
+        vision_service: vrcs_core::vision::VisionService,
     ) -> Result<(), String> {
         tracing::info!("Starting VR Overlay manager");
         self.stop();
@@ -238,6 +239,7 @@ impl Manager {
                     initial_config,
                     features,
                     ocr_service,
+                    vision_service,
                 )
             })
             .map_err(|error| format!("Failed to start VR Overlay thread: {error}"))?;
@@ -380,6 +382,7 @@ fn worker_loop(
     config: (VrOverlayConfig, VrOcrConfig),
     features: watch::Receiver<vrcs_core::FeatureConfig>,
     ocr_service: Option<vrcs_core::ocr::VrOcrService>,
+    vision_service: vrcs_core::vision::VisionService,
 ) {
     #[cfg(windows)]
     let ocr_directory = app
@@ -387,6 +390,12 @@ fn worker_loop(
         .app_config_dir()
         .ok()
         .map(|path| path.join("steamvr-ocr"));
+    #[cfg(windows)]
+    let ocr = {
+        let mut ocr = super::ocr_runtime::OcrRuntime::new(ocr_service, ocr_directory);
+        ocr.vision.set_service(vision_service);
+        ocr
+    };
     let (config, ocr_config) = config;
     let mut state = WorkerState {
         config,
@@ -405,7 +414,7 @@ fn worker_loop(
         dashboard_thumbnail_uploaded: false,
         next_reconnect: Instant::now(),
         #[cfg(windows)]
-        ocr: super::ocr_runtime::OcrRuntime::new(ocr_service, ocr_directory),
+        ocr,
     };
     let mut status = VrOverlayStatus::initial();
 
@@ -424,7 +433,9 @@ fn worker_loop(
             if let Some((config, ocr_config)) = pending.take() {
                 #[cfg(windows)]
                 if state.ocr_config != ocr_config {
-                    state.ocr.clear();
+                    if !state.ocr.vision.visible() {
+                        state.ocr.clear();
+                    }
                 }
                 state.wrist.set_max_entries(config.wrist.max_entries);
                 state.headset.set_show_partials(
@@ -499,7 +510,10 @@ fn worker_loop(
         let available = features.borrow().vr_overlay;
         tick(&app, &mut state, &mut status, available);
         #[cfg(windows)]
-        if open_ocr_bindings && available && features.borrow().ocr {
+        if open_ocr_bindings
+            && available
+            && (features.borrow().ocr || features.borrow().visual_question_answering)
+        {
             state.ocr.clear();
             let result = state
                 .backend
@@ -567,6 +581,10 @@ fn tick(app: &AppHandle, state: &mut WorkerState, status: &mut VrOverlayStatus, 
     let any_enabled =
         state.config.enabled && (state.config.headset.enabled || state.config.wrist.enabled);
     let ocr_enabled = state.ocr_config.enabled;
+    #[cfg(windows)]
+    let vision_enabled = state.ocr.vision.enabled();
+    #[cfg(not(windows))]
+    let vision_enabled = false;
     if !status.runtime_installed || !status.hmd_present {
         #[cfg(windows)]
         state.ocr.unavailable(ocr_enabled);
@@ -653,6 +671,7 @@ fn tick(app: &AppHandle, state: &mut WorkerState, status: &mut VrOverlayStatus, 
     let wrist_failed = state.config.wrist.enabled && status.wrist.state == ResourceState::Error;
     if any_enabled
         && !ocr_enabled
+        && !vision_enabled
         && (headset_failed || !state.config.headset.enabled)
         && (wrist_failed || !state.config.wrist.enabled)
     {

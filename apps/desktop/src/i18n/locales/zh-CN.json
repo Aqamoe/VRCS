@@ -524,17 +524,50 @@
       }
     },
     "settings": {
-    "features": {
-      "title": "功能选项",
-      "glossary": "术语表",
-      "learning": "词典与学习",
-      "anki": "Anki",
-      "osc_chatbox": "OSC Chatbox",
-      "vrcx": "VRCX-0 联动",
-      "ocr": "OCR",
-      "vr_overlay": "VR Overlay",
-      "external_api": "外部 API"
-    },
+      "vision": {
+        "title": "视觉问答",
+        "description": "针对采集的 VR 图像提出问题。",
+        "enable": "启用 VR 视觉问答",
+        "profile": "API 档案",
+        "noProfile": "未选择档案",
+        "noProfiles": "没有可用档案。请在 API 设置中为 OpenAI 兼容、OpenRouter、LM Studio 或 Ollama 档案启用图像理解。",
+        "unavailableProfile": "所选档案不可用",
+        "model": "支持图片的模型",
+        "imageRequired": "服务与模型必须通过 Chat Completions 接受图片。模型名称不能证明图片支持。",
+        "answerLanguage": "回答语言",
+        "systemPrompt": "系统提示",
+        "limits": "采集、超时与图片限制",
+        "imageTest": "图像输入测试",
+        "testDescription": "使用已保存设置发送应用内置测试图片，不会读取当前选区。测试可能产生 API 费用。",
+        "testButton": "测试图像输入",
+        "testing": "正在测试…",
+        "testFailed": "图像输入测试失败。",
+        "asrSupport": "请先启动麦克风识别。首版按住期间收音，松开后识别，不显示实时草稿。支持本地 Qwen、Groq 等兼容批量识别、Qwen realtime 和 FunASR；暂不支持实时翻译、OpenAI realtime、Gemini 和 Token Plan。",
+        "wristTitle": "回答手腕面板",
+        "wristDescription": "此布局独立于 OCR 手腕面板。",
+        "vrUnavailable": "请启用 VR Overlay 功能以使用视觉问答。",
+        "controls": "有效选框内，按住左扳机收集问题，松开后完成识别并发送。关闭面板或使用取消操作可丢弃。收音超时不会自动发送。",
+        "privacy": "选区图片与问题将发送给所选服务；云 ASR 还会接收语音，独立识别可能额外计费。请求超时同时受 API 档案超时限制。",
+        "max_capture_seconds": "最长收音时间（秒）",
+        "asr_finalize_timeout_ms": "ASR 收尾超时（毫秒）",
+        "request_timeout_seconds": "请求超时（秒）",
+        "max_output_tokens": "最大输出 token 数",
+        "image_max_edge": "图片最长边（像素）",
+        "image_max_bytes": "图片大小上限",
+        "display_seconds": "回答显示时间（秒）"
+      },
+      "features": {
+        "title": "功能选项",
+        "glossary": "术语表",
+        "learning": "词典与学习",
+        "anki": "Anki",
+        "osc_chatbox": "OSC Chatbox",
+        "vrcx": "VRCX-0 联动",
+        "visual_question_answering": "视觉问答",
+        "ocr": "OCR",
+        "vr_overlay": "VR Overlay",
+        "external_api": "外部 API"
+      },
       "vrDashboard": {
         "resetPosition": "恢复默认位置与旋转",
         "displayTab": "显示与 OCR",
@@ -664,6 +697,7 @@
         "learning": "学习",
         "connections": "连接",
         "vrOverlay": "VR Overlay",
+        "vision": "视觉",
         "ocr": "OCR"
       },
       "vrOverlay": {
@@ -1003,6 +1037,8 @@
           "customProtocol": "自定义协议"
         },
         "capabilities": {
+          "image_understanding": "图像理解",
+          "image_understanding_description": "使用支持图片的模型回答有关图像的问题。",
           "label": "启用能力",
           "description": "选择这个 API 配置可用于哪些功能。",
           "required": "当前流程必需",

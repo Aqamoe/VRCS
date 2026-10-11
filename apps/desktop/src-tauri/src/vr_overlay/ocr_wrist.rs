@@ -13,8 +13,15 @@ pub enum Action {
     Close,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ViewMode {
+    Ocr,
+    Vision,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct View {
+    pub mode: ViewMode,
     pub source: String,
     pub translation: String,
     pub translation_label: String,
@@ -78,6 +85,7 @@ impl Reader {
                 .get(self.language % block.translations.len().max(1))
         });
         View {
+            mode: ViewMode::Ocr,
             source: block
                 .map(|block| block.source.text.trim().to_owned())
                 .unwrap_or_default(),

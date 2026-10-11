@@ -28,7 +28,7 @@ import {
 } from "../src/vr-overlay-native.ts";
 
 const settings = {
-  schema_version: 30,
+  schema_version: 31,
   features: { ...DEFAULT_FEATURE_SETTINGS },
   vr_overlay: DEFAULT_VR_OVERLAY_SETTINGS,
   ocr: DEFAULT_OCR_SETTINGS,

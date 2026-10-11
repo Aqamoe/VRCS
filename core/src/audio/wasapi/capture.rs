@@ -399,6 +399,7 @@ fn run_stream(
     stop: &AtomicBool,
     tx: &mpsc::Sender<Vec<f32>>,
     process_loopback: bool,
+    microphone_tap: Option<&crate::vision::MicrophoneTap>,
 ) -> Result<(), StreamFailure> {
     let frames_per_chunk = ((stream.native.sample_rate as u64 * CHUNK_FRAMES as u64
         + output_rate as u64 / 2)
@@ -406,6 +407,8 @@ fn run_stream(
         .max(1) as usize;
     let mut pending = VecDeque::<f32>::new();
     let mut packet = VecDeque::<u8>::new();
+    let mut timeline_origin = None;
+    let mut timeline_frames = 0u64;
     let mut next_default_check = std::time::Instant::now() + DEFAULT_DEVICE_CHECK_INTERVAL;
     while !stop.load(Ordering::Relaxed) {
         match &stream.wait {
@@ -456,11 +459,56 @@ fn run_stream(
                     endpoint_invalidated: false,
                 }
             })?;
+            // This WASAPI wrapper does not expose device/QPC timestamps or packet
+            // discontinuity flags. Anchor the first packet at producer read time,
+            // then advance by native frame count. Scheduling latency affects the
+            // absolute boundary accuracy; pipeline queue latency does not. A read
+            // stall larger than 250 ms invalidates the window instead of guessing.
+            let read_at = std::time::Instant::now();
+            let native_duration = |frames: u64| {
+                std::time::Duration::from_secs_f64(frames as f64 / stream.native.sample_rate as f64)
+            };
+            let mut origin = *timeline_origin
+                .get_or_insert_with(|| read_at - native_duration(pending.len() as u64));
+            let estimated_end = origin + native_duration(timeline_frames + pending.len() as u64);
+            if let Some(tap) = microphone_tap {
+                if read_at.saturating_duration_since(estimated_end)
+                    > std::time::Duration::from_millis(250)
+                    || estimated_end.saturating_duration_since(read_at)
+                        > std::time::Duration::from_millis(250)
+                {
+                    tap.discontinuity("Microphone capture timing discontinuity");
+                    origin = read_at - native_duration(pending.len() as u64);
+                    timeline_origin = Some(origin);
+                    timeline_frames = 0;
+                }
+            }
             while pending.len() >= frames_per_chunk {
+                let chunk_start = origin + native_duration(timeline_frames);
+                timeline_frames += frames_per_chunk as u64;
+                let chunk_end = origin + native_duration(timeline_frames);
                 let frame: Vec<f32> = pending.drain(..frames_per_chunk).collect();
                 let chunk = resample_linear(&frame, output_rate, stream.native.sample_rate);
                 if !chunk.is_empty() {
-                    let _ = tx.try_send(chunk);
+                    match tx.try_reserve() {
+                        Ok(permit) => {
+                            if let Some(tap) = microphone_tap {
+                                if output_rate == 16_000 {
+                                    tap.push(&chunk, chunk_start, chunk_end);
+                                } else {
+                                    let tap_chunk =
+                                        resample_linear(&frame, 16_000, stream.native.sample_rate);
+                                    tap.push(&tap_chunk, chunk_start, chunk_end);
+                                }
+                            }
+                            permit.send(chunk);
+                        }
+                        Err(_) => {
+                            if let Some(tap) = microphone_tap {
+                                tap.discontinuity("Microphone audio frames were dropped");
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -474,7 +522,18 @@ pub(crate) fn capture_main(
     stop: Arc<AtomicBool>,
     tx: mpsc::Sender<Vec<f32>>,
     ready: std::sync::mpsc::Sender<Result<AudioDevice, AudioError>>,
+    microphone_tap: Option<crate::vision::MicrophoneTap>,
 ) {
+    // This guard also clears running state if the producer unwinds.
+    struct StopTap<'a>(Option<&'a crate::vision::MicrophoneTap>);
+    impl Drop for StopTap<'_> {
+        fn drop(&mut self) {
+            if let Some(tap) = self.0 {
+                tap.stopped("Microphone capture stopped");
+            }
+        }
+    }
+    let _tap_lifetime = StopTap(microphone_tap.as_ref());
     let follows_default = matches!(
         &target,
         CaptureTarget::Device {
@@ -497,10 +556,23 @@ pub(crate) fn capture_main(
             return;
         }
     };
+    if let Some(tap) = &microphone_tap {
+        tap.started();
+    }
     let _ = ready.send(Ok(stream.device.clone()));
 
     loop {
-        let result = run_stream(&stream, output_rate, &stop, &tx, process_loopback);
+        let result = run_stream(
+            &stream,
+            output_rate,
+            &stop,
+            &tx,
+            process_loopback,
+            microphone_tap.as_ref(),
+        );
+        if let Some(tap) = &microphone_tap {
+            tap.stopped("Microphone capture stopped or device changed");
+        }
         let _ = stream.client.stop_stream();
         match result {
             Ok(()) => return,
@@ -540,6 +612,9 @@ pub(crate) fn capture_main(
                         }
                     }
                 };
+                if let Some(tap) = &microphone_tap {
+                    tap.started();
+                }
                 continue;
             }
             Err(failure) => {

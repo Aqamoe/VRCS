@@ -112,6 +112,58 @@ fn legacy_ocr_wrist_position_is_copied_and_saved_once() {
 }
 
 #[test]
+fn v30_upgrade_backs_up_and_persists_independent_vision_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    let mut raw = serde_json::to_value(AppConfig::default()).unwrap();
+    raw["schema_version"] = serde_json::json!(30);
+    raw.as_object_mut().unwrap().remove("vision");
+    raw["features"]
+        .as_object_mut()
+        .unwrap()
+        .remove("visual_question_answering");
+    raw["ocr"]["wrist"]["offset_x_m"] = serde_json::json!(0.2);
+    let original = serde_json::to_vec(&raw).unwrap();
+    fs::write(&path, &original).unwrap();
+    let config = load_config(&path).unwrap();
+    assert_eq!(
+        fs::read(path.with_extension("v30.backup.json")).unwrap(),
+        original
+    );
+    assert_eq!(config.vision.wrist, config.ocr.wrist);
+    assert!(!config.vision.enabled);
+    assert!(!config.features.visual_question_answering);
+    assert_eq!(load_config(&path).unwrap(), config);
+}
+
+#[test]
+fn vision_wrist_is_initialized_and_persisted_only_once() {
+    for missing in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let mut raw = serde_json::to_value(AppConfig::default()).unwrap();
+        if missing {
+            raw["vision"].as_object_mut().unwrap().remove("wrist");
+        } else {
+            raw["vision"]["wrist"] = serde_json::Value::Null;
+        }
+        raw["ocr"]["wrist"]["offset_x_m"] = serde_json::json!(0.2);
+        fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
+        let config = load_config(&path).unwrap();
+        let mut saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(config.vision.wrist, config.ocr.wrist);
+        assert!(saved["vision"]["wrist"].is_object());
+        saved["ocr"]["wrist"]["offset_x_m"] = serde_json::json!(0.3);
+        fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+        assert_eq!(
+            load_config(&path).unwrap().vision.wrist,
+            config.vision.wrist
+        );
+    }
+}
+
+#[test]
 fn null_ocr_wrist_config_is_initialized_on_load() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.json");

@@ -21,6 +21,10 @@ pub fn load_config(path: &Path) -> Result<AppConfig, String> {
         .get("ocr")
         .and_then(|ocr| ocr.get("wrist"))
         .is_none_or(serde_json::Value::is_null);
+    let migrate_vision_wrist = raw
+        .get("vision")
+        .and_then(|vision| vision.get("wrist"))
+        .is_none_or(serde_json::Value::is_null);
     if version != SCHEMA_VERSION as u64 {
         let backup = path.with_extension(format!("v{version}.backup.json"));
         if backup.exists() && !backup.is_file() {
@@ -38,7 +42,7 @@ pub fn load_config(path: &Path) -> Result<AppConfig, String> {
             })?;
         }
         save_config(path, &config)?;
-    } else if migrate_ocr_wrist {
+    } else if migrate_ocr_wrist || migrate_vision_wrist {
         save_config(path, &config)?;
     }
     Ok(config)

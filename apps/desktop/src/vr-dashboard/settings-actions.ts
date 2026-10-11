@@ -19,6 +19,8 @@ import {
   type VrOverlayPositionField,
 } from "../settings/vr-overlay-settings.ts";
 
+import { patchVision, supportsVision } from "../settings/vision-settings.ts";
+
 export type VrDashboardAction =
   | "toggle_master"
   | "toggle_headset"
@@ -36,6 +38,7 @@ export type VrDashboardAction =
   | "wrist_opacity_down"
   | "wrist_opacity_up"
   | "preview_wrist"
+  | "toggle_vision"
   | "toggle_ocr"
   | "toggle_ocr_gesture"
   | "open_ocr_bindings"
@@ -92,6 +95,7 @@ export function applyVrDashboardAction(settings: Settings, action: VrDashboardAc
   if (typeof action === "string") {
     if (action.includes("osc") && !settings.features.osc_chatbox) return settings;
     if (action.includes("ocr") && !settings.features.ocr) return settings;
+    if (action === "toggle_vision" && !settings.features.visual_question_answering) return settings;
   }
   if (typeof action === "object") {
     if ("adjust_display_position" in action) {
@@ -208,6 +212,10 @@ export function applyVrDashboardAction(settings: Settings, action: VrDashboardAc
         opacity: step(settings.vr_overlay.wrist.opacity,
           action.endsWith("down") ? -0.05 : 0.05, 0.1, 1),
       });
+    case "toggle_vision":
+      if (!settings.vision.enabled && (!settings.vision.model.trim()
+        || !profiles.some((profile) => profile.id === settings.vision.profile_id && supportsVision(profile)))) return settings;
+      return patchVision(settings, { enabled: !settings.vision.enabled });
     case "toggle_ocr":
       return patchOcr(settings, { enabled: !settings.ocr.enabled });
     case "toggle_ocr_gesture":

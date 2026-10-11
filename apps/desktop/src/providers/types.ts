@@ -17,7 +17,7 @@ export interface AsrSettings {
 }
 
 export type ApiProvider = string;
-export type ApiCapability = "speech_to_text" | "text_generation" | "text_translation";
+export type ApiCapability = "speech_to_text" | "text_generation" | "text_translation" | "image_understanding";
 export type ProviderCategory = "cloud_provider" | "local_service" | "custom_protocol";
 export type RecognitionTransport = "realtime_stream" | "segmented_upload";
 export type ProviderSupportLevel = "native" | "protocol_compatible";

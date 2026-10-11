@@ -41,6 +41,7 @@ impl AppConfig {
         validate_recognition_models(&self.asr, &self.vad)?;
         validate_anki(&self.anki)?;
         validate_vr_overlay(&self.vr_overlay)?;
+        validate_vision(self)?;
         let ocr = &self.ocr;
         if !(5..=120).contains(&ocr.timeout_seconds)
             || !ocr.minimum_confidence.is_finite()
@@ -90,6 +91,112 @@ impl AppConfig {
         }
         Ok(())
     }
+}
+
+fn validate_vision(config: &AppConfig) -> Result<(), String> {
+    let vision = &config.vision;
+    for (field, value, min, max) in [
+        (
+            "max_capture_seconds",
+            vision.max_capture_seconds as u64,
+            1,
+            120,
+        ),
+        (
+            "asr_finalize_timeout_ms",
+            vision.asr_finalize_timeout_ms,
+            100,
+            120_000,
+        ),
+        (
+            "request_timeout_seconds",
+            vision.request_timeout_seconds as u64,
+            1,
+            600,
+        ),
+        (
+            "max_output_tokens",
+            vision.max_output_tokens as u64,
+            1,
+            32_768,
+        ),
+        ("image_max_edge", vision.image_max_edge as u64, 64, 8192),
+        (
+            "image_max_bytes",
+            vision.image_max_bytes as u64,
+            1024,
+            20_971_520,
+        ),
+    ] {
+        if !(min..=max).contains(&value) {
+            return Err(format!("vision.{field} must be between {min} and {max}"));
+        }
+    }
+    validate_range("vision.display_seconds", vision.display_seconds, 1.0, 120.0)?;
+    if vision.answer_language.trim().is_empty()
+        || vision.answer_language.len() > 64
+        || contains_control(&vision.answer_language)
+    {
+        return Err(
+            "vision.answer_language must contain 1 to 64 characters without control characters"
+                .into(),
+        );
+    }
+    if vision.system_prompt.trim().is_empty() || vision.system_prompt.chars().count() > 20_000 {
+        return Err("vision.system_prompt must contain 1 to 20000 characters".into());
+    }
+    if vision.model.len() > 256 || contains_control(&vision.model) {
+        return Err(
+            "vision.model must not exceed 256 characters or contain control characters".into(),
+        );
+    }
+    if let Some(id) = &vision.profile_id {
+        let profile = config
+            .asr
+            .api_profiles
+            .iter()
+            .find(|profile| &profile.id == id)
+            .ok_or_else(|| format!("Unknown vision.profile_id: {id}"))?;
+        if !["openai_compatible", "openrouter", "lm_studio", "ollama"]
+            .contains(&profile.provider.as_str())
+            || !profile
+                .enabled_capabilities
+                .iter()
+                .any(|capability| capability == "image_understanding")
+        {
+            return Err("vision.profile_id must enable image_understanding on a supported Chat Completions provider".into());
+        }
+    }
+    if vision.enabled && (vision.profile_id.is_none() || vision.model.trim().is_empty()) {
+        return Err("Enabled vision requires a profile and an image-capable model".into());
+    }
+    if let Some(wrist) = &vision.wrist {
+        if !["left", "right", "dominant"].contains(&wrist.hand.as_str())
+            || !["left", "right"].contains(&wrist.dominant_hand.as_str())
+        {
+            return Err("Unsupported vision wrist hand".into());
+        }
+        for (field, value) in [
+            ("offset_x_m", wrist.offset_x_m),
+            ("offset_y_m", wrist.offset_y_m),
+            ("offset_z_m", wrist.offset_z_m),
+        ] {
+            validate_range(&format!("vision.wrist.{field}"), value, -0.5, 0.5)?;
+        }
+        for (field, value) in [
+            ("pitch_deg", wrist.pitch_deg),
+            ("yaw_deg", wrist.yaw_deg),
+            ("roll_deg", wrist.roll_deg),
+        ] {
+            validate_range(&format!("vision.wrist.{field}"), value, -180.0, 180.0)?;
+        }
+        validate_range("vision.wrist.width_m", wrist.width_m, 0.1, 1.0)?;
+        validate_range("vision.wrist.opacity", wrist.opacity, 0.1, 1.0)?;
+        if !(18..=72).contains(&wrist.font_size_px) {
+            return Err("vision.wrist.font_size_px must be between 18 and 72".into());
+        }
+    }
+    Ok(())
 }
 
 fn validate_runtime(

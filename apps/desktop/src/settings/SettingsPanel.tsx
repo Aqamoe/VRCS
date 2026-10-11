@@ -275,7 +275,7 @@ export function SettingsPanel({
         />
       )}
 
-      {activeCategory === "ocr" && (
+      {activeCategory === "vision" && (
         <OcrSettingsSection vrAvailable={settings.features.vr_overlay} draft={draft} profiles={apiProfileCatalog.profiles}
           saveState={saveState} applySettings={applySettings} />
       )}

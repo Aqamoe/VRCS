@@ -35,6 +35,8 @@ mod ocr_wrist_layout;
 mod ocr_wrist_renderer;
 #[cfg(windows)]
 mod text_raster;
+#[cfg(windows)]
+mod vision_runtime;
 // Keep the image verifier covered without enabling scan cancellation.
 #[cfg(all(windows, test))]
 mod ocr_tracking;
@@ -82,7 +84,9 @@ pub fn vr_ocr_open_bindings(
     runtime: State<'_, crate::CoreRuntime>,
 ) -> Result<(), String> {
     runtime.require_feature(vrcs_core::FeatureKey::VrOverlay)?;
-    runtime.require_feature(vrcs_core::FeatureKey::Ocr)?;
+    if runtime.require_feature(vrcs_core::FeatureKey::Ocr).is_err() {
+        runtime.require_feature(vrcs_core::FeatureKey::VisualQuestionAnswering)?;
+    }
     manager.open_ocr_bindings()
 }
 

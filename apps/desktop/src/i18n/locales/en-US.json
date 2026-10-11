@@ -524,17 +524,50 @@
       }
     },
     "settings": {
-    "features": {
-      "title": "Features",
-      "glossary": "Glossary",
-      "learning": "Dictionary and learning",
-      "anki": "Anki",
-      "osc_chatbox": "OSC Chatbox",
-      "vrcx": "VRCX-0 integration",
-      "ocr": "OCR",
-      "vr_overlay": "VR Overlay",
-      "external_api": "External API"
-    },
+      "vision": {
+        "title": "Visual question answering",
+        "description": "Ask a question about the captured VR image.",
+        "enable": "Enable VR visual question answering",
+        "profile": "API profile",
+        "noProfile": "No profile selected",
+        "noProfiles": "No eligible profiles. Enable image understanding on an OpenAI-compatible, OpenRouter, LM Studio, or Ollama profile in API settings.",
+        "unavailableProfile": "Selected profile is unavailable",
+        "model": "Image-capable model",
+        "imageRequired": "The service and model must accept images through Chat Completions. A model name does not prove image support.",
+        "answerLanguage": "Answer language",
+        "systemPrompt": "System prompt",
+        "limits": "Capture, timeout and image limits",
+        "imageTest": "Image input test",
+        "testDescription": "Send a built-in test image with the saved settings. The test does not read the current selection and can incur API charges.",
+        "testButton": "Test image input",
+        "testing": "Testing…",
+        "testFailed": "Image input test failed.",
+        "asrSupport": "Start microphone transcription first. This version records while you hold the trigger and recognizes speech after release, without a live draft. Supported: local Qwen, compatible batch transcription such as Groq, Qwen realtime, and FunASR. Live translation, OpenAI realtime, Gemini, and Token Plan are not supported yet.",
+        "wristTitle": "Answer wrist panel",
+        "wristDescription": "This layout is independent of the OCR wrist panel.",
+        "vrUnavailable": "Enable the VR Overlay feature to use visual question answering.",
+        "controls": "With a valid selection, hold the left trigger to capture your question. Release to finish recognition and send. Close the panel or use the cancel action to discard. Capture timeout does not send automatically.",
+        "privacy": "Selection images and questions are sent to the selected service. Cloud ASR also receives audio, and the separate recognition request can incur extra charges. The API profile timeout also limits each request.",
+        "max_capture_seconds": "Maximum capture time (s)",
+        "asr_finalize_timeout_ms": "ASR finalization timeout (ms)",
+        "request_timeout_seconds": "Request timeout (s)",
+        "max_output_tokens": "Maximum output tokens",
+        "image_max_edge": "Maximum image edge (px)",
+        "image_max_bytes": "Maximum image size",
+        "display_seconds": "Answer display time (s)"
+      },
+      "features": {
+        "title": "Features",
+        "glossary": "Glossary",
+        "learning": "Dictionary and learning",
+        "anki": "Anki",
+        "osc_chatbox": "OSC Chatbox",
+        "vrcx": "VRCX-0 integration",
+        "visual_question_answering": "Visual question answering",
+        "ocr": "OCR",
+        "vr_overlay": "VR Overlay",
+        "external_api": "External API"
+      },
       "vrDashboard": {
         "resetPosition": "Reset position and rotation",
         "displayTab": "Display & OCR",
@@ -664,6 +697,7 @@
         "learning": "Learning",
         "connections": "Connections",
         "vrOverlay": "VR Overlay",
+        "vision": "Vision",
         "ocr": "OCR"
       },
       "vrOverlay": {
@@ -1003,6 +1037,8 @@
           "customProtocol": "Custom protocols"
         },
         "capabilities": {
+          "image_understanding": "Image understanding",
+          "image_understanding_description": "Use an image-capable model to answer questions about images.",
           "label": "Enabled capabilities",
           "description": "Choose which features can use this API profile.",
           "required": "Required here",

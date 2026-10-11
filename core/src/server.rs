@@ -20,6 +20,7 @@ mod search;
 mod settings;
 mod storage;
 mod translation;
+mod vision;
 mod vrcx;
 mod ws;
 
@@ -276,6 +277,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/api/ocr/models/download", post(ocr::model_download))
         .route("/api/ocr/runtime", get(ocr::runtime_status))
+        .route("/api/vision/test", post(vision::test_image))
         .route("/api/providers", get(cloud::provider_list))
         .route(
             "/api/asr/profiles",

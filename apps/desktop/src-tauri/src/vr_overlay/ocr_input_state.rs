@@ -83,6 +83,54 @@ impl FrameSession {
     }
 }
 
+/// Origin changes and tracking loss cancel a press; they never synthesize a release.
+#[derive(Default)]
+pub struct TriggerEdge {
+    origin: Option<u64>,
+    armed: bool,
+    pressed: bool,
+}
+
+#[derive(Default, Debug, PartialEq, Eq)]
+pub struct TriggerUpdate {
+    pub pressed: bool,
+    pub released: bool,
+    pub lost: bool,
+    pub down: bool,
+}
+
+impl TriggerEdge {
+    pub fn update(&mut self, origin: Option<u64>, down: bool) -> TriggerUpdate {
+        if origin != self.origin || origin.is_none() {
+            let lost = self.pressed;
+            *self = Self {
+                origin,
+                ..Self::default()
+            };
+            if origin.is_some() && !down {
+                self.armed = true;
+            }
+            return TriggerUpdate {
+                lost,
+                down: origin.is_some() && down,
+                ..TriggerUpdate::default()
+            };
+        }
+        let pressed = self.armed && down && !self.pressed;
+        let released = self.pressed && !down;
+        if !down {
+            self.armed = true;
+        }
+        self.pressed = self.armed && down;
+        TriggerUpdate {
+            pressed,
+            released,
+            lost: false,
+            down,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct HoldAction {
     origin: Option<u64>,
@@ -123,6 +171,33 @@ impl HoldAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trigger_requires_release_before_arming_and_fires_without_hold_delay() {
+        let mut trigger = TriggerEdge::default();
+        assert!(!trigger.update(Some(7), true).pressed);
+        assert!(!trigger.update(Some(7), true).pressed);
+        assert!(!trigger.update(Some(7), false).released);
+        assert!(trigger.update(Some(7), true).pressed);
+        assert!(!trigger.update(Some(7), true).pressed);
+        assert!(trigger.update(Some(7), false).released);
+    }
+
+    #[test]
+    fn trigger_loss_and_origin_changes_never_submit_a_question() {
+        let mut trigger = TriggerEdge::default();
+        trigger.update(Some(7), false);
+        assert!(trigger.update(Some(7), true).pressed);
+        let lost = trigger.update(None, false);
+        assert!(lost.lost);
+        assert!(!lost.released);
+        assert!(!trigger.update(Some(7), true).pressed);
+        trigger.update(Some(7), false);
+        assert!(trigger.update(Some(7), true).pressed);
+        let replaced = trigger.update(Some(8), false);
+        assert!(replaced.lost);
+        assert!(!replaced.released);
+    }
 
     fn tracking(activating: bool) -> FrameTracking {
         FrameTracking {

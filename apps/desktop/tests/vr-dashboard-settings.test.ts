@@ -4,12 +4,13 @@ import test from "node:test";
 
 import { applyVrDashboardAction, dashboardLanguageChoices } from "../src/vr-dashboard/settings-actions.ts";
 import { DEFAULT_OCR_SETTINGS, DEFAULT_VR_OVERLAY_SETTINGS } from "../src/settings/vr-overlay-settings.ts";
+import { DEFAULT_VISION_SETTINGS } from "../src/settings/vision-settings.ts";
 import type { Settings } from "../src/settings/types.ts";
 import type { ApiProfileView } from "../src/providers/types.ts";
 import { VR_OVERLAY_POSITION_RANGES, type VrOverlayPositionField } from "../src/settings/vr-overlay-settings.ts";
 
 const settings = {
-  schema_version: 30,
+  schema_version: 31,
   features: { ...DEFAULT_FEATURE_SETTINGS },
   asr: { backend: "qwen_local_managed", language: "auto", managed_qwen: { package_id: "qwen3-asr-0.6b-q8_0", device: "auto" } },
   translation: {
@@ -34,6 +35,7 @@ const settings = {
     wrist: { ...DEFAULT_VR_OVERLAY_SETTINGS.wrist },
   },
   ocr: { ...DEFAULT_OCR_SETTINGS },
+  vision: { ...DEFAULT_VISION_SETTINGS },
   untouched: { value: 42 },
 } as unknown as Settings;
 

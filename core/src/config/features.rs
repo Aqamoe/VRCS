@@ -11,6 +11,7 @@ pub struct FeatureConfig {
     pub osc_chatbox: bool,
     pub vrcx: bool,
     pub ocr: bool,
+    pub visual_question_answering: bool,
     pub vr_overlay: bool,
     pub external_api: bool,
 }
@@ -24,6 +25,7 @@ impl Default for FeatureConfig {
             osc_chatbox: true,
             vrcx: true,
             ocr: true,
+            visual_question_answering: false,
             vr_overlay: true,
             external_api: true,
         }
@@ -38,6 +40,7 @@ pub enum FeatureKey {
     OscChatbox,
     Vrcx,
     Ocr,
+    VisualQuestionAnswering,
     VrOverlay,
     ExternalApi,
 }
@@ -51,6 +54,7 @@ impl FeatureKey {
             Self::OscChatbox => "osc_chatbox",
             Self::Vrcx => "vrcx",
             Self::Ocr => "ocr",
+            Self::VisualQuestionAnswering => "visual_question_answering",
             Self::VrOverlay => "vr_overlay",
             Self::ExternalApi => "external_api",
         }
@@ -64,6 +68,7 @@ impl FeatureKey {
             Self::OscChatbox => features.osc_chatbox,
             Self::Vrcx => features.vrcx,
             Self::Ocr => features.ocr,
+            Self::VisualQuestionAnswering => features.visual_question_answering,
             Self::VrOverlay => features.vr_overlay,
             Self::ExternalApi => features.external_api,
         }
@@ -94,5 +99,30 @@ pub fn apply_feature_gates(config: &AppConfig) -> AppConfig {
     effective.vr_overlay.enabled &= features.vr_overlay;
     effective.ocr.enabled &= features.ocr && features.vr_overlay;
     effective.ocr.desktop_enabled &= features.ocr;
+    effective.vision.enabled &= features.visual_question_answering && features.vr_overlay;
     effective
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vision_gate_is_independent_of_ocr_and_preserves_preferences() {
+        let mut config = AppConfig::default();
+        config.vision.enabled = true;
+        assert!(!apply_feature_gates(&config).vision.enabled);
+        config.features.visual_question_answering = true;
+        config.features.ocr = false;
+        config.vr_overlay.enabled = false;
+        assert!(apply_feature_gates(&config).vision.enabled);
+        config.features.vr_overlay = false;
+        assert!(!apply_feature_gates(&config).vision.enabled);
+        assert!(config.vision.enabled);
+        assert_eq!(
+            FeatureKey::VisualQuestionAnswering.name(),
+            "visual_question_answering"
+        );
+        assert!(FeatureKey::VisualQuestionAnswering.enabled(&config.features));
+    }
 }

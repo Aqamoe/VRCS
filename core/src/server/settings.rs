@@ -52,6 +52,7 @@ pub(super) async fn update_settings(
         vrcx: update.vrcx,
         vr_overlay: update.vr_overlay,
         ocr: update.ocr,
+        vision: update.vision,
     };
 
     let expected_revision = headers
@@ -196,6 +197,7 @@ pub(super) fn parse_settings_update(body: &[u8]) -> Result<SettingsUpdate, Strin
         "osc_chatbox",
         "vrcx",
         "ocr",
+        "visual_question_answering",
         "vr_overlay",
         "external_api",
     ] {
@@ -205,7 +207,7 @@ pub(super) fn parse_settings_update(body: &[u8]) -> Result<SettingsUpdate, Strin
     }
     let mut ignored = Vec::new();
     let mut deserializer = serde_json::Deserializer::from_slice(body);
-    let update = serde_ignored::deserialize(&mut deserializer, |path| {
+    let mut update: SettingsUpdate = serde_ignored::deserialize(&mut deserializer, |path| {
         ignored.push(path.to_string());
     })
     .map_err(|error| format!("Invalid settings payload: {error}"))?;
@@ -213,6 +215,13 @@ pub(super) fn parse_settings_update(body: &[u8]) -> Result<SettingsUpdate, Strin
         return Err(format!(
             "Settings payload contains an unknown field: {path}"
         ));
+    }
+    if raw
+        .get("vision")
+        .and_then(|vision| vision.get("wrist"))
+        .is_none_or(Value::is_null)
+    {
+        update.vision.wrist = Some(update.ocr.wrist.clone().unwrap_or_default());
     }
     Ok(update)
 }
@@ -244,6 +253,32 @@ mod tests {
             .contains("features.glossary"));
         raw.as_object_mut().unwrap().remove("features");
         assert!(parse_settings_update(&serde_json::to_vec(&raw).unwrap()).is_err());
+    }
+
+    #[test]
+    fn settings_payload_round_trips_vision_and_requires_its_feature_switch() {
+        let mut config = AppConfig::default();
+        config.vision.model = "image-model".into();
+        config.vision.wrist.as_mut().unwrap().offset_x_m = 0.2;
+        let mut raw = serde_json::to_value(&config).unwrap();
+        let update = parse_settings_update(&serde_json::to_vec(&raw).unwrap()).unwrap();
+        assert_eq!(update.vision, config.vision);
+        raw["features"]
+            .as_object_mut()
+            .unwrap()
+            .remove("visual_question_answering");
+        assert!(parse_settings_update(&serde_json::to_vec(&raw).unwrap())
+            .unwrap_err()
+            .contains("features.visual_question_answering"));
+    }
+
+    #[test]
+    fn settings_payload_initializes_missing_vision_wrist_from_ocr() {
+        let mut raw = serde_json::to_value(AppConfig::default()).unwrap();
+        raw["ocr"]["wrist"]["offset_x_m"] = serde_json::json!(0.2);
+        raw.as_object_mut().unwrap().remove("vision");
+        let update = parse_settings_update(&serde_json::to_vec(&raw).unwrap()).unwrap();
+        assert_eq!(update.vision.wrist, update.ocr.wrist);
     }
 
     #[test]

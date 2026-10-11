@@ -524,17 +524,50 @@
       }
     },
     "settings": {
-    "features": {
-      "title": "功能選項",
-      "glossary": "術語表",
-      "learning": "字典與學習",
-      "anki": "Anki",
-      "osc_chatbox": "OSC Chatbox",
-      "vrcx": "VRCX-0 聯動",
-      "ocr": "OCR",
-      "vr_overlay": "VR Overlay",
-      "external_api": "外部 API"
-    },
+      "vision": {
+        "title": "視覺問答",
+        "description": "針對擷取的 VR 圖像提出問題。",
+        "enable": "啟用 VR 視覺問答",
+        "profile": "API 設定檔",
+        "noProfile": "未選擇設定檔",
+        "noProfiles": "沒有可用設定檔。請在 API 設定中為 OpenAI 相容、OpenRouter、LM Studio 或 Ollama 設定檔啟用圖像理解。",
+        "unavailableProfile": "所選設定檔無法使用",
+        "model": "支援圖片的模型",
+        "imageRequired": "服務與模型必須透過 Chat Completions 接受圖片。模型名稱不能證明圖片支援。",
+        "answerLanguage": "回答語言",
+        "systemPrompt": "系統提示",
+        "limits": "擷取、逾時與圖片限制",
+        "imageTest": "圖像輸入測試",
+        "testDescription": "使用已儲存設定傳送應用程式內建測試圖片，不會讀取目前選區。測試可能產生 API 費用。",
+        "testButton": "測試圖像輸入",
+        "testing": "正在測試…",
+        "testFailed": "圖像輸入測試失敗。",
+        "asrSupport": "請先啟動麥克風辨識。首版按住期間收音，放開後辨識，不顯示即時草稿。支援本地 Qwen、Groq 等相容批次辨識、Qwen realtime 和 FunASR；暫不支援即時翻譯、OpenAI realtime、Gemini 和 Token Plan。",
+        "wristTitle": "回答手腕面板",
+        "wristDescription": "此配置獨立於 OCR 手腕面板。",
+        "vrUnavailable": "請啟用 VR Overlay 功能以使用視覺問答。",
+        "controls": "有效選框內，按住左扳機收集問題，放開後完成辨識並傳送。關閉面板或使用取消操作可捨棄。收音逾時不會自動傳送。",
+        "privacy": "選區圖片與問題將傳送至所選服務；雲端 ASR 還會接收語音，獨立辨識可能額外計費。請求逾時同時受 API 設定檔逾時限制。",
+        "max_capture_seconds": "最長收音時間（秒）",
+        "asr_finalize_timeout_ms": "ASR 收尾逾時（毫秒）",
+        "request_timeout_seconds": "請求逾時（秒）",
+        "max_output_tokens": "最大輸出 token 數",
+        "image_max_edge": "圖片最長邊（像素）",
+        "image_max_bytes": "圖片大小上限",
+        "display_seconds": "回答顯示時間（秒）"
+      },
+      "features": {
+        "title": "功能選項",
+        "glossary": "術語表",
+        "learning": "字典與學習",
+        "anki": "Anki",
+        "osc_chatbox": "OSC Chatbox",
+        "vrcx": "VRCX-0 聯動",
+        "visual_question_answering": "視覺問答",
+        "ocr": "OCR",
+        "vr_overlay": "VR Overlay",
+        "external_api": "外部 API"
+      },
       "vrDashboard": {
         "resetPosition": "恢復預設位置與旋轉",
         "displayTab": "顯示與 OCR",
@@ -664,6 +697,7 @@
         "learning": "學習",
         "connections": "連線",
         "vrOverlay": "VR Overlay",
+        "vision": "視覺",
         "ocr": "OCR"
       },
       "vrOverlay": {
@@ -1003,6 +1037,8 @@
           "customProtocol": "自訂通訊協定"
         },
         "capabilities": {
+          "image_understanding": "圖像理解",
+          "image_understanding_description": "使用支援圖片的模型回答有關圖像的問題。",
           "label": "已啟用功能",
           "description": "選擇哪些功能可以使用此 API 設定檔。",
           "required": "此處必填",

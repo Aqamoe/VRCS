@@ -10,10 +10,11 @@ import {
 import { DEFAULT_OCR_SETTINGS, DEFAULT_VR_OVERLAY_SETTINGS } from "../src/settings/vr-overlay-settings.ts";
 import type { ApiProfileView, ProviderDefinition } from "../src/providers/types.ts";
 import type { AnkiStatus } from "../src/anki/types.ts";
+import { DEFAULT_VISION_SETTINGS } from "../src/settings/vision-settings.ts";
 import type { Settings } from "../src/settings/types.ts";
 
 const settings: Settings = {
-  schema_version: 30,
+  schema_version: 31,
   features: { ...DEFAULT_FEATURE_SETTINGS },
   server: { host: "127.0.0.1", port: 8766 },
   storage: {
@@ -45,6 +46,7 @@ const settings: Settings = {
   vrcx: { enabled: false, port: 22500, include_in_llm_context: false, include_in_asr_context: false },
   vr_overlay: DEFAULT_VR_OVERLAY_SETTINGS,
   ocr: DEFAULT_OCR_SETTINGS,
+  vision: DEFAULT_VISION_SETTINGS,
 };
 
 const ankiStatus: AnkiStatus = {

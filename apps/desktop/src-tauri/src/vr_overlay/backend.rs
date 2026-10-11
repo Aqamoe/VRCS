@@ -113,6 +113,7 @@ mod platform {
             path: &std::path::Path,
             gesture_enabled: bool,
             reading_focus: bool,
+            vision_enabled: bool,
         ) -> Result<crate::vr_overlay::ocr_input::InputActions, String> {
             if self.ocr_input.is_none() {
                 let table = load_raw_interface(openvr_sys::IVRInput_Version, "input")?
@@ -127,7 +128,12 @@ mod platform {
             self.ocr_input
                 .as_mut()
                 .ok_or("OCR input is unavailable")?
-                .poll(tracking, reading_focus)
+                .poll_with_vision(tracking, reading_focus, vision_enabled)
+        }
+        pub fn freeze_ocr_frame(&mut self) {
+            if let Some(input) = &mut self.ocr_input {
+                input.freeze_frame();
+            }
         }
         pub fn reset_ocr_input(&mut self) {
             self.ocr_input = None;

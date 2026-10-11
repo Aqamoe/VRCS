@@ -120,6 +120,8 @@ pub struct SettingsUpdate {
     pub vr_overlay: VrOverlayConfig,
     #[serde(default)]
     pub ocr: VrOcrConfig,
+    #[serde(default)]
+    pub vision: crate::config::VisionConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]

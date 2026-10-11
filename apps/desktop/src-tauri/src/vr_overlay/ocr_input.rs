@@ -1,10 +1,12 @@
 use super::ocr_gesture::{camera_frame, gesture_frame, point_in_head, FrameCorners, HandSample};
-use super::ocr_input_state::{FrameSession, FrameTracking, HoldAction};
+use super::ocr_input_state::{FrameSession, FrameTracking, HoldAction, TriggerEdge, TriggerUpdate};
 use super::ocr_wrist::Action;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::{ffi::CString, mem::size_of, path::Path, time::Instant};
 
 pub struct InputActions {
+    pub vision_trigger: TriggerUpdate,
+    pub cancel: bool,
     pub scan: bool,
     pub clear: bool,
     pub available: bool,
@@ -41,6 +43,9 @@ pub struct OcrInput {
     action_set: u64,
     scan: u64,
     clear: u64,
+    cancel: u64,
+    vision_trigger: TriggerEdge,
+    cancel_trigger: TriggerEdge,
     reading: [u64; 4],
     scan_hold: HoldAction,
     clear_hold: HoldAction,
@@ -78,7 +83,7 @@ pub fn install_manifest(directory: &Path) -> Result<std::path::PathBuf, String> 
             serde_json::json!({"path":format!("/user/hand/{side}/input/grip"),"mode":mode,"inputs":inputs})
         };
         let binding = serde_json::json!({"controller_type":controller,"name":"VRCS OCR",
-        "description":"Hold both grips to drag a frame. Hold right trigger to confirm / scan, left trigger to cancel / clear. Customize to avoid game input conflicts.",
+        "description":"Hold both grips to drag a frame. Right trigger confirms OCR. With the visual assistant enabled, hold left trigger in a valid frame to speak and release to ask; otherwise hold to cancel / clear. Bind the optional cancel action as needed. Customize to avoid game input conflicts.",
         "bindings":{"/actions/ocr":{"poses":[
             {"path":"/user/hand/left/pose/raw","output":"/actions/ocr/in/left_pose"},
             {"path":"/user/hand/right/pose/raw","output":"/actions/ocr/in/right_pose"}
@@ -100,6 +105,7 @@ pub fn install_manifest(directory: &Path) -> Result<std::path::PathBuf, String> 
             "action_sets":[{"name":"/actions/ocr","usage":"leftright"}],
             "actions":[{"name":"/actions/ocr/in/scan","type":"boolean","requirement":"optional"},
                 {"name":"/actions/ocr/in/clear","type":"boolean","requirement":"optional"},
+                                {"name":"/actions/ocr/in/cancel","type":"boolean","requirement":"optional"},
                 {"name":"/actions/ocr/in/previous_block","type":"boolean","requirement":"optional"},
                 {"name":"/actions/ocr/in/next_block","type":"boolean","requirement":"optional"},
                 {"name":"/actions/ocr/in/previous_page","type":"boolean","requirement":"optional"},
@@ -112,8 +118,9 @@ pub fn install_manifest(directory: &Path) -> Result<std::path::PathBuf, String> 
                 {"name":"/actions/ocr/in/right_hand","type":"skeleton","skeleton":"/skeleton/hand/right","requirement":"optional"}],
             "default_bindings":bindings,
             "localization":[{"language_tag":"en_US","/actions/ocr":"VRCS OCR",
-                "/actions/ocr/in/scan":"Confirm frame / scan (hold)","/actions/ocr/in/clear":"Cancel frame / clear (hold)",
-                "/actions/ocr/in/previous_block":"Previous OCR block (point at panel)",
+                "/actions/ocr/in/scan":"Confirm frame / scan (hold)","/actions/ocr/in/clear":"Visual question (press / release) or cancel / clear (hold)",
+                "/actions/ocr/in/cancel":"Cancel visual question (custom binding)",
+                                "/actions/ocr/in/previous_block":"Previous OCR block (point at panel)",
                 "/actions/ocr/in/next_block":"Next OCR block (point at panel)",
                 "/actions/ocr/in/previous_page":"Previous OCR page (point at panel)",
                 "/actions/ocr/in/next_page":"Next OCR page (point at panel)",
@@ -135,6 +142,10 @@ fn write_if_changed(path: &Path, value: &serde_json::Value) -> Result<(), String
 }
 
 impl OcrInput {
+    pub fn freeze_frame(&mut self) {
+        self.frame_session = FrameSession::default();
+    }
+
     pub fn open_bindings(&mut self) -> Result<(), String> {
         let api = unsafe { &*self.table };
         check(unsafe {
@@ -147,6 +158,8 @@ impl OcrInput {
         })?;
         self.scan_hold = HoldAction::default();
         self.clear_hold = HoldAction::default();
+        self.vision_trigger = TriggerEdge::default();
+        self.cancel_trigger = TriggerEdge::default();
         self.frame_session = FrameSession::default();
         self.last_digital_state = None;
         Ok(())
@@ -187,6 +200,9 @@ impl OcrInput {
             action_set,
             scan: action("/actions/ocr/in/scan")?,
             clear: action("/actions/ocr/in/clear")?,
+            cancel: action("/actions/ocr/in/cancel").unwrap_or(0),
+            vision_trigger: TriggerEdge::default(),
+            cancel_trigger: TriggerEdge::default(),
             reading: ["previous_block", "next_block", "previous_page", "next_page"]
                 .map(|name| action(&format!("/actions/ocr/in/{name}")).unwrap_or(0)),
             scan_hold: HoldAction::default(),
@@ -208,10 +224,11 @@ impl OcrInput {
         })
     }
 
-    pub fn poll(
+    pub fn poll_with_vision(
         &mut self,
         tracking: Option<([[f32; 4]; 3], i32)>,
         reading_focus: bool,
+        vision_enabled: bool,
     ) -> Result<InputActions, String> {
         let tracking = tracking.filter(|_| !reading_focus);
         let api = unsafe { &*self.table };
@@ -283,6 +300,19 @@ impl OcrInput {
         let origin = |data: &openvr_sys::InputDigitalActionData_t| {
             (data.bActive && data.activeOrigin != 0 && !reading_focus).then_some(data.activeOrigin)
         };
+        // Do not mask the recording trigger with wrist focus: a real release must close audio.
+        let raw_origin = |data: &openvr_sys::InputDigitalActionData_t| {
+            (data.bActive && data.activeOrigin != 0).then_some(data.activeOrigin)
+        };
+        let vision_trigger = self.vision_trigger.update(raw_origin(&clear), clear.bState);
+        let cancel = (self.cancel != 0).then(|| read(self.cancel).ok()).flatten();
+        let cancel = self
+            .cancel_trigger
+            .update(
+                cancel.as_ref().and_then(raw_origin),
+                cancel.as_ref().is_some_and(|data| data.bState),
+            )
+            .pressed;
         let now = Instant::now();
         let hands = tracking.and_then(|(head, origin)| {
             Some([
@@ -340,10 +370,15 @@ impl OcrInput {
         let available = scan.bActive && clear.bActive;
         let scan = self.scan_hold.update(origin(&scan), scan.bState, now);
         let clear = self.clear_hold.update(origin(&clear), clear.bState, now);
-        let frame = self
-            .frame_session
-            .update([gesture_tracking, controllers], scan, clear, now);
+        let frame = self.frame_session.update(
+            [gesture_tracking, controllers],
+            scan && !(vision_enabled && vision_trigger.down),
+            cancel || (clear && !vision_enabled),
+            now,
+        );
         Ok(InputActions {
+            vision_trigger,
+            cancel,
             scan,
             clear,
             available,
@@ -528,6 +563,9 @@ mod tests {
             action_set: 42,
             scan: 1,
             clear: 2,
+            cancel: 0,
+            vision_trigger: TriggerEdge::default(),
+            cancel_trigger: TriggerEdge::default(),
             reading: [0; 4],
             hands: [72, 73],
             grips: [3, 4],
@@ -568,7 +606,9 @@ mod tests {
         api.GetDigitalActionData = Some(digital);
         let mut input = input(&api);
         let head = super::super::transform::matrix(0., 0., 0., [0.; 3]);
-        let actions = input.poll(Some((head, 1)), false).unwrap();
+        let actions = input
+            .poll_with_vision(Some((head, 1)), false, false)
+            .unwrap();
         assert!(actions.available);
         assert!(!actions.gesture_available);
         assert!(actions.frame.is_none());
@@ -606,7 +646,7 @@ mod tests {
         let held_since = Instant::now() - std::time::Duration::from_secs(1);
         input.scan_hold.update(Some(1), true, held_since);
         input.clear_hold.update(Some(2), true, held_since);
-        let focused = input.poll(None, true).unwrap();
+        let focused = input.poll_with_vision(None, true, false).unwrap();
         assert!(!focused.scan && !focused.clear);
         assert_eq!(
             focused.navigation,
@@ -617,7 +657,11 @@ mod tests {
                 Action::NextPage
             ]
         );
-        assert!(input.poll(None, false).unwrap().navigation.is_empty());
+        assert!(input
+            .poll_with_vision(None, false, false)
+            .unwrap()
+            .navigation
+            .is_empty());
     }
 
     #[test]
@@ -627,11 +671,20 @@ mod tests {
         let manifest = install_manifest(&directory).unwrap();
         let manifest: serde_json::Value =
             serde_json::from_slice(&std::fs::read(manifest).unwrap()).unwrap();
+        assert!(manifest["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| action["name"] == "/actions/ocr/in/cancel"
+                && action["requirement"] == "optional"));
         for controller in ["knuckles", "oculus_touch", "vive_controller"] {
             let binding: serde_json::Value = serde_json::from_slice(
                 &std::fs::read(directory.join(format!("{controller}.json"))).unwrap(),
             )
             .unwrap();
+            assert!(!serde_json::to_string(&binding)
+                .unwrap()
+                .contains("/actions/ocr/in/cancel"));
             let binding = &binding["bindings"]["/actions/ocr"];
             for side in ["left", "right"] {
                 let pose = binding["poses"]

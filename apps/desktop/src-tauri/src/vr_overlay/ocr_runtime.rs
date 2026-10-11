@@ -81,6 +81,7 @@ impl ScanProgress {
 }
 
 pub struct OcrRuntime {
+    pub vision: super::vision_runtime::VisionRuntime,
     service: Option<VrOcrService>,
     directory: Option<PathBuf>,
     manifest: Option<PathBuf>,
@@ -100,6 +101,7 @@ pub struct OcrRuntime {
     configuration: Option<Arc<ScanConfiguration>>,
     selecting: bool,
     selection: Option<Selection>,
+    vision_frame_valid: bool,
     displayed_at: Option<std::time::Instant>,
     reader: Reader,
     wrist_eye: Option<usize>,
@@ -117,6 +119,7 @@ impl OcrRuntime {
     pub fn new(service: Option<VrOcrService>, directory: Option<PathBuf>) -> Self {
         let (sender, receiver) = mpsc::channel(32);
         Self {
+            vision: super::vision_runtime::VisionRuntime::new(),
             service,
             directory,
             manifest: None,
@@ -136,6 +139,7 @@ impl OcrRuntime {
             configuration: None,
             selecting: false,
             selection: None,
+            vision_frame_valid: false,
             displayed_at: None,
             reader: Reader::default(),
             wrist_eye: None,
@@ -183,6 +187,7 @@ impl OcrRuntime {
     }
 
     pub fn clear(&mut self) {
+        self.vision.clear();
         if let Some(task) = self.task.take() {
             task.abort();
         }
@@ -201,6 +206,7 @@ impl OcrRuntime {
         self.configuration = None;
         self.selecting = false;
         self.selection = None;
+        self.vision_frame_valid = false;
         self.displayed_at = None;
         self.reader = Reader::default();
         self.reader.sync(self.status.scan_id, &[]);
@@ -224,6 +230,7 @@ impl OcrRuntime {
     }
 
     pub fn unavailable(&mut self, enabled: bool) {
+        self.vision.clear();
         let state = if enabled {
             OcrState::WaitingVr
         } else {
@@ -256,10 +263,11 @@ impl OcrRuntime {
         config: &VrOcrConfig,
         wrist: &vrcs_core::VrOverlayWristConfig,
     ) {
+        self.vision.tick();
         if self.capture.is_none() && !self.selecting {
             backend.reset_ocr();
         }
-        if !config.enabled {
+        if !config.enabled && !self.vision.enabled() {
             backend.reset_ocr();
             backend.reset(OverlayKind::OcrWrist);
             backend.reset(OverlayKind::OcrProgress);
@@ -297,7 +305,13 @@ impl OcrRuntime {
             feedback.fail(self.status.state, code, now);
             self.feedback = Some(feedback);
         }
-        if let Err(error) = self.update_wrist(backend, config, wrist) {
+        let wrist_result = if self.vision.visible() {
+            self.wrist_view = None;
+            self.vision.render(backend)
+        } else {
+            self.update_wrist(backend, config, wrist)
+        };
+        if let Err(error) = wrist_result {
             backend.reset(OverlayKind::OcrWrist);
             self.wrist_view = None;
             self.status.wrist_state = OcrWristState::Error;
@@ -394,7 +408,12 @@ impl OcrRuntime {
 
     fn update(&mut self, backend: &mut OpenVrBackend, config: &VrOcrConfig) -> Result<(), String> {
         let (events, focused) = backend.poll_ocr_wrist_events()?;
-        let reading_focus = self.update_wrist_pointer(&events, focused);
+        let reading_focus = if self.vision.visible() {
+            self.vision.pointer(&events, focused);
+            focused || events.iter().any(|event| event.point().is_some())
+        } else {
+            self.update_wrist_pointer(&events, focused)
+        };
         if self.manifest.is_none() {
             self.manifest = Some(install_manifest(
                 self.directory
@@ -404,16 +423,29 @@ impl OcrRuntime {
         }
         let input = backend.ocr_input(
             self.manifest.as_deref().ok_or("OCR manifest unavailable")?,
-            config.hand_gesture_enabled,
+            config.hand_gesture_enabled || self.vision.enabled(),
             reading_focus,
+            self.vision.enabled(),
         )?;
+        if input.cancel {
+            self.clear();
+            backend.reset_ocr();
+            return Ok(());
+        }
+        self.vision.trigger(&input.vision_trigger);
+        if self.vision.busy() {
+            backend.freeze_ocr_frame();
+            // The image and audio window are frozen. Grip release cannot cancel them.
+            return Ok(());
+        }
         for action in input.navigation.iter().copied() {
             self.reading_action(action);
         }
         self.status.controller_bound = input.available;
         self.status.gesture_available = input.gesture_available;
-        if input.clear {
+        if input.clear && !(self.vision.enabled() && self.selecting && self.vision_frame_valid) {
             self.clear();
+            backend.freeze_ocr_frame();
             backend.reset_ocr();
             return Ok(());
         }
@@ -445,6 +477,7 @@ impl OcrRuntime {
         }
         let mut capture_requested = false;
         if let Some(frame) = &input.frame {
+            self.vision_frame_valid = false;
             if !self.selecting {
                 self.clear();
                 backend.reset_ocr();
@@ -475,8 +508,13 @@ impl OcrRuntime {
                 }
                 return Ok(());
             };
-            let visible = eyes.iter().all(|eye| selection.crop_bounds(eye).is_some());
+            let visible = if self.vision.enabled() {
+                selection.crop_bounds(&eyes[0]).is_some()
+            } else {
+                eyes.iter().all(|eye| selection.crop_bounds(eye).is_some())
+            };
             self.selection = Some(selection);
+            self.vision_frame_valid = visible;
             // Hide an off-screen preview without ending the frame session.
             if !visible {
                 backend.reset_ocr();
@@ -486,7 +524,15 @@ impl OcrRuntime {
                 }
                 return Ok(());
             }
-            if input.frame_confirmed {
+            if self.vision.enabled() && input.vision_trigger.pressed && !reading_focus {
+                let selection = self.selection.clone().ok_or("Invalid visual frame")?;
+                self.clear();
+                backend.reset_ocr();
+                backend.freeze_ocr_frame();
+                self.vision.begin(backend, &selection);
+                return Ok(());
+            }
+            if input.frame_confirmed && config.enabled {
                 self.selecting = false;
                 backend.reset_ocr();
                 self.status.state = OcrState::Capturing;
@@ -503,7 +549,11 @@ impl OcrRuntime {
                 backend.set_opacity(OverlayKind::OcrFrame, 1.)?;
                 backend.show(OverlayKind::OcrFrame)?;
             }
-        } else if input.scan && !self.selecting {
+        } else if input.scan
+            && config.enabled
+            && !self.selecting
+            && !(self.vision.enabled() && input.vision_trigger.down)
+        {
             self.clear();
             backend.reset_ocr();
             self.status.state = OcrState::Capturing;
@@ -587,6 +637,10 @@ impl OcrRuntime {
     }
 
     fn reading_action(&mut self, action: Action) {
+        if self.vision.visible() {
+            self.vision.action(action);
+            return;
+        }
         if action == Action::Close {
             self.clear();
             return;

@@ -844,7 +844,7 @@ pub fn config_from_value(raw: &serde_json::Value) -> Result<AppConfig, String> {
         version if version == SCHEMA_VERSION as u64 => {
             serde_json::from_value(raw.clone()).map_err(|error| error.to_string())?
         }
-        26..=29 => serde_json::from_value(raw.clone()).map_err(|error| error.to_string())?,
+        26..=30 => serde_json::from_value(raw.clone()).map_err(|error| error.to_string())?,
         23..=25 => deserialize_v24(raw.clone())?,
         22 => migrate_v22(raw)?,
         21 => migrate_v21(raw)?,
@@ -863,6 +863,13 @@ pub fn config_from_value(raw: &serde_json::Value) -> Result<AppConfig, String> {
     config.schema_version = SCHEMA_VERSION;
     if config.ocr.wrist.is_none() {
         config.ocr.wrist = Some(super::VrOcrWristConfig::from(&config.vr_overlay.wrist));
+    }
+    if raw
+        .get("vision")
+        .and_then(|vision| vision.get("wrist"))
+        .is_none_or(serde_json::Value::is_null)
+    {
+        config.vision.wrist = config.ocr.wrist.clone();
     }
     for (service_id, settings) in default_service_settings() {
         config

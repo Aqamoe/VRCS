@@ -45,6 +45,9 @@ fn required_features(path: &str, method: &Method) -> &'static [FeatureKey] {
     if path.starts_with("/api/glossaries/") || path.starts_with("/api/translations/glossar") {
         return &[Glossary];
     }
+    if path.starts_with("/api/vision/") {
+        return &[VisualQuestionAnswering];
+    }
     if path.starts_with("/api/ocr/")
         && path != "/api/ocr/runtime"
         && !(path == "/api/ocr/token" && method == Method::GET)
@@ -82,7 +85,8 @@ pub(super) async fn enforce(
         }
     }
     // Drop cloud work on disable. Anki exports must finish recording an external receipt.
-    let cancellable = request.uri().path() == "/api/learning/selection-query"
+    let cancellable = request.uri().path() == "/api/vision/test"
+        || request.uri().path() == "/api/learning/selection-query"
         || request.uri().path().ends_with("/analysis")
         || request.uri().path().ends_with("/refresh");
     if !cancellable {

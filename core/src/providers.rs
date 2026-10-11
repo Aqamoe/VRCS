@@ -27,6 +27,7 @@ pub const API_PURPOSE_SHARED: &str = "shared";
 
 pub const CAPABILITY_SPEECH_TO_TEXT: &str = "speech_to_text";
 pub const CAPABILITY_TEXT_GENERATION: &str = "text_generation";
+pub const CAPABILITY_IMAGE_UNDERSTANDING: &str = "image_understanding";
 pub const CAPABILITY_TEXT_TRANSLATION: &str = "text_translation";
 
 pub const SERVICE_QWEN_LIVE_TRANSLATE: &str = "qwen_live_translate";
@@ -130,6 +131,11 @@ const DEEPL_TRANSLATION_LANGUAGES: &[&str] = &[
 ];
 
 const TEXT_CAPABILITIES: &[&str] = &[CAPABILITY_TEXT_GENERATION, CAPABILITY_TEXT_TRANSLATION];
+const MULTIMODAL_CAPABILITIES: &[&str] = &[
+    CAPABILITY_TEXT_GENERATION,
+    CAPABILITY_TEXT_TRANSLATION,
+    CAPABILITY_IMAGE_UNDERSTANDING,
+];
 const TRANSLATION_CAPABILITY: &[&str] = &[CAPABILITY_TEXT_TRANSLATION];
 const SPEECH_CAPABILITY: &[&str] = &[CAPABILITY_SPEECH_TO_TEXT];
 const LLM_PURPOSES: &[&str] = &[API_PURPOSE_LLM];
@@ -169,6 +175,7 @@ pub struct ProviderCapabilities {
     pub is_local: bool,
     pub supports_context: bool,
     pub supports_text_generation: bool,
+    pub supports_image_understanding: bool,
     pub supports_translation: bool,
     pub supports_asr: bool,
     pub supports_custom_translation_language: bool,
@@ -438,7 +445,7 @@ const GEMINI_SERVICES: &[ProviderServiceDefinition] = &[
     ),
 ];
 
-const CUSTOM_SERVICES: &[ProviderServiceDefinition] = &[text_service(
+const CUSTOM_SERVICES: &[ProviderServiceDefinition] = &[multimodal_service(
     "custom_openai_chat_completions",
     "OpenAI-compatible Chat Completions",
     ServiceAdapter::OpenAiChatCompletions {
@@ -482,7 +489,7 @@ const GROQ_SERVICES: &[ProviderServiceDefinition] = &[
     ),
 ];
 
-const OPENROUTER_SERVICES: &[ProviderServiceDefinition] = &[text_service(
+const OPENROUTER_SERVICES: &[ProviderServiceDefinition] = &[multimodal_service(
     "openrouter_chat_completions",
     "OpenRouter Chat Completions",
     ServiceAdapter::OpenAiChatCompletions {
@@ -500,7 +507,7 @@ const DEEPSEEK_SERVICES: &[ProviderServiceDefinition] = &[text_service(
     SupportLevel::Native,
 )];
 
-const LM_STUDIO_SERVICES: &[ProviderServiceDefinition] = &[text_service(
+const LM_STUDIO_SERVICES: &[ProviderServiceDefinition] = &[multimodal_service(
     "lm_studio_chat_completions",
     "LM Studio Chat Completions",
     ServiceAdapter::OpenAiChatCompletions {
@@ -509,7 +516,7 @@ const LM_STUDIO_SERVICES: &[ProviderServiceDefinition] = &[text_service(
     SupportLevel::ProtocolCompatible,
 )];
 
-const OLLAMA_SERVICES: &[ProviderServiceDefinition] = &[text_service(
+const OLLAMA_SERVICES: &[ProviderServiceDefinition] = &[multimodal_service(
     "ollama_chat_completions",
     "Ollama Chat Completions",
     ServiceAdapter::OpenAiChatCompletions {
@@ -530,6 +537,17 @@ const QWEN_LOCAL_SERVICES: &[ProviderServiceDefinition] = &[recognition_service_
         support: SupportLevel::ProtocolCompatible,
     },
 )];
+
+const fn multimodal_service(
+    id: &'static str,
+    display_name: &'static str,
+    adapter: ServiceAdapter,
+    translation_support: SupportLevel,
+) -> ProviderServiceDefinition {
+    let mut service = text_service(id, display_name, adapter, translation_support);
+    service.capabilities = MULTIMODAL_CAPABILITIES;
+    service
+}
 
 const fn text_service(
     id: &'static str,
@@ -944,6 +962,11 @@ fn capabilities_from_services(
         supports_text_generation: services
             .iter()
             .any(|service| service.capabilities.contains(&CAPABILITY_TEXT_GENERATION)),
+        supports_image_understanding: services.iter().any(|service| {
+            service
+                .capabilities
+                .contains(&CAPABILITY_IMAGE_UNDERSTANDING)
+        }),
         supports_translation: services
             .iter()
             .any(|service| service.capabilities.contains(&CAPABILITY_TEXT_TRANSLATION)),
@@ -1155,6 +1178,10 @@ pub fn profile_capabilities(profile: &ApiProfile) -> Option<ProviderCapabilities
         .enabled_capabilities
         .iter()
         .any(|value| value == CAPABILITY_TEXT_GENERATION);
+    capabilities.supports_image_understanding &= profile
+        .enabled_capabilities
+        .iter()
+        .any(|value| value == CAPABILITY_IMAGE_UNDERSTANDING);
     capabilities.supports_translation &= profile
         .enabled_capabilities
         .iter()
@@ -1204,7 +1231,9 @@ pub fn effective_purpose(profile: &ApiProfile) -> &'static str {
     let text = profile.enabled_capabilities.iter().any(|value| {
         matches!(
             value.as_str(),
-            CAPABILITY_TEXT_GENERATION | CAPABILITY_TEXT_TRANSLATION
+            CAPABILITY_TEXT_GENERATION
+                | CAPABILITY_TEXT_TRANSLATION
+                | CAPABILITY_IMAGE_UNDERSTANDING
         )
     });
     match (asr, text) {
@@ -1228,10 +1257,14 @@ pub fn supports_text_generation(profile: &ApiProfile) -> bool {
 }
 
 pub fn supports_llm_models(profile: &ApiProfile) -> bool {
-    [CAPABILITY_TEXT_GENERATION, CAPABILITY_TEXT_TRANSLATION]
-        .into_iter()
-        .find_map(|capability| resolve_profile_capability(profile, capability).ok())
-        .is_some_and(|resolved| resolved.service.supports_model_listing)
+    [
+        CAPABILITY_TEXT_GENERATION,
+        CAPABILITY_TEXT_TRANSLATION,
+        CAPABILITY_IMAGE_UNDERSTANDING,
+    ]
+    .into_iter()
+    .find_map(|capability| resolve_profile_capability(profile, capability).ok())
+    .is_some_and(|resolved| resolved.service.supports_model_listing)
 }
 
 pub fn supports_translation_language(profile: &ApiProfile, language: &str) -> bool {

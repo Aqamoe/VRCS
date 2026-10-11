@@ -112,6 +112,7 @@ pub struct TranscriptionPipeline {
     device: Option<AudioDevice>,
     last_error: Arc<Mutex<Option<String>>>,
     discard_on_stop: Arc<AtomicBool>,
+    microphone_tap: Option<crate::vision::MicrophoneTap>,
 }
 
 impl TranscriptionPipeline {
@@ -135,7 +136,15 @@ impl TranscriptionPipeline {
             device: None,
             last_error: Arc::new(Mutex::new(None)),
             discard_on_stop: Arc::new(AtomicBool::new(false)),
+            microphone_tap: None,
         }
+    }
+
+    pub(crate) fn with_microphone_tap(mut self, tap: crate::vision::MicrophoneTap) -> Self {
+        if self.source == CaptureSource::Microphone {
+            self.microphone_tap = Some(tap);
+        }
+        self
     }
 
     pub fn running(&self) -> bool {
@@ -195,8 +204,12 @@ impl TranscriptionPipeline {
         let startup_started = Instant::now();
         let source_kind = self.source;
         let process_name = process_name.map(str::to_owned);
+        let microphone_tap = self.microphone_tap.clone();
         let (mut capture, device) = tokio::task::spawn_blocking(move || {
             let mut capture = AudioCapture::new(sample_rate, source_kind);
+            if let Some(tap) = microphone_tap {
+                capture = capture.with_microphone_tap(tap);
+            }
             let device = capture.start(device_id, process_name.as_deref())?;
             Ok::<_, AudioError>((capture, device))
         })

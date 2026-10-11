@@ -43,6 +43,12 @@ impl ResumeBuffer {
         let (samples, speech) = match input {
             StreamingInput::Audio(samples) => (samples, true),
             StreamingInput::AudioActivity(samples, speech) => (samples, speech),
+            StreamingInput::FinishQuestion(result) => {
+                let _ = result.send(Err(
+                    "Question recognition cannot resume an idle translator".into()
+                ));
+                return;
+            }
             StreamingInput::Commit(result) => {
                 let _ = result.send(Ok(()));
                 return;

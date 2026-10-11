@@ -2,7 +2,7 @@ use windows_sys::Win32::Graphics::Gdi::{
     DT_CENTER, DT_END_ELLIPSIS, DT_EXPANDTABS, DT_NOPREFIX, DT_SINGLELINE,
 };
 
-use super::ocr_wrist::{Action, View};
+use super::ocr_wrist::{Action, View, ViewMode};
 use super::ocr_wrist_layout::Pages;
 use super::renderer::Texture;
 use super::text_raster::{fill_rounded_rect, Rect, TextMask};
@@ -82,15 +82,18 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
         [255; 3],
         false,
     )?;
-    if view.block_count > 0 {
-        draw_text(
-            &mut pixels,
-            &mut labels,
-            &format!("{} / {}", view.block_index + 1, view.block_count),
-            Rect::new(744, 56, 968, 92),
-            [200, 210, 220],
-            true,
-        )?;
+    let has_content = view.block_count > 0 || view.mode == ViewMode::Vision;
+    if has_content {
+        if view.mode == ViewMode::Ocr {
+            draw_text(
+                &mut pixels,
+                &mut labels,
+                &format!("{} / {}", view.block_index + 1, view.block_count),
+                Rect::new(744, 56, 968, 92),
+                [200, 210, 220],
+                true,
+            )?;
+        }
         draw_text(
             &mut pixels,
             &mut labels,
@@ -115,7 +118,11 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
             source_rect,
             source_content,
             &source,
-            "Source",
+            if view.mode == ViewMode::Vision {
+                "Question"
+            } else {
+                "Source"
+            },
             [210, 217, 225],
         ),
         (
@@ -127,7 +134,7 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
         ),
     ]
     .into_iter()
-    .take(if view.block_count == 0 {
+    .take(if !has_content {
         0
     } else if view.source_only {
         1
@@ -218,7 +225,15 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
         (Action::Close, "Close", true, Rect::new(764, 924, 976, 980)),
     ];
     for (action, label, enabled, rect) in controls {
-        if view.block_count == 0 && !matches!(action, Action::TogglePin | Action::Close) {
+        if view.mode == ViewMode::Vision
+            && matches!(
+                action,
+                Action::PreviousBlock | Action::NextBlock | Action::NextLanguage
+            )
+        {
+            continue;
+        }
+        if !has_content && !matches!(action, Action::TogglePin | Action::Close) {
             continue;
         }
         let hovered = enabled && view.hovered == Some(action);
@@ -250,7 +265,7 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
             });
         }
     }
-    if view.block_count > 0 {
+    if has_content {
         draw_text(
             &mut pixels,
             &mut labels,
@@ -321,6 +336,7 @@ mod tests {
     use super::*;
     fn view() -> View {
         View {
+            mode: ViewMode::Ocr,
             source: "日本語の原文 English words 中文原文\n".repeat(30),
             translation: "Translated sentence for comparison.\n".repeat(30),
             translation_label: "English".into(),
@@ -335,6 +351,31 @@ mod tests {
             hovered: None,
         }
     }
+    #[test]
+    fn vision_pages_have_no_ocr_block_or_language_controls() {
+        let mut view = view();
+        view.mode = ViewMode::Vision;
+        view.block_count = 0;
+        let rendered = render(&view, 32, 0.94).unwrap();
+        assert!(rendered.page_count > 1);
+        assert!(rendered
+            .buttons
+            .iter()
+            .any(|button| button.action == Action::NextPage));
+        assert!(rendered
+            .buttons
+            .iter()
+            .any(|button| button.action == Action::TogglePin));
+        assert!(rendered
+            .buttons
+            .iter()
+            .any(|button| button.action == Action::Close));
+        assert!(!rendered.buttons.iter().any(|button| matches!(
+            button.action,
+            Action::PreviousBlock | Action::NextBlock | Action::NextLanguage
+        )));
+    }
+
     #[test]
     fn empty_results_show_status_without_result_cards_or_reading_controls() {
         let view = super::super::ocr_wrist::Reader::default().view(

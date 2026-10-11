@@ -1,5 +1,45 @@
 use serde::{Deserialize, Serialize};
 
+pub const DEFAULT_VISION_SYSTEM_PROMPT: &str = "Answer the user's question about the image concisely. Use the requested answer language. If the image does not provide enough information, say so. Do not invent details.";
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct VisionConfig {
+    pub enabled: bool,
+    pub profile_id: Option<String>,
+    pub model: String,
+    pub answer_language: String,
+    pub system_prompt: String,
+    pub max_capture_seconds: u32,
+    pub asr_finalize_timeout_ms: u64,
+    pub request_timeout_seconds: u32,
+    pub max_output_tokens: u32,
+    pub image_max_edge: u32,
+    pub image_max_bytes: usize,
+    pub display_seconds: f32,
+    pub wrist: Option<VrOcrWristConfig>,
+}
+
+impl Default for VisionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            profile_id: None,
+            model: String::new(),
+            answer_language: "zh-Hans".into(),
+            system_prompt: DEFAULT_VISION_SYSTEM_PROMPT.into(),
+            max_capture_seconds: 30,
+            asr_finalize_timeout_ms: 10_000,
+            request_timeout_seconds: 60,
+            max_output_tokens: 1024,
+            image_max_edge: 1536,
+            image_max_bytes: 4_194_304,
+            display_seconds: 30.0,
+            wrist: Some(VrOcrWristConfig::default()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct VrOcrConfig {

@@ -8,8 +8,8 @@ use crate::asr;
 use crate::config::{ApiAuthMode, ApiProfile, HttpHeaderConfig, DEFAULT_PROFILE_TIMEOUT_MS};
 use crate::providers::{
     self, BaseUrlPolicy, ProviderCategory, ProviderDefinition, ProviderServiceDefinition,
-    ServiceAdapter, ALIBABA_PROVIDER, CAPABILITY_SPEECH_TO_TEXT, CAPABILITY_TEXT_GENERATION,
-    CAPABILITY_TEXT_TRANSLATION, MICROSOFT_PROVIDER,
+    ServiceAdapter, ALIBABA_PROVIDER, CAPABILITY_IMAGE_UNDERSTANDING, CAPABILITY_SPEECH_TO_TEXT,
+    CAPABILITY_TEXT_GENERATION, CAPABILITY_TEXT_TRANSLATION, MICROSOFT_PROVIDER,
 };
 
 use super::{api_error, ApiResult, SettingsContext};
@@ -365,6 +365,7 @@ pub(super) async fn profile_delete(
     if uses_translation_profile(&candidate, &profile_id) {
         disable_translation_profile(&mut candidate, &profile_id);
     }
+    disable_vision_profile(&mut candidate, &profile_id);
     let previous_credential = asr::read_stored_credential(&profile.id, &profile.provider)
         .map_err(|error| credential_error(&profile_id, error))?;
     commit_profile_config(&state, candidate).await?;
@@ -512,16 +513,20 @@ pub(super) async fn profile_models(
         .iter()
         .find(|profile| profile.id == profile_id)
         .ok_or_else(profile_not_found)?;
-    let resolved = [CAPABILITY_TEXT_GENERATION, CAPABILITY_TEXT_TRANSLATION]
-        .into_iter()
-        .find_map(|capability| providers::resolve_profile_capability(profile, capability).ok())
-        .ok_or_else(|| {
-            api_error(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "llm.models_unsupported",
-                "This API profile does not expose LLM models",
-            )
-        })?;
+    let resolved = [
+        CAPABILITY_TEXT_GENERATION,
+        CAPABILITY_TEXT_TRANSLATION,
+        CAPABILITY_IMAGE_UNDERSTANDING,
+    ]
+    .into_iter()
+    .find_map(|capability| providers::resolve_profile_capability(profile, capability).ok())
+    .ok_or_else(|| {
+        api_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "llm.models_unsupported",
+            "This API profile does not expose LLM models",
+        )
+    })?;
     service_models(&state, profile, resolved.service).await
 }
 
@@ -817,6 +822,16 @@ fn apply_profile_compatibility_fallbacks(
     if uses_translation_profile(config, &profile.id) && !providers::supports_translation(profile) {
         disable_translation_profile(config, &profile.id);
     }
+    if providers::resolve_profile_capability(profile, CAPABILITY_IMAGE_UNDERSTANDING).is_err() {
+        disable_vision_profile(config, &profile.id);
+    }
+}
+
+fn disable_vision_profile(config: &mut crate::config::AppConfig, profile_id: &str) {
+    if config.vision.profile_id.as_deref() == Some(profile_id) {
+        config.vision.enabled = false;
+        config.vision.profile_id = None;
+    }
 }
 
 fn disable_cloud_recognition(config: &mut crate::config::AppConfig) {
@@ -986,6 +1001,31 @@ mod tests {
         assert_eq!(config.translation.mode, "disabled");
         assert_eq!(config.translation.speaker_targets[0].profile_id, None);
         assert_eq!(config.translation.microphone_targets[0].profile_id, None);
+    }
+
+    #[test]
+    fn losing_or_deleting_image_profile_disables_only_its_visual_questions() {
+        let mut config = crate::config::AppConfig::default();
+        config.vision.enabled = true;
+        config.vision.profile_id = Some("image".into());
+        config.vision.model = "image-model".into();
+        let profile = ApiProfile {
+            id: "image".into(),
+            provider: providers::OPENAI_COMPATIBLE_PROVIDER.into(),
+            enabled_capabilities: vec![CAPABILITY_TEXT_GENERATION.into()],
+            ..Default::default()
+        };
+        let ocr = config.ocr.clone();
+        apply_profile_compatibility_fallbacks(&mut config, &profile);
+        assert!(!config.vision.enabled);
+        assert!(config.vision.profile_id.is_none());
+        assert_eq!(config.vision.model, "image-model");
+        assert_eq!(config.ocr, ocr);
+        config.vision.profile_id = Some("image".into());
+        disable_vision_profile(&mut config, "unrelated");
+        assert!(config.vision.profile_id.is_some());
+        disable_vision_profile(&mut config, "image");
+        assert!(config.vision.profile_id.is_none());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { AudioLines, Languages, Sparkles, type LucideIcon } from "lucide-react";
+import { AudioLines, Languages, Sparkles, Image, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { ApiCapability } from "../../providers/types";
@@ -10,6 +10,7 @@ const CAPABILITY_OPTIONS: ReadonlyArray<{
   { id: "speech_to_text", icon: AudioLines },
   { id: "text_generation", icon: Sparkles },
   { id: "text_translation", icon: Languages },
+  { id: "image_understanding", icon: Image },
 ];
 
 export function ApiCapabilitySelector({
