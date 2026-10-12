@@ -290,8 +290,23 @@ pub async fn start_with_deferred_vad(options: CoreOptions) -> Result<CoreHandle,
 }
 
 async fn start_inner(options: CoreOptions, defer_managed_vad: bool) -> Result<CoreHandle, String> {
+    start_inner_with_vad_preparation(options, defer_managed_vad, |path| async move {
+        vad::ensure_model(&path).await
+    })
+    .await
+}
+
+async fn start_inner_with_vad_preparation<F>(
+    options: CoreOptions,
+    defer_managed_vad: bool,
+    prepare_model: impl FnOnce(PathBuf) -> F,
+) -> Result<CoreHandle, String>
+where
+    F: std::future::Future<Output = Result<(), String>> + Send + 'static,
+{
     let startup_started = Instant::now();
     let plan = StartupPlan::resolve(options, defer_managed_vad)?;
+    let preparation = prepare_model(plan.vad_model_path.clone());
     let RuntimeAssembly {
         requested_address,
         session_token,
@@ -301,7 +316,7 @@ async fn start_inner(options: CoreOptions, defer_managed_vad: bool) -> Result<Co
         model_manager,
         vad_runtime,
         mut vad_prepare_task,
-    } = RuntimeAssembly::build(plan).await?;
+    } = RuntimeAssembly::build(plan, preparation).await?;
 
     let runtime_tasks =
         match RuntimeTasks::spawn(requested_address, Arc::clone(&state), shutdown_rx).await {

@@ -28,7 +28,10 @@ pub(crate) struct RuntimeAssembly {
 }
 
 impl RuntimeAssembly {
-    pub(crate) async fn build(plan: StartupPlan) -> Result<Self, String> {
+    pub(crate) async fn build<F>(plan: StartupPlan, preparation: F) -> Result<Self, String>
+    where
+        F: std::future::Future<Output = Result<(), String>> + Send + 'static,
+    {
         let effective = crate::config::apply_feature_gates(&plan.config);
         let mut database = Database::open(&plan.database_path).map_err(|error| {
             format!(
@@ -40,7 +43,7 @@ impl RuntimeAssembly {
             .set_subtitle_history_max_bytes(plan.config.storage.subtitle_history_max_bytes)
             .map_err(|error| format!("Failed to apply subtitle history storage quota: {error}"))?;
 
-        let (vad_runtime, vad_prepare_task) = prepare_vad(&plan).await;
+        let (vad_runtime, vad_prepare_task) = prepare_vad(&plan, preparation).await;
         let model_manager = Arc::new(asr::ModelManager::new(plan.asr_model_dir.clone())?);
 
         let (subtitles_tx, _) = broadcast::channel(50);
@@ -149,12 +152,17 @@ impl RuntimeAssembly {
     }
 }
 
-async fn prepare_vad(plan: &StartupPlan) -> (vad::VadRuntimeState, Option<JoinHandle<()>>) {
+async fn prepare_vad<F>(
+    plan: &StartupPlan,
+    preparation: F,
+) -> (vad::VadRuntimeState, Option<JoinHandle<()>>)
+where
+    F: std::future::Future<Output = Result<(), String>> + Send + 'static,
+{
     let prepare_task = if plan.managed_vad_model && plan.defer_managed_vad {
-        let path = plan.vad_model_path.clone();
         Some(tokio::spawn(async move {
             let started = Instant::now();
-            match vad::ensure_model(&path).await {
+            match preparation.await {
                 Ok(()) => tracing::info!(
                     elapsed_ms = started.elapsed().as_millis(),
                     "Silero VAD model prepared in background"
@@ -167,13 +175,13 @@ async fn prepare_vad(plan: &StartupPlan) -> (vad::VadRuntimeState, Option<JoinHa
             }
         }))
     } else {
+        if plan.managed_vad_model {
+            if let Err(error) = preparation.await {
+                tracing::warn!(%error, "Silero VAD model unavailable; using energy fallback");
+            }
+        }
         None
     };
-    if plan.managed_vad_model && !plan.defer_managed_vad {
-        if let Err(error) = vad::ensure_model(&plan.vad_model_path).await {
-            tracing::warn!(%error, "Silero VAD model unavailable; using energy fallback");
-        }
-    }
     let runtime = vad::VadRuntimeState::default();
     if !plan.defer_managed_vad {
         let _ = vad::VoiceDetector::load_with_runtime(&plan.vad_model_path, runtime.clone());

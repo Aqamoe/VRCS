@@ -1136,24 +1136,53 @@ async fn microphone_test_requires_a_selected_input_and_stop_is_idempotent() {
 #[tokio::test]
 async fn deferred_vad_does_not_block_core_startup() {
     let directory = tempfile::tempdir().unwrap();
-    let started = Instant::now();
-    let handle = start_with_deferred_vad(CoreOptions {
-        config_path: directory.path().join("config.json"),
-        host: Some("127.0.0.1".into()),
-        port: Some(0),
-        session_token: None,
-        vad_model_path: None,
-        asr_model_dir: None,
+    let expected_model_path = directory.path().join("models").join("silero_vad.onnx");
+    let (preparation_started_tx, preparation_started_rx) = tokio::sync::oneshot::channel();
+    let (mut preparation_complete_tx, preparation_complete_rx) = tokio::sync::oneshot::channel();
+
+    // Hold model preparation open so startup cannot pass by finishing a real download.
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        let handle = start_inner_with_vad_preparation(
+            CoreOptions {
+                config_path: directory.path().join("config.json"),
+                host: Some("127.0.0.1".into()),
+                port: Some(0),
+                session_token: Some("test-token".into()),
+                vad_model_path: None,
+                asr_model_dir: None,
+            },
+            true,
+            move |path| async move {
+                assert_eq!(path, expected_model_path);
+                preparation_started_tx.send(()).unwrap();
+                preparation_complete_rx
+                    .await
+                    .map_err(|_| "Model preparation cancelled".to_string())
+            },
+        )
+        .await
+        .unwrap();
+
+        preparation_started_rx.await.unwrap();
+        assert!(!preparation_complete_tx.is_closed());
+        assert!(
+            !handle.vad_prepare_task.as_ref().unwrap().is_finished(),
+            "model preparation must still be pending after startup"
+        );
+        assert_eq!(handle.vad_backend(), "energy");
+        let response = reqwest::Client::new()
+            .get(format!("http://{}/health", handle.address()))
+            .bearer_auth("test-token")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+        handle.shutdown().await.unwrap();
+        preparation_complete_tx.closed().await;
     })
     .await
-    .unwrap();
-
-    assert!(
-        started.elapsed() < std::time::Duration::from_secs(2),
-        "deferred startup should not wait for the managed VAD download"
-    );
-    assert_eq!(handle.vad_backend(), "energy");
-    handle.shutdown().await.unwrap();
+    .expect("Core startup and shutdown must not wait for unfinished VAD preparation");
 }
 
 #[tokio::test]
