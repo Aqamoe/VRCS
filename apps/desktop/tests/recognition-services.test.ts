@@ -9,7 +9,7 @@ import {
   selectRecognitionProfile,
   selectRecognitionService,
   updateRecognitionServiceSettings,
-} from "../src/recognition-services.ts";
+} from "../src/providers/recognition-services.ts";
 import type { ApiProfileView, AsrSettings, ProviderDefinition } from "../src/providers/types.ts";
 
 const profile: ApiProfileView = {

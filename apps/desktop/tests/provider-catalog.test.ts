@@ -7,7 +7,7 @@ import {
   profileEnabledCapabilities,
   profileSupportsCapability,
   providerCapabilities,
-} from "../src/provider-catalog.ts";
+} from "../src/providers/provider-catalog.ts";
 import type { ApiCapability, ApiProfileView, ProviderDefinition } from "../src/providers/types.ts";
 
 function definition(

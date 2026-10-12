@@ -5,7 +5,7 @@ import { AudioLines, Square } from "lucide-react";
 import {
   MAX_MICROPHONE_THRESHOLD_DBFS,
   MIN_MICROPHONE_LEVEL_DBFS,
-} from "../../microphone-calibration";
+} from "../../capture/microphone-calibration";
 import type { AudioLevel } from "../../capture/types";
 import { RangeField } from "../SettingsControls";
 

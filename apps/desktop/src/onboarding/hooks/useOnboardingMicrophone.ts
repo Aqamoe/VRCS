@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { useAudioLevel } from "../../realtime-state";
+import { useAudioLevel } from "../../core-client/realtime-state";
 import { useMicrophoneCalibration } from "../../settings/hooks/useMicrophoneCalibration";
 import type { Health } from "../../core-client/types";
 import type { Settings } from "../../settings/types";

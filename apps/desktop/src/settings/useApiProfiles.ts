@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { providersApi } from "../providers/api";
-import { supportsLlmModels } from "../api-profile-purpose";
+import { supportsLlmModels } from "../providers/api-profile-purpose";
 import { localizedError } from "../app/app-utils";
 import { notifyApiProfilesChanged } from "./hooks/useApiProfileViews";
 import type {

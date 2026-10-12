@@ -6,16 +6,16 @@ import {
   supportsLlmModels,
   supportsRecognition,
   supportsTranslation,
-} from "../../api-profile-purpose";
+} from "../../providers/api-profile-purpose";
 import {
   apiProfileDraftFromView,
   apiProfileFromEditorDraft,
   createApiProfileDraft,
   type ApiProfileEditorDraft,
-} from "../../api-profile-draft";
-import { profileEnabledCapabilities, providerDefinition, providerDetail } from "../../provider-catalog";
-import { recognitionServicesForProfile, selectRecognitionProfile } from "../../recognition-services";
-import { translationDiagnosticModel } from "../../translation-model-selection";
+} from "../../providers/api-profile-draft";
+import { profileEnabledCapabilities, providerDefinition, providerDetail } from "../../providers/provider-catalog";
+import { recognitionServicesForProfile, selectRecognitionProfile } from "../../providers/recognition-services";
+import { translationDiagnosticModel } from "../../translation/translation-model-selection";
 import type {
   ApiProfileView,
   ProviderDefinition,

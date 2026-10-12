@@ -1,6 +1,6 @@
-import type { Subtitle } from "./subtitles/types";
-import type { LiveTranscription } from "./capture/types";
-import { livePartialHasSubtitle } from "./realtime-state.ts";
+import type { Subtitle } from "../subtitles/types";
+import type { LiveTranscription } from "../capture/types";
+import { livePartialHasSubtitle } from "../core-client/realtime-state.ts";
 
 export const COMPACT_WINDOW_SIZE = { width: 720, height: 160 } as const;
 export const COMPACT_PANEL_WINDOW_SIZE = { width: 720, height: 520 } as const;

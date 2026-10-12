@@ -6,8 +6,8 @@ import {
   defaultDesktopPreferences,
   loadDesktopPreferences,
   updateDesktopPreference,
-} from "../../desktop-preferences";
-import type { DesktopPreferences } from "../../desktop-preferences";
+} from "../../shell/desktop-preferences";
+import type { DesktopPreferences } from "../../shell/desktop-preferences";
 import {
   changeUiLanguage,
   currentUiLanguagePreference,

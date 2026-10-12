@@ -16,9 +16,9 @@ on:
       - "package.json"
       - "scripts/check-i18n.mjs"
       - "scripts/create-locale.mjs"
-      - "core/src/anki.rs"
-      - "core/src/audio.rs"
-      - "core/src/server.rs"
+      - "core/src/anki/mod.rs"
+      - "core/src/audio/mod.rs"
+      - "core/src/server/mod.rs"
   push:
     branches:
       - main
@@ -36,9 +36,9 @@ on:
       - "package.json"
       - "scripts/check-i18n.mjs"
       - "scripts/create-locale.mjs"
-      - "core/src/anki.rs"
-      - "core/src/audio.rs"
-      - "core/src/server.rs"
+      - "core/src/anki/mod.rs"
+      - "core/src/audio/mod.rs"
+      - "core/src/server/mod.rs"
 
 permissions:
   contents: read

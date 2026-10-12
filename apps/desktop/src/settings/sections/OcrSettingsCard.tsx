@@ -10,7 +10,7 @@ import { formatBytes } from "../settings-derived";
 import { DEFAULT_OCR_WRIST_SETTINGS, isVrOcrBackendReady, VR_OVERLAY_POSITION_RANGES } from "../vr-overlay-settings";
 import { TranslationRouteList } from "../translation/TranslationRouteList";
 import type { DesktopOcrStatus } from "../../ocr/status";
-import { openVrOcrBindings } from "../../vr-overlay-native";
+import { openVrOcrBindings } from "../../integrations/vr-overlay-native";
 import { ModelDeleteDialog } from "../components/ModelDeleteDialog";
 import { ShortcutField } from "../../shared/ui/ShortcutField";
 

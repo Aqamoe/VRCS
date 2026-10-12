@@ -13,7 +13,7 @@ import {
 
 import { timestamp } from "../../app/app-utils";
 import type { LearningWorkspaceController } from "../hooks/useLearningWorkspace";
-import { learningTaskForKind } from "../../learning";
+import { learningTaskForKind } from "../learning";
 import type {
   LearningItem,
   LearningTaskType,

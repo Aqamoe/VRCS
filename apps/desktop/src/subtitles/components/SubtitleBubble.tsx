@@ -9,13 +9,13 @@ import {
   readAppliedInterfaceScaleFactor,
 } from "../../app/interface-scale";
 import { contentLanguageTag } from "../../app/ui-language";
-import { useTranslationPartials } from "../../realtime-state";
+import { useTranslationPartials } from "../../core-client/realtime-state";
 import {
   subtitleCopyText,
   subtitleSelectionCopyText,
   type SubtitleAnalysisOutcome,
   type SubtitleCopyMode,
-} from "../../subtitle-actions";
+} from "../subtitle-actions";
 import type { Subtitle } from "../types";
 import { SubtitleAnalysisPopover } from "./SubtitleAnalysisPopover";
 import { SubtitleContextMenu } from "./SubtitleContextMenu";

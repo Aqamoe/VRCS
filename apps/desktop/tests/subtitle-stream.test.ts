@@ -10,7 +10,7 @@ import {
   mergeSubtitleHistory,
   parseSubtitleStreamMessage,
   upsertSubtitleHistory,
-} from "../src/subtitle-stream.ts";
+} from "../src/subtitles/subtitle-stream.ts";
 import type { Subtitle } from "../src/subtitles/types.ts";
 
 function subtitle(id: number, text: string): Subtitle {

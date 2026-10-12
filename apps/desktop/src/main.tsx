@@ -9,7 +9,7 @@ import {
   installGlobalErrorReporting,
   normalizeFrontendError,
   reportFrontendError,
-} from "./diagnostics";
+} from "./app/diagnostics";
 import { initializeI18n } from "./i18n";
 import "./styles.css";
 

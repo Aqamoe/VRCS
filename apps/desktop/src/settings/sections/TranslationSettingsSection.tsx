@@ -1,8 +1,8 @@
 import { Languages, Workflow } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { liveTranslationServiceName } from "../../recognition-services";
-import { supportsContext, supportsTranslation } from "../../api-profile-purpose";
+import { liveTranslationServiceName } from "../../providers/recognition-services";
+import { supportsContext, supportsTranslation } from "../../providers/api-profile-purpose";
 import type { ApiProfileView } from "../../providers/types";
 import type {
   Settings,

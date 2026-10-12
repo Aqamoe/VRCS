@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { combineSubtitleText, subtitleCopyText, subtitleSelectionCopyText } from "../src/subtitle-actions.ts";
+import { combineSubtitleText, subtitleCopyText, subtitleSelectionCopyText } from "../src/subtitles/subtitle-actions.ts";
 import type { Subtitle } from "../src/subtitles/types.ts";
 
 test("builds concise subtitle clipboard payloads", () => {

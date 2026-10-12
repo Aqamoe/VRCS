@@ -4,9 +4,9 @@ import { useTranslation } from "react-i18next";
 import type { VrOverlayStatus } from "../integrations/types";
 import type { Settings } from "../settings/types";
 import type { ApiProfileView } from "../providers/types";
-import { liveTranslationServiceName } from "../recognition-services";
-import { localizedLanguageName } from "../translation-languages";
-import { supportsTranslation } from "../api-profile-purpose";
+import { liveTranslationServiceName } from "../providers/recognition-services";
+import { localizedLanguageName } from "../translation/translation-languages";
+import { supportsTranslation } from "../providers/api-profile-purpose";
 import { supportsVision } from "../settings/vision-settings";
 import { VR_OVERLAY_POSITION_RANGES, type VrOverlayDisplayKind, type VrOverlayPositionField } from "../settings/vr-overlay-settings";
 import {
@@ -18,7 +18,7 @@ import {
   showVrOverlaySample,
   updateVrDashboardView,
   type VrDashboardViewModel,
-} from "../vr-overlay-native";
+} from "../integrations/vr-overlay-native";
 import { applyVrDashboardAction, dashboardLanguageChoices, type VrDashboardAction } from "./settings-actions";
 
 type SaveState = VrDashboardViewModel["save_state"];

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { suggestMicrophoneThreshold } from "../src/microphone-calibration.ts";
+import { suggestMicrophoneThreshold } from "../src/capture/microphone-calibration.ts";
 
 test("suggests a threshold between background noise and normal speech", () => {
   const result = suggestMicrophoneThreshold(

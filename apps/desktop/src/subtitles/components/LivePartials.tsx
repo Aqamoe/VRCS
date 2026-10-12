@@ -2,7 +2,7 @@ import { MessageSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { contentLanguageTag } from "../../app/ui-language";
-import { livePartialHasSubtitle, useLivePartial } from "../../realtime-state";
+import { livePartialHasSubtitle, useLivePartial } from "../../core-client/realtime-state";
 import type { Subtitle } from "../types";
 
 export function LivePartials({ subtitles }: { subtitles: Subtitle[] }) {

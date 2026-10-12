@@ -12,7 +12,7 @@ import type { Settings } from "./types";
 import {
   recognitionSourceValue as dynamicRecognitionSourceValue,
   selectRecognitionProfile,
-} from "../recognition-services.ts";
+} from "../providers/recognition-services.ts";
 import type {
   DebugRow,
   SettingOption,

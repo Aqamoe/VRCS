@@ -11,7 +11,7 @@ import type {
   ConversationCatalog,
   ConversationIcon,
 } from "./conversations";
-import type { ConversationCatalogEvent } from "../subtitle-stream";
+import type { ConversationCatalogEvent } from "../subtitles/subtitle-stream";
 
 type SelectionMode = "active" | "preserve";
 

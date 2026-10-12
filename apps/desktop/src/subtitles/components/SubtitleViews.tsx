@@ -9,7 +9,7 @@ import {
   interfaceLayoutPixels,
   readAppliedInterfaceScaleFactor,
 } from "../../app/interface-scale";
-import type { SubtitleAnalysisOutcome } from "../../subtitle-actions";
+import type { SubtitleAnalysisOutcome } from "../subtitle-actions";
 import type { Subtitle } from "../types";
 import { usePrependScrollAnchor } from "../hooks/usePrependScrollAnchor";
 import {

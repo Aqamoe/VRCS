@@ -1,11 +1,11 @@
 import { useCallback, useState } from "react";
 
-import { shouldShowVrchatNotRunningWarning } from "../capture-warning";
-import type { CompactPanelState } from "../compact-mode";
+import { shouldShowVrchatNotRunningWarning } from "../capture/capture-warning";
+import type { CompactPanelState } from "../shell/compact-mode";
 import {
   readTranscriptionStartBehavior,
   shouldCreateConversationOnCaptureToggle,
-} from "../transcription-start";
+} from "../capture/transcription-start";
 
 type ReportError = (
   reason: unknown,

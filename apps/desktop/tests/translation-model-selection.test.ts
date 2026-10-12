@@ -6,7 +6,7 @@ import {
   switchTranslationProfile,
   updateTranslationModel,
   translationDiagnosticModel,
-} from "../src/translation-model-selection.ts";
+} from "../src/translation/translation-model-selection.ts";
 import type { ApiProfileView } from "../src/providers/types.ts";
 import type { TranslationTargetSettings } from "../src/settings/types.ts";
 

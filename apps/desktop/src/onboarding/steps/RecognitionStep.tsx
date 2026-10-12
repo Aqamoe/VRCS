@@ -1,7 +1,7 @@
 import { Check, ChevronRight, Cloud, HardDrive, KeyRound, RefreshCw, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import type { ApiProfileEditorDraft } from "../../api-profile-draft";
+import type { ApiProfileEditorDraft } from "../../providers/api-profile-draft";
 import { ApiProfileEditor } from "../../settings/api/ApiProfileEditor";
 import type { useAsrModels } from "../../settings/hooks/useAsrModels";
 import type { SettingsDraftController } from "../../settings/hooks/useSettingsDraft";

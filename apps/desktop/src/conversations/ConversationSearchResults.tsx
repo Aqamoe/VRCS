@@ -5,7 +5,7 @@ import { timestamp } from "../app/app-utils";
 import { contentLanguageTag } from "../app/ui-language";
 import type { SubtitleSearchHit } from "../subtitles/types";
 import type { ConversationSummary } from "./conversations";
-import { subtitleSearchMatchRange } from "../subtitle-search";
+import { subtitleSearchMatchRange } from "../subtitles/subtitle-search";
 
 export function ConversationSearchResults({
   query,

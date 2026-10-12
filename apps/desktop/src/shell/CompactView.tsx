@@ -3,11 +3,11 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import { createLucideIcon, Maximize2, Mic, Square, X, type LucideIcon } from "lucide-react";
 
 import type { LookupOrigin } from "../app/app-types";
-import { livePartialHasSubtitle, useLivePartial, useTranslationPartials } from "../realtime-state";
+import { livePartialHasSubtitle, useLivePartial, useTranslationPartials } from "../core-client/realtime-state";
 import type { Subtitle } from "../subtitles/types";
 import { contentLanguageTag } from "../app/ui-language";
-import { compactLivePreview, compactPreviewText } from "../compact-mode";
-import { useBatchedPreview } from "../streaming-preview";
+import { compactLivePreview, compactPreviewText } from "./compact-mode";
+import { useBatchedPreview } from "../shared/hooks/streaming-preview";
 
 const BackgroundIcon = createLucideIcon("CompactBackground", [
   ["circle", { cx: "12", cy: "12", r: "9", key: "circle" }],

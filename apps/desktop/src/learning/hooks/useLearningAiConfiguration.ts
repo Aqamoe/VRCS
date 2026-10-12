@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { providersApi } from "../../providers/api";
 import { localizedError } from "../../app/app-utils";
-import { explanationLanguageForUiLocale } from "../../learning";
+import { explanationLanguageForUiLocale } from "../learning";
 import type { ApiProfileView } from "../../providers/types";
 import {
   learningPreferencesSnapshot,

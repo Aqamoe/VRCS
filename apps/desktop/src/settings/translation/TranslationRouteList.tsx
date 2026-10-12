@@ -2,13 +2,13 @@ import { ArrowDown, ArrowUp, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { liveTranslationServiceName } from "../../recognition-services";
-import { supportsLlmModels, supportsTranslation } from "../../api-profile-purpose";
+import { liveTranslationServiceName } from "../../providers/recognition-services";
+import { supportsLlmModels, supportsTranslation } from "../../providers/api-profile-purpose";
 import { EditableDropdownField } from "../../shared/ui/DropdownField";
 import { LanguagePicker } from "../../shared/ui/LanguagePicker";
-import { TRANSLATION_LANGUAGE_CODES } from "../../translation-languages";
-import { switchTranslationProfile, updateTranslationModel } from "../../translation-model-selection";
-import { thinkingControlForModel } from "../../translation-thinking";
+import { TRANSLATION_LANGUAGE_CODES } from "../../translation/translation-languages";
+import { switchTranslationProfile, updateTranslationModel } from "../../translation/translation-model-selection";
+import { thinkingControlForModel } from "../../translation/translation-thinking";
 import type { ApiProfileView } from "../../providers/types";
 import type { TranslationTargetSettings } from "../types";
 import { useTranslationProfileModels } from "../hooks/useTranslationProfileModels";

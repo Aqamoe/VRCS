@@ -1,5 +1,5 @@
 import { profileSupportsCapability } from "./provider-catalog.ts";
-import type { ApiProfileView } from "./providers/types";
+import type { ApiProfileView } from "./types";
 
 export function supportsRecognition(profile: ApiProfileView): boolean {
   return profileSupportsCapability(profile, "speech_to_text");

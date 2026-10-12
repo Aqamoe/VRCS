@@ -6,7 +6,7 @@ import {
   languageSearchText,
   localizedLanguageName,
   translationLanguage,
-} from "../../translation-languages";
+} from "../../translation/translation-languages";
 import { DropdownField } from "./DropdownField";
 import type { DropdownOption } from "./DropdownField";
 

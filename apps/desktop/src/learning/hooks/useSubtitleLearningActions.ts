@@ -1,8 +1,8 @@
 import { useCallback } from "react";
 
-import type { SubtitleAnalysisOutcome } from "../../subtitle-actions";
+import type { SubtitleAnalysisOutcome } from "../../subtitles/subtitle-actions";
 import type { Subtitle } from "../../subtitles/types";
-import { subtitleLearningKey, subtitleSelectionLearningKey } from "../../learning";
+import { subtitleLearningKey, subtitleSelectionLearningKey } from "../learning";
 import type { LearningWorkspaceController } from "./useLearningWorkspace";
 
 export function useSubtitleLearningActions({

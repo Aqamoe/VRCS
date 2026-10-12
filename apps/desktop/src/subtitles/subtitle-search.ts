@@ -1,4 +1,4 @@
-import type { SubtitleSearchHit } from "./subtitles/types";
+import type { SubtitleSearchHit } from "./types";
 
 export function isSubtitleSearchable(query: string): boolean {
   return query.trim().length > 0;

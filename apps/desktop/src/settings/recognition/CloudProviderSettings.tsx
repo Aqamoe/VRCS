@@ -10,7 +10,7 @@ import {
   currentRecognitionService,
   recognitionServicesForProfile,
   updateRecognitionServiceSettings,
-} from "../../recognition-services";
+} from "../../providers/recognition-services";
 import { EditableDropdownField } from "../../shared/ui/DropdownField";
 import type {
   ApiProfileView,

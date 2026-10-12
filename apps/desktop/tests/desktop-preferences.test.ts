@@ -4,8 +4,8 @@ import {
   defaultDesktopPreferences,
   loadDesktopPreferences,
   updateDesktopPreference,
-} from "../src/desktop-preferences.ts";
-import type { DesktopPreferencesRuntime } from "../src/desktop-preferences.ts";
+} from "../src/shell/desktop-preferences.ts";
+import type { DesktopPreferencesRuntime } from "../src/shell/desktop-preferences.ts";
 
 function fakeRuntime(initial?: {
   native?: boolean;

@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 
 import type { LookupOrigin, SelectionTarget } from "../app/app-types";
-import type { CompactPanelState } from "../compact-mode";
+import type { CompactPanelState } from "../shell/compact-mode";
 
 const SELECTION_BOUNDARY_PUNCTUATION = (
   /^[\s.,!?;:，。！？；：“”'"「」『』（）()]+|[\s.,!?;:，。！？；：“”'"「」『』（）()]+$/g

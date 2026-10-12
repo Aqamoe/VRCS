@@ -1,7 +1,7 @@
 import { AudioLines, Languages } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { recognitionProfiles } from "../../recognition-services";
+import { recognitionProfiles } from "../../providers/recognition-services";
 import type {
   ApiProfileView,
   QwenModelRecord,
@@ -14,7 +14,7 @@ import { ManagedQwenSettings } from "../recognition/ManagedQwenSettings";
 import { ModelManagerPanel } from "../recognition/ModelManagerPanel";
 import { VadSettings } from "../recognition/VadSettings";
 import { recognitionSourceValue } from "../settings-derived";
-import { MANAGED_QWEN_RECOGNITION_SOURCE } from "../../recognition-services";
+import { MANAGED_QWEN_RECOGNITION_SOURCE } from "../../providers/recognition-services";
 import type { SaveState } from "../settings-types";
 import { Select } from "../SettingsControls";
 

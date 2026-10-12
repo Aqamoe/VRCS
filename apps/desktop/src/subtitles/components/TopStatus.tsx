@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import { recognitionEngineLabel } from "../../recognition-services";
+import { recognitionEngineLabel } from "../../providers/recognition-services";
 import type {
   ConnectionState,
   Health,

@@ -6,7 +6,7 @@ import {
   localizedLanguageName,
   supportsCustomTranslationLanguage,
   translationLanguageCodesForProfile,
-} from "../src/translation-languages.ts";
+} from "../src/translation/translation-languages.ts";
 import type { ProviderCapabilities } from "../src/providers/types.ts";
 
 function profileCapabilities(

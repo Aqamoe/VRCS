@@ -8,7 +8,7 @@ import {
   learningItemMatchesStatus,
   mergeLearningItemPages,
   normalizeLearningCardDraft,
-} from "../../learning";
+} from "../learning";
 import type {
   LearningAnalysisInput,
   LearningCardDraft,

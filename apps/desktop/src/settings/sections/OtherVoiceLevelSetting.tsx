@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   MAX_MICROPHONE_THRESHOLD_DBFS,
   MIN_MICROPHONE_LEVEL_DBFS,
-} from "../../microphone-calibration";
+} from "../../capture/microphone-calibration";
 import type { AudioLevel } from "../../capture/types";
 import { RangeField } from "../SettingsControls";
 

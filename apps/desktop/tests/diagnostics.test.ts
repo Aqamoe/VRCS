@@ -5,7 +5,7 @@ import {
   MAX_RECENT_REPORTS,
   normalizeFrontendError,
   RecentReportTracker,
-} from "../src/diagnostics.ts";
+} from "../src/app/diagnostics.ts";
 
 test("normalizes Error instances for frontend reporting", () => {
   const error = new Error("render failed");

@@ -1,6 +1,6 @@
 import type { ApiProfileView } from "../../providers/types";
-import { liveTranslationServiceName } from "../../recognition-services.ts";
-import { TRANSLATION_LANGUAGE_CODES } from "../../translation-languages.ts";
+import { liveTranslationServiceName } from "../../providers/recognition-services.ts";
+import { TRANSLATION_LANGUAGE_CODES } from "../../translation/translation-languages.ts";
 import type { Settings, TranslationTargetSettings } from "../types";
 
 export function targetLanguageCodes(target: TranslationTargetSettings, usedLanguages: string[], profiles: ApiProfileView[], liveService?: string): string[] {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ApiError, apiErrorFromResponse, formatApiErrorMessage } from "../src/api-error.ts";
+import { ApiError, apiErrorFromResponse, formatApiErrorMessage } from "../src/core-client/api-error.ts";
 
 test("preserves the structured Core error contract", async () => {
   const error = await apiErrorFromResponse(new Response(JSON.stringify({

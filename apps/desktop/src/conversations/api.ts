@@ -1,5 +1,5 @@
 import { request } from "../core-client/transport";
-import type { ConversationSubtitlePage } from "../subtitle-stream";
+import type { ConversationSubtitlePage } from "../subtitles/subtitle-stream";
 import type { ConversationSubtitleContext } from "../subtitles/types";
 import type {
   ConversationCatalog,

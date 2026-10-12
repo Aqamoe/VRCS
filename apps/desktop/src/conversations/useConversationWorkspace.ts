@@ -8,7 +8,7 @@ import {
   conversationsFromCatalog,
   type ConversationIcon,
 } from "./conversations";
-import type { ConversationCatalogEvent } from "../subtitle-stream";
+import type { ConversationCatalogEvent } from "../subtitles/subtitle-stream";
 import type { Subtitle } from "../subtitles/types";
 import { useConversationCatalog } from "./useConversationCatalog";
 import { useLiveConversationScroll } from "./useLiveConversationScroll";

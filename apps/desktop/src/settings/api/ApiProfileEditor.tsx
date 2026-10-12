@@ -6,12 +6,12 @@ import {
   createApiProfileDraft,
   toggleDraftCapability,
   type ApiProfileEditorDraft,
-} from "../../api-profile-draft";
+} from "../../providers/api-profile-draft";
 import {
   groupedProviderOptions,
   providerCapabilities,
   providerDefinition,
-} from "../../provider-catalog";
+} from "../../providers/provider-catalog";
 import type {
   ApiAuthMode,
   ApiCapability,
@@ -22,7 +22,7 @@ import type {
 import { Select } from "../SettingsControls";
 import { ApiCapabilitySelector } from "./ApiCapabilitySelector";
 
-export type { ApiProfileEditorDraft } from "../../api-profile-draft";
+export type { ApiProfileEditorDraft } from "../../providers/api-profile-draft";
 
 export function ApiProfileEditor({
   draft,

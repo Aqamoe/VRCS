@@ -2,7 +2,7 @@ import { ChevronDown, ChevronUp, Settings2, SlidersHorizontal } from "lucide-rea
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { DesktopPreferences } from "../../desktop-preferences";
+import type { DesktopPreferences } from "../../shell/desktop-preferences";
 import { localeCatalog } from "../../i18n/catalog";
 import {
   INTERFACE_SCALE_MAX,
@@ -14,7 +14,7 @@ import {
   readTranscriptionStartBehavior,
   writeTranscriptionStartBehavior,
   type TranscriptionStartBehavior,
-} from "../../transcription-start";
+} from "../../capture/transcription-start";
 import type { Settings } from "../types";
 import type { UiLanguagePreference } from "../../app/ui-language";
 import type { ApplySettings, SaveState } from "../settings-types";

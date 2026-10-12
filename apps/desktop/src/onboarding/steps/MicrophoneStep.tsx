@@ -1,7 +1,7 @@
 import { Mic, RefreshCw, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { DEFAULT_MICROPHONE_THRESHOLD_DBFS, type MicrophoneCalibrationResult } from "../../microphone-calibration";
+import { DEFAULT_MICROPHONE_THRESHOLD_DBFS, type MicrophoneCalibrationResult } from "../../capture/microphone-calibration";
 import { MicrophoneLevelSetting } from "../../settings/sections/MicrophoneLevelSetting";
 import type { MicrophoneCalibrationPhase } from "../../settings/hooks/useMicrophoneCalibration";
 import type { AudioLevel } from "../../capture/types";

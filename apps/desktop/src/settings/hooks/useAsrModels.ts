@@ -14,7 +14,7 @@ import type { Settings } from "../types";
 import {
   recognitionServicesForProfile,
   selectRecognitionService,
-} from "../../recognition-services";
+} from "../../providers/recognition-services";
 import { selectRecognitionSource } from "../settings-derived";
 import type { SettingsDraftController } from "./useSettingsDraft";
 

@@ -5,7 +5,7 @@ import {
   DEFAULT_TRANSCRIPTION_START_BEHAVIOR,
   normalizeTranscriptionStartBehavior,
   shouldCreateConversationOnCaptureToggle,
-} from "../src/transcription-start.ts";
+} from "../src/capture/transcription-start.ts";
 
 test("preserves the current conversation unless a new conversation is selected", () => {
   assert.equal(

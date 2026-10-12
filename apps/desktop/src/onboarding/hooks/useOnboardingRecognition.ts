@@ -6,14 +6,14 @@ import {
   apiProfileFromEditorDraft,
   createApiProfileDraft,
   type ApiProfileEditorDraft,
-} from "../../api-profile-draft";
-import { providerServicesWithCapability } from "../../provider-catalog";
+} from "../../providers/api-profile-draft";
+import { providerServicesWithCapability } from "../../providers/provider-catalog";
 import {
   recognitionProfiles as filterRecognitionProfiles,
   recognitionServicesForProfile,
   selectRecognitionProfile,
   selectRecognitionService,
-} from "../../recognition-services";
+} from "../../providers/recognition-services";
 import { useAsrModels } from "../../settings/hooks/useAsrModels";
 import { useSettingsDraft } from "../../settings/hooks/useSettingsDraft";
 import { managedQwenReady } from "../../settings/settings-derived";

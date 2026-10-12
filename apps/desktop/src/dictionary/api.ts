@@ -1,4 +1,4 @@
-import { apiErrorFromResponse } from "../api-error";
+import { apiErrorFromResponse } from "../core-client/api-error";
 import { rawCoreFetch, request } from "../core-client/transport";
 import type { DictionaryEntry, DictionaryImportProgress, DictionarySource } from "./types";
 

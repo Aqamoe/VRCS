@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PREVIEW_INTERVAL_MS, createPreviewBatcher } from "../src/streaming-preview.ts";
+import { PREVIEW_INTERVAL_MS, createPreviewBatcher } from "../src/shared/hooks/streaming-preview.ts";
 
 function clock() {
   let time = 0;

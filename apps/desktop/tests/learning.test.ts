@@ -8,7 +8,7 @@ import {
   learningItemMatchesStatus,
   mergeLearningItemPages,
   normalizeLearningCardDraft,
-} from "../src/learning.ts";
+} from "../src/learning/learning.ts";
 import type { LearningItem } from "../src/learning/types.ts";
 import type { Subtitle } from "../src/subtitles/types.ts";
 

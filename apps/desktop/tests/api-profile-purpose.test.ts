@@ -6,7 +6,7 @@ import {
   supportsLlmModels,
   supportsRecognition,
   supportsTranslation,
-} from "../src/api-profile-purpose.ts";
+} from "../src/providers/api-profile-purpose.ts";
 import type { ApiCapability, ApiProfileView } from "../src/providers/types.ts";
 
 function profileView(

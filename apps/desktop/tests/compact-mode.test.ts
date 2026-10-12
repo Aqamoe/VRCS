@@ -15,7 +15,7 @@ import {
   compactWindowConstraints,
   compactWindowSize,
   subtitlesForCompactView,
-} from "../src/compact-mode.ts";
+} from "../src/shell/compact-mode.ts";
 import type { Subtitle } from "../src/subtitles/types.ts";
 
 const subtitles: Subtitle[] = [

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   suggestMicrophoneThreshold,
   type MicrophoneCalibrationResult,
-} from "../../microphone-calibration";
+} from "../../capture/microphone-calibration";
 import type { AudioLevel } from "../../capture/types";
 
 const QUIET_PROMPT_LEAD_MS = 500;

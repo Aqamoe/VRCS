@@ -12,11 +12,11 @@ import {
   publishLivePartial,
   publishTranslationPartial,
   resetLivePartial,
-} from "../realtime-state";
+} from "./realtime-state";
 import {
   parseSubtitleStreamMessage,
   type ConversationCatalogEvent,
-} from "../subtitle-stream";
+} from "../subtitles/subtitle-stream";
 import type { ConnectionState } from "./types";
 import type { VrchatMuteStatus } from "../integrations/types";
 import type {

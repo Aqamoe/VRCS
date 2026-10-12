@@ -1,4 +1,4 @@
-import { canonicalLanguageTag } from "../translation-languages.ts";
+import { canonicalLanguageTag } from "../translation/translation-languages.ts";
 import type { LearningLevel } from "./types";
 
 const LEARNING_PREFERENCES_KEY = "vrcs.learning.preferences.v1";

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ApiError } from "../src/api-error.ts";
-import { shouldShowVrchatNotRunningWarning } from "../src/capture-warning.ts";
+import { ApiError } from "../src/core-client/api-error.ts";
+import { shouldShowVrchatNotRunningWarning } from "../src/capture/capture-warning.ts";
 
 test("shows a warning when VRChat-only capture cannot find VRChat", () => {
   assert.equal(

@@ -25,7 +25,7 @@ import {
   showVrOverlaySample,
   UNSUPPORTED_VR_OVERLAY_STATUS,
   VR_OVERLAY_STATUS_EVENT,
-} from "../src/vr-overlay-native.ts";
+} from "../src/integrations/vr-overlay-native.ts";
 
 const settings = {
   schema_version: 32,

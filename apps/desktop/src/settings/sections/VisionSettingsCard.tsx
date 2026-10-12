@@ -4,7 +4,7 @@ import { request } from "../../core-client/transport";
 import { useTranslation } from "react-i18next";
 import type { ApiProfileView } from "../../providers/types";
 import type { VrOcrWristSettings } from "../../integrations/types";
-import { TRANSLATION_LANGUAGE_CODES } from "../../translation-languages";
+import { TRANSLATION_LANGUAGE_CODES } from "../../translation/translation-languages";
 import { DropdownField } from "../../shared/ui/DropdownField";
 import { LanguagePicker } from "../../shared/ui/LanguagePicker";
 import { ShortcutField } from "../../shared/ui/ShortcutField";

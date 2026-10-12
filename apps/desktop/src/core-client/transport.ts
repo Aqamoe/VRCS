@@ -1,6 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
-import { apiErrorFromResponse } from "../api-error";
+import { apiErrorFromResponse } from "./api-error";
 
 interface CoreConnection {
   httpUrl: string;

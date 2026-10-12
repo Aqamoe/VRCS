@@ -8,7 +8,7 @@ import {
   loadDiagnosticStatus,
   openLogDirectory,
   type DiagnosticStatus,
-} from "../../diagnostics";
+} from "../../app/diagnostics";
 import type { DebugRow } from "../settings-types";
 
 function reportFileName(): string {

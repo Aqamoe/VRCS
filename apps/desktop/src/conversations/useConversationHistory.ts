@@ -11,8 +11,8 @@ import {
   SUBTITLE_HISTORY_PAGE_SIZE,
   upsertSubtitleHistory,
   type ConversationRequestToken,
-} from "../subtitle-stream";
-import { clearTranslationPartial } from "../realtime-state";
+} from "../subtitles/subtitle-stream";
+import { clearTranslationPartial } from "../core-client/realtime-state";
 import type {
   Subtitle,
   SubtitleTranslation,

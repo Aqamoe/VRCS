@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { thinkingControlForModel } from "../src/translation-thinking.ts";
+import { thinkingControlForModel } from "../src/translation/translation-thinking.ts";
 
 test("Groq exposes controls according to each model API", () => {
   assert.equal(thinkingControlForModel("groq", "qwen/qwen3.6-27b"), "disable_supported");

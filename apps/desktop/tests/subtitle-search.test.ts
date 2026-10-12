@@ -5,7 +5,7 @@ import {
   isSubtitleSearchable,
   mergeSubtitleSearchHits,
   subtitleSearchMatchRange,
-} from "../src/subtitle-search.ts";
+} from "../src/subtitles/subtitle-search.ts";
 import type { SubtitleSearchHit } from "../src/subtitles/types.ts";
 
 function hit(id: number, text: string): SubtitleSearchHit {

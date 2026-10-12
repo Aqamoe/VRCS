@@ -5,7 +5,7 @@ import type { Page } from "./app-types";
 import {
   compactSubtitleCount,
   subtitlesForCompactView,
-} from "../compact-mode";
+} from "../shell/compact-mode";
 import { useChatboxWorkspace } from "../chatbox/useChatboxWorkspace";
 import { useConversationWorkspace } from "../conversations/useConversationWorkspace";
 import { useCaptureControl } from "../core-client/useCaptureControl";
@@ -20,7 +20,7 @@ import { useCompactWindow } from "../shell/useCompactWindow";
 import {
   supportsCustomTranslationLanguage,
   translationLanguageCodesForProfile,
-} from "../translation-languages";
+} from "../translation/translation-languages";
 import { useAppUpdater } from "../updates/useAppUpdater";
 import { useInterfaceScale } from "./useInterfaceScale";
 import { useVrchatMuteToast } from "./useVrchatMuteToast";

@@ -1,4 +1,4 @@
-import type { Lookup } from "./app/app-types";
+import type { Lookup } from "../app/app-types";
 import type {
   LearningCardDraft,
   LearningItem,
@@ -6,9 +6,9 @@ import type {
   LearningItemKind,
   LearningItemStatus,
   LearningTaskType,
-} from "./learning/types";
-import type { Subtitle } from "./subtitles/types";
-import { canonicalLanguageTag } from "./translation-languages.ts";
+} from "./types";
+import type { Subtitle } from "../subtitles/types";
+import { canonicalLanguageTag } from "../translation/translation-languages.ts";
 
 export const LEARNING_PAGE_SIZE = 50;
 

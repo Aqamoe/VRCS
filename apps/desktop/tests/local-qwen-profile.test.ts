@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createApiProfileDraft } from "../src/api-profile-draft.ts";
+import { createApiProfileDraft } from "../src/providers/api-profile-draft.ts";
 import type { ProviderDefinition } from "../src/providers/types.ts";
 
 test("local Qwen ASR profile starts with a longer transcription timeout and no key", () => {

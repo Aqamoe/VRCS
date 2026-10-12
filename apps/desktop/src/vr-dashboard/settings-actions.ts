@@ -4,9 +4,9 @@ import type {
 } from "../integrations/types";
 import type { Settings } from "../settings/types";
 import type { ApiProfileView } from "../providers/types";
-import { supportsTranslation } from "../api-profile-purpose.ts";
-import { liveTranslationServiceName } from "../recognition-services.ts";
-import { TRANSLATION_LANGUAGE_CODES } from "../translation-languages.ts";
+import { supportsTranslation } from "../providers/api-profile-purpose.ts";
+import { liveTranslationServiceName } from "../providers/recognition-services.ts";
+import { TRANSLATION_LANGUAGE_CODES } from "../translation/translation-languages.ts";
 import { applyLanguagePreset, saveLanguagePreset, targetLanguageCodes } from "../settings/translation/language-settings.ts";
 import {
   patchVrOverlay,

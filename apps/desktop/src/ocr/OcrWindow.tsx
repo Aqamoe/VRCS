@@ -3,7 +3,7 @@ import { Check, Copy, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { closeDesktopOcr, getDesktopOcrStatus, listenDesktopOcrStatus, scanDesktopOcr } from "./api";
 import { applyDesktopOcrStatus, desktopOcrCopyText, type DesktopOcrStatus } from "./status";
-import { localizedLanguageName } from "../translation-languages";
+import { localizedLanguageName } from "../translation/translation-languages";
 import { contentLanguageTag } from "../app/ui-language";
 import "./ocr-window.css";
 

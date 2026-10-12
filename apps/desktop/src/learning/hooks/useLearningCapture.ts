@@ -11,7 +11,7 @@ import {
   lookupLearningKey,
   subtitleLearningKey,
   subtitleSelectionLearningKey,
-} from "../../learning";
+} from "../learning";
 import type {
   LearningItem,
   LearningItemCreateInput,

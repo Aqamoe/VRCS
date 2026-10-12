@@ -1,4 +1,4 @@
-import { apiErrorFromResponse } from "../api-error";
+import { apiErrorFromResponse } from "../core-client/api-error";
 import { timedCoreFetch } from "../core-client/transport";
 import type { Settings } from "./types";
 

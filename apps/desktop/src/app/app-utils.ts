@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 
-import { ApiError, formatApiErrorMessage } from "../api-error";
+import { ApiError, formatApiErrorMessage } from "../core-client/api-error";
 
 export function timestamp(value: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, {

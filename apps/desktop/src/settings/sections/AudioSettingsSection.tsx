@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Mic, RefreshCw, Sparkles, TriangleAlert, Volume2 } from "lucide-react";
 
 import { useMicrophoneCalibration } from "../hooks/useMicrophoneCalibration";
-import { DEFAULT_MICROPHONE_THRESHOLD_DBFS } from "../../microphone-calibration";
-import { useAudioLevel } from "../../realtime-state";
+import { DEFAULT_MICROPHONE_THRESHOLD_DBFS } from "../../capture/microphone-calibration";
+import { useAudioLevel } from "../../core-client/realtime-state";
 import type { AudioDevice } from "../../capture/types";
 import type { Settings } from "../types";
 import type { ApplySettings, SaveState } from "../settings-types";

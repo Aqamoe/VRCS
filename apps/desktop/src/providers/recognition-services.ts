@@ -4,7 +4,7 @@ import type {
   AsrSettings,
   ProviderDefinition,
   ProviderServiceDefinition,
-} from "./providers/types";
+} from "./types";
 
 export const MANAGED_QWEN_RECOGNITION_SOURCE = "managed_qwen";
 

@@ -5,7 +5,7 @@ import type { SubtitleSearchHit } from "../subtitles/types";
 import {
   isSubtitleSearchable,
   mergeSubtitleSearchHits,
-} from "../subtitle-search";
+} from "../subtitles/subtitle-search";
 
 const SEARCH_DELAY_MS = 250;
 const SEARCH_PAGE_SIZE = 50;

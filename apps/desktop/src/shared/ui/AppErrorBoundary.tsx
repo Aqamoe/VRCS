@@ -2,7 +2,7 @@ import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { FolderOpen, RotateCcw, TriangleAlert } from "lucide-react";
 
-import { openLogDirectory, reportFrontendError } from "../../diagnostics";
+import { openLogDirectory, reportFrontendError } from "../../app/diagnostics";
 import i18n from "../../i18n";
 
 interface State {

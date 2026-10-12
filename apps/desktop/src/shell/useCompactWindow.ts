@@ -8,7 +8,7 @@ import {
   COMPACT_WINDOW_SIZE,
   compactWindowSize,
   type CompactPanelState,
-} from "../compact-mode";
+} from "./compact-mode";
 
 export function useCompactWindow({
   clearErrorFrom,

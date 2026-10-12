@@ -8,9 +8,9 @@ import {
   livePartialHasSubtitle,
   publishLivePartial,
   resetLivePartial,
-} from "../src/realtime-state.ts";
+} from "../src/core-client/realtime-state.ts";
 import type { LiveTranscription } from "../src/capture/types.ts";
-import { mergeSubtitleHistory } from "../src/subtitle-stream.ts";
+import { mergeSubtitleHistory } from "../src/subtitles/subtitle-stream.ts";
 import type { Subtitle } from "../src/subtitles/types.ts";
 
 function partial(utteranceId: string, text: string): LiveTranscription {

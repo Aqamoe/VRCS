@@ -6,7 +6,7 @@ import type {
   ProviderConnectionField,
   ProviderDefinition,
   ProviderServiceDefinition,
-} from "./providers/types";
+} from "./types";
 
 export const PROVIDER_CATEGORY_ORDER: readonly ProviderCategory[] = [
   "cloud_provider",

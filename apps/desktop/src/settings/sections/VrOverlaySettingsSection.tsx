@@ -25,7 +25,7 @@ import {
   retryVrOverlay,
   showVrOverlaySample,
   type VrOverlayKind,
-} from "../../vr-overlay-native";
+} from "../../integrations/vr-overlay-native";
 import type { ApplySettings, SaveState } from "../settings-types";
 import { PreferenceToggle, RangeField, Select } from "../SettingsControls";
 import {

@@ -5,7 +5,7 @@ import type { VrOcrStatus } from "../../integrations/types";
 import type { ApiProfileView } from "../../providers/types";
 import type { Settings } from "../types";
 import type { ApplySettings } from "../settings-types";
-import { getVrOverlayStatus, listenVrOverlayStatus } from "../../vr-overlay-native";
+import { getVrOverlayStatus, listenVrOverlayStatus } from "../../integrations/vr-overlay-native";
 import { getDesktopOcrStatus, listenDesktopOcrStatus } from "../../ocr/api";
 import { applyDesktopOcrStatus, type DesktopOcrStatus } from "../../ocr/status";
 import { patchOcr } from "../vr-overlay-settings";

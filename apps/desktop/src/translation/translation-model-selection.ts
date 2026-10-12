@@ -1,6 +1,6 @@
-import type { ApiProfileView } from "./providers/types";
-import type { TranslationTargetSettings } from "./settings/types";
-import { supportsLlmModels } from "./api-profile-purpose.ts";
+import type { ApiProfileView } from "../providers/types";
+import type { TranslationTargetSettings } from "../settings/types";
+import { supportsLlmModels } from "../providers/api-profile-purpose.ts";
 
 type ModelCatalog = {
   models: string[];

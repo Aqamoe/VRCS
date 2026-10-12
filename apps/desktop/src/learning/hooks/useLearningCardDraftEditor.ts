@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { normalizeLearningCardDraft } from "../../learning";
+import { normalizeLearningCardDraft } from "../learning";
 import type {
   LearningCardDraft,
   LearningCardType,
