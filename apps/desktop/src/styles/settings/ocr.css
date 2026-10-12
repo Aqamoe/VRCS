@@ -1,5 +1,7 @@
 .ocr-shortcut-field { max-width: 320px; }
-.ocr-settings-group {
+/* Shared divider group used by OCR and Vision cards. */
+.ocr-settings-group,
+.vision-settings-group {
   display: grid;
   min-width: 0;
   gap: 18px;

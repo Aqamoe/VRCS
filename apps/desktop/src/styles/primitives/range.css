@@ -65,8 +65,8 @@
   transition: box-shadow 140ms ease-out, transform 140ms ease-out;
 }
 .range-input:focus-visible { outline: none; }
-.range-input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(116, 214, 255, 0.2), 0 2px 5px rgba(0, 0, 0, 0.10); }
-.range-input:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 4px rgba(116, 214, 255, 0.2), 0 2px 5px rgba(0, 0, 0, 0.10); }
+.range-input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--focus-ring), 0 2px 5px rgba(0, 0, 0, 0.10); }
+.range-input:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 4px var(--focus-ring), 0 2px 5px rgba(0, 0, 0, 0.10); }
 .range-input:active::-webkit-slider-thumb { transform: scale(1.08); }
 .range-input:active::-moz-range-thumb { transform: scale(1.08); }
 .range-input:disabled { cursor: not-allowed; }

@@ -7,17 +7,17 @@
   gap: 10px;
   padding: 9px 10px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface-elevated);
 }
-.dictionary-source-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; color: var(--primary-ink); background: var(--primary-softer); }
+.dictionary-source-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: var(--radius-sm); color: var(--primary-ink); background: var(--primary-softer); }
 .dictionary-source-row > div:nth-child(2) { display: grid; min-width: 0; gap: 3px; }
 .dictionary-source-row strong { overflow: hidden; font-size: var(--settings-text-label); font-weight: var(--settings-weight-heading); line-height: var(--settings-leading-label); text-overflow: ellipsis; white-space: nowrap; }
 .dictionary-source-row span { color: var(--text-quiet); font-size: var(--settings-text-caption); line-height: var(--settings-leading-copy); }
-.dictionary-source-row > button { display: grid; width: 34px; height: 34px; place-items: center; padding: 0; border: 0; border-radius: 10px; color: var(--text-quiet); background: transparent; cursor: pointer; }
+.dictionary-source-row > button { display: grid; width: 34px; height: 34px; place-items: center; padding: 0; border: 0; border-radius: var(--radius-sm); color: var(--text-quiet); background: transparent; cursor: pointer; }
 .dictionary-source-row > button:hover { color: var(--error); background: var(--error-soft); }
 .dictionary-source-row > button:disabled { opacity: 0.45; cursor: wait; }
-.dictionary-empty { margin: 0; padding: 16px; border: 1px dashed var(--border); border-radius: 12px; color: var(--text-quiet); font-size: var(--settings-text-body); line-height: var(--settings-leading-reading); text-align: center; }
+.dictionary-empty { margin: 0; padding: 16px; border: 1px dashed var(--border); border-radius: var(--radius-md); color: var(--text-quiet); font-size: var(--settings-text-body); line-height: var(--settings-leading-reading); text-align: center; }
 .dictionary-feedback { margin: 12px 2px 0; color: var(--text-secondary); font-size: var(--settings-text-caption); line-height: var(--settings-leading-copy); }
 .dictionary-import-progress { margin: 7px 2px 0; }
 .diagnostic-card {
@@ -28,7 +28,7 @@
   margin-bottom: 14px;
   padding: 15px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface-elevated);
 }
 .diagnostic-card-copy { display: grid; min-width: 0; gap: 4px; }
@@ -49,7 +49,7 @@
   display: grid;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface-elevated);
 }
 .debug-row {
@@ -67,7 +67,7 @@
   font: 12px/1.5 var(--font-mono);
   font-weight: 500;
 }
-@media (max-width: 720px) {
+@media (max-width: 680px) {
   .diagnostic-card { grid-template-columns: 1fr; }
   .diagnostic-actions { justify-content: flex-start; }
 }

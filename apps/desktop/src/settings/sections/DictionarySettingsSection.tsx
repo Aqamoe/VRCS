@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { BookOpen, Trash2, Upload } from "lucide-react";
 
 import type { DictionarySource } from "../../dictionary/types";
-import type { SaveState } from "../settings-types";
 import { PreferenceToggle } from "../SettingsControls";
 
 export function DictionarySettingsSection({
@@ -14,7 +13,6 @@ export function DictionarySettingsSection({
   message,
   progress,
   fileInputRef,
-  saveState,
   onSelectionLookupChange,
   onChoose,
   onRemove,
@@ -26,7 +24,6 @@ export function DictionarySettingsSection({
   message: string;
   progress: number | null;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  saveState: SaveState;
   onSelectionLookupChange: (enabled: boolean) => void;
   onChoose: (file?: File) => Promise<void>;
   onRemove: (dictionary: DictionarySource) => Promise<void>;
@@ -56,7 +53,7 @@ export function DictionarySettingsSection({
             <PreferenceToggle
               title={t("settings.dictionary.selectionLookup")}
               checked={selectionLookupEnabled}
-              disabled={saveState === "saving"}
+              disabled={false}
               onChange={onSelectionLookupChange}
             />
           </div>

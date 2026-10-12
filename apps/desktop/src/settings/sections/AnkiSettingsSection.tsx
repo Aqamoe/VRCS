@@ -3,7 +3,7 @@ import { PlusCircle, RefreshCw } from "lucide-react";
 
 import type { AnkiStatus } from "../../anki/types";
 import type { Settings } from "../types";
-import type { SaveState, SettingOption } from "../settings-types";
+import type { SettingOption } from "../settings-types";
 import { DeckTreeSelect, PreferenceToggle, Select } from "../SettingsControls";
 
 export function AnkiSettingsSection({
@@ -13,7 +13,6 @@ export function AnkiSettingsSection({
   message,
   portText,
   portError,
-  saveState,
   deckNames,
   modelOptions,
   frontFieldOptions,
@@ -29,7 +28,6 @@ export function AnkiSettingsSection({
   message: string;
   portText: string;
   portError: string;
-  saveState: SaveState;
   deckNames: string[];
   modelOptions: SettingOption[];
   frontFieldOptions: SettingOption[];
@@ -94,7 +92,7 @@ export function AnkiSettingsSection({
           <PreferenceToggle
             title={t("settings.anki.enable")}
             checked={draft.anki.enabled}
-            disabled={saveState === "saving"}
+            disabled={false}
             onChange={(enabled) => updateAnki("enabled", enabled)}
           />
         </div>
@@ -112,7 +110,6 @@ export function AnkiSettingsSection({
                   type="text"
                   inputMode="numeric"
                   value={ankiPortText}
-                  disabled={saveState === "saving"}
                   aria-invalid={Boolean(ankiPortError)}
                   aria-describedby={ankiPortError ? "anki-port-help" : undefined}
                   onChange={(event) => setAnkiPortText(event.target.value.replace(/\D/g, "").slice(0, 5))}
@@ -134,7 +131,7 @@ export function AnkiSettingsSection({
                 helper={ankiStatus?.connected ? undefined : t("settings.anki.deckOffline")}
                 value={draft.anki.deck}
                 decks={ankiDeckNames}
-                disabled={!ankiStatus?.connected || ankiBusy || saveState === "saving"}
+                disabled={!ankiStatus?.connected || ankiBusy}
                 onChange={(value) => updateAnki("deck", value)}
               />
               <Select
@@ -142,21 +139,21 @@ export function AnkiSettingsSection({
                 helper={ankiStatus?.connected ? undefined : t("settings.anki.noteTypeOffline")}
                 value={draft.anki.model}
                 options={ankiModelOptions}
-                disabled={!ankiStatus?.connected || ankiBusy || saveState === "saving"}
+                disabled={!ankiStatus?.connected || ankiBusy}
                 onChange={(value) => updateAnki("model", value)}
               />
               <Select
                 label={t("settings.anki.frontField")}
                 value={draft.anki.front_field}
                 options={ankiFieldOptions}
-                disabled={!ankiStatus?.connected || !ankiStatus.fields.length || ankiBusy || saveState === "saving"}
+                disabled={!ankiStatus?.connected || !ankiStatus.fields.length || ankiBusy}
                 onChange={(value) => updateAnki("front_field", value)}
               />
               <Select
                 label={t("settings.anki.backField")}
                 value={draft.anki.back_field}
                 options={ankiBackFieldOptions}
-                disabled={!ankiStatus?.connected || !ankiStatus.fields.length || ankiBusy || saveState === "saving"}
+                disabled={!ankiStatus?.connected || !ankiStatus.fields.length || ankiBusy}
                 onChange={(value) => updateAnki("back_field", value)}
               />
             </div>

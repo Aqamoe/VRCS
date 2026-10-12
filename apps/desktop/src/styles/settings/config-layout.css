@@ -16,7 +16,7 @@
 }
 .recognition-runtime.available .recognition-runtime-dot { background: var(--primary); }
 .recognition-runtime > div { display: grid; min-width: 0; gap: 2px; }
-.recognition-runtime strong { color: var(--text); font-size: var(--settings-text-body); font-weight: var(--settings-weight-heading); line-height: var(--settings-leading-label); }
+.recognition-runtime strong { color: var(--text); font-size: var(--settings-text-label); font-weight: var(--settings-weight-heading); line-height: var(--settings-leading-label); }
 .recognition-runtime span { color: var(--text-secondary); font-size: var(--settings-text-caption); line-height: var(--settings-leading-copy); }
 .recognition-config,
 .translation-config {
@@ -31,7 +31,7 @@
   display: grid;
   grid-template-columns: minmax(150px, 176px) minmax(0, 1fr);
   gap: 16px;
-  padding: 14px 16px;
+  padding: 14px var(--settings-card-padding);
   border-bottom: 1px solid var(--border);
 }
 .recognition-config-row:last-child,
@@ -44,6 +44,12 @@
   gap: 8px;
   color: var(--primary-ink);
 }
+.recognition-config-title > svg,
+.translation-config-title > svg { flex: 0 0 auto; margin-top: 1px; }
+.recognition-source-row > .recognition-config-title,
+.translation-mode-row > .translation-config-title { min-height: var(--settings-control-height); align-items: center; }
+.recognition-source-row > .recognition-config-title > svg,
+.translation-mode-row > .translation-config-title > svg { margin-top: 0; }
 .recognition-config-title span,
 .translation-config-title span { display: grid; min-width: 0; gap: 3px; }
 .recognition-config-title strong,

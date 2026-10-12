@@ -1,13 +1,12 @@
-.vr-overlay-section { display: grid; gap: 18px; }
+.vr-overlay-section { display: grid; gap: var(--settings-page-heading-gap); }
 .vr-overlay-section > .section-heading { margin-bottom: 0; }
-.vr-overlay-section > .section-heading > div > svg { color: var(--primary-ink); }
 .vr-overlay-runtime-card,
 .vr-overlay-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface);
 }
-.vr-overlay-runtime-card { display: grid; gap: 12px; padding: 16px; }
+.vr-overlay-runtime-card { display: grid; gap: 12px; padding: var(--settings-card-padding); }
 .vr-overlay-runtime-main,
 .vr-overlay-runtime-actions,
 .vr-overlay-card-heading,
@@ -33,7 +32,7 @@
   white-space: nowrap;
 }
 .vr-overlay-status-badge.ready { color: var(--primary-ink); background: var(--primary-softer); }
-.vr-overlay-status-badge.pending { color: var(--warning); background: #fff7e8; }
+.vr-overlay-status-badge.pending { color: var(--warning); background: var(--warning-soft); }
 .vr-overlay-status-badge.error { color: var(--error); background: var(--error-soft); }
 .vr-overlay-status-badge.muted { color: var(--text-quiet); background: var(--surface-subtle); }
 .vr-overlay-runtime-facts {
@@ -62,8 +61,8 @@
   overflow-wrap: anywhere;
 }
 .vr-overlay-native-error svg { flex: 0 0 auto; margin-top: 1px; }
-.vr-overlay-card-list { display: grid; gap: 18px; }
-.vr-overlay-card { display: grid; gap: 18px; padding: 18px; }
+.vr-overlay-card-list { display: grid; gap: var(--settings-group-gap); }
+.vr-overlay-card { display: grid; gap: 18px; padding: var(--settings-card-padding); }
 .vr-overlay-card-heading > div {
   display: flex;
   min-width: 0;
@@ -78,7 +77,7 @@
 .vr-overlay-range-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 18px;
+  gap: 14px 18px;
 }
 .vr-overlay-field-grid > *,
 .vr-overlay-range-grid > * { min-width: 0; }
@@ -126,7 +125,6 @@
   .vr-overlay-card-heading { align-items: flex-start; flex-direction: column; }
   .vr-overlay-runtime-actions .settings-toggle-list { width: 100%; }
   .vr-overlay-runtime-actions .secondary-button { align-self: flex-start; }
-  .vr-overlay-card { padding: 15px; }
   .vr-overlay-card-actions { align-items: stretch; flex-direction: column; }
   .vr-overlay-card-actions .secondary-button { width: 100%; }
 }

@@ -293,7 +293,7 @@ export function DropdownField({ label, value, options, disabled = false, compact
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={compact ? label : undefined}
+        aria-label={label}
         onClick={() => setOpen((current) => {
           const next = !current;
           if (next && searchable) focusMenuOnOpenRef.current = true;

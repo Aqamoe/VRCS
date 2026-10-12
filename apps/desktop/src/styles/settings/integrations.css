@@ -3,7 +3,6 @@
 .system-settings-list,
 .learning-settings-list,
 .connections-settings-list { display: grid; gap: 0; }
-.connections-page-heading { margin-bottom: 14px; }
 .system-settings-group + .system-settings-group,
 .learning-settings-group + .learning-settings-group,
 .connections-settings-group + .connections-settings-group { padding-top: var(--settings-group-gap); }
@@ -11,7 +10,7 @@
 .learning-settings-group > .section-heading,
 .connections-settings-group > .section-heading { margin-bottom: 14px; }
 .system-features-group { interpolate-size: allow-keywords; }
-.system-features-group > summary.section-heading { min-height: 40px; margin-bottom: 0; list-style: none; cursor: pointer; }
+.system-features-group > summary.section-heading { min-height: var(--settings-control-height); margin-bottom: 0; list-style: none; cursor: pointer; }
 .system-features-group > summary::-webkit-details-marker { display: none; }
 .system-features-group > summary:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); }
 .system-features-group > summary > svg { color: var(--text-secondary); transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1); }
@@ -31,23 +30,11 @@
 .learning-ai-settings-grid .field { min-width: 0; }
 .learning-ai-settings-message { margin: 0; color: var(--text-quiet); font-size: var(--settings-text-caption); line-height: var(--settings-leading-copy); }
 .learning-ai-settings-message.error { color: var(--error); }
-.learning-ai-privacy-note { margin-top: 14px; padding: 12px 14px; border: 1px solid #efd6a8; border-radius: var(--radius-sm); color: var(--warning); background: #fff9ee; }
+.learning-ai-privacy-note { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--warning-border); border-radius: var(--radius-sm); color: var(--warning); background: var(--warning-soft); }
 .learning-ai-privacy-note.local { border-color: var(--primary-soft); color: var(--primary-ink); background: var(--primary-softer); }
 .learning-ai-privacy-note strong { font-size: var(--settings-text-body); font-weight: var(--settings-weight-heading); line-height: var(--settings-leading-label); }
 .learning-ai-privacy-note p { margin: 4px 0 0; font-size: var(--settings-text-caption); line-height: var(--settings-leading-copy); }
 .anki-section .section-heading h3 { white-space: nowrap; }
-.system-section .section-heading > div > svg,
-.audio-section .section-heading > div > svg,
-.recognition-section .section-heading > div > svg,
-.translation-section .section-heading > div > svg,
-.api-section .section-heading > div > svg,
-.model-section .section-heading > div > svg,
-.learning-section .section-heading > div > svg,
-.connections-section .section-heading > div > svg,
-.dictionary-section .section-heading > div > svg,
-.anki-section .section-heading > div > svg,
-.osc-section .section-heading > div > svg,
-.debug-section .section-heading > div > svg { color: var(--primary-ink); }
 .anki-connection,
 .osc-connection {
   display: grid;
@@ -62,8 +49,8 @@
 }
 .anki-connection-dot,
 .osc-connection-dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--text-quiet);
   box-shadow: 0 0 0 4px rgba(139, 152, 167, 0.10);
@@ -74,8 +61,8 @@
   box-shadow: 0 0 0 4px rgba(116, 214, 255, 0.13);
 }
 .anki-connection.needs-setup .anki-connection-dot {
-  background: #d4942c;
-  box-shadow: 0 0 0 4px rgba(212, 148, 44, 0.13);
+  background: var(--warning);
+  box-shadow: 0 0 0 4px rgba(154, 100, 24, 0.13);
 }
 .anki-connection.offline .anki-connection-dot,
 .osc-connection.error .osc-connection-dot {
@@ -101,14 +88,14 @@
 .anki-panel > .settings-feature-toggle,
 .osc-panel > .settings-feature-toggle { margin: 0; }
 .anki-panel .settings-toggle-row,
-.osc-panel .settings-toggle-row { min-height: 50px; padding: 8px 15px; }
+.osc-panel .settings-toggle-row { min-height: var(--settings-row-min-height); padding: 8px var(--settings-card-padding); }
 .osc-strategy-setting {
   display: grid;
-  min-height: 50px;
+  min-height: var(--settings-row-min-height);
   grid-template-columns: minmax(140px, 1fr) minmax(180px, 280px);
   align-items: center;
   gap: 16px;
-  padding: 8px 15px;
+  padding: 5px var(--settings-card-padding);
 }
 .osc-strategy-setting > strong {
   color: var(--text);
@@ -133,7 +120,7 @@
   gap: 14px;
   align-items: start;
   margin: 0;
-  padding: 14px;
+  padding: var(--settings-card-padding);
 }
 .anki-endpoint-row > .anki-endpoint-field,
 .osc-endpoint-row > .osc-endpoint-field {
@@ -147,7 +134,7 @@
 .osc-address-value {
   display: flex;
   min-width: 0;
-  min-height: 40px;
+  min-height: var(--settings-control-height);
   align-items: center;
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -167,7 +154,7 @@
 .osc-port-field input {
   width: 100%;
   min-width: 0;
-  min-height: 40px;
+  min-height: var(--settings-control-height);
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -192,7 +179,7 @@
 
 .anki-mapping-grid {
   margin: 0;
-  padding: 14px;
+  padding: var(--settings-card-padding);
   border-top: 1px solid var(--border);
   background: var(--surface-subtle);
 }

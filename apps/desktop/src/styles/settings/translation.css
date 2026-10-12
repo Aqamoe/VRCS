@@ -11,6 +11,8 @@
 .translation-route-group,
 .translation-preset-group {
   display: grid;
+  min-width: 0;
+  container: translation-routes / inline-size;
   gap: 10px;
   padding: 12px;
   border: 1px solid var(--border);
@@ -23,7 +25,7 @@
   gap: 12px;
 }
 .translation-route-group-header > div { display: grid; gap: 2px; min-width: 0; }
-.translation-route-group-header strong { font-size: var(--settings-text-body); }
+.translation-route-group-header strong { font-size: var(--settings-text-label); }
 .translation-route-group-header small { color: var(--text-quiet); font-size: var(--settings-text-caption); }
 .translation-route-row {
   display: grid;
@@ -37,7 +39,7 @@
   box-shadow: var(--control-shadow);
 }
 .translation-route-rank {
-  min-height: 40px;
+  min-height: var(--settings-control-height);
   display: grid;
   place-items: center;
   color: var(--text-secondary);
@@ -46,14 +48,14 @@
   font-size: var(--settings-text-caption);
   font-weight: var(--settings-weight-heading);
 }
-.translation-route-fields { display: grid; grid-template-columns: minmax(150px, 0.8fr) minmax(180px, 1fr); gap: 8px; min-width: 0; }
+.translation-route-fields { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); gap: 8px; min-width: 0; }
 .translation-route-fields > .dropdown-field-compact .dropdown-trigger {
-  height: 40px;
+  height: var(--settings-control-height);
   padding: 0 11px 0 12px;
   color: var(--text);
   background: var(--surface);
   box-shadow: var(--control-shadow);
-  font-size: 13px;
+  font-size: var(--settings-text-label);
 }
 .translation-route-fields > .dropdown-field-compact .dropdown-trigger:disabled {
   color: var(--text-quiet);
@@ -71,13 +73,20 @@
   display: grid;
   width: 40px;
   height: 40px;
+  padding: 0;
   place-items: center;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   background: var(--surface-elevated);
+  cursor: pointer;
   transition: color 120ms ease-out, background-color 120ms ease-out, transform 120ms ease-out;
 }
+.translation-route-actions button:hover:not(:disabled),
+.translation-route-icon-button:hover:not(:disabled),
+.translation-preset-row button:hover:not(:disabled) { color: var(--text); background: var(--surface-subtle); }
+.translation-route-actions button:last-child:hover:not(:disabled),
+.translation-preset-row button:last-child:hover:not(:disabled) { border-color: var(--error-border); color: var(--error); background: var(--error-soft); }
 .translation-route-actions button:active:not(:disabled),
 .translation-route-icon-button:active:not(:disabled),
 .translation-preset-row button:active:not(:disabled) { transform: scale(0.96); }
@@ -94,16 +103,17 @@
 }
 .translation-preset-row input {
   min-width: 0;
-  height: 40px;
+  height: var(--settings-control-height);
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text);
   background: var(--surface);
 }
+.translation-preset-row input:focus-visible { outline: none; border-color: var(--primary); box-shadow: var(--control-focus-shadow); }
 .translation-preset-row span { color: var(--text-quiet); font-size: var(--settings-text-caption); white-space: nowrap; }
 
-@media (max-width: 860px) {
+@container translation-routes (max-width: 600px) {
   .translation-route-row { grid-template-columns: 44px minmax(0, 1fr); }
   .translation-route-actions { grid-column: 2; justify-content: end; }
   .translation-route-fields { grid-template-columns: 1fr; }
@@ -111,7 +121,6 @@
   .translation-preset-row { grid-template-columns: minmax(0, 1fr) 40px 40px; }
   .translation-preset-row span { grid-column: 1 / -1; grid-row: 2; white-space: normal; }
 }
-.translation-config-title > svg { flex: 0 0 auto; margin-top: 1px; }
 
 .translation-config-fields-single > .field { grid-column: 1; }
 .translation-model-input-row {
@@ -121,12 +130,12 @@
   gap: 8px;
 }
 .translation-model-input-row > .dropdown-field { min-width: 0; }
-.translation-model-input-row .secondary-button { min-height: 40px; }
+.translation-model-input-row .secondary-button { min-height: var(--settings-control-height); }
 .anki-port-field input,
 .osc-port-field input,
 .model-directory-setting input {
   width: 100%;
-  height: 40px;
+  height: var(--settings-control-height);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text);
@@ -161,7 +170,7 @@
   border-radius: var(--radius-sm);
   background: var(--surface-elevated);
 }
-.translation-prompt-preview strong { font-size: var(--settings-text-body); font-weight: var(--settings-weight-heading); line-height: var(--settings-leading-label); }
+.translation-prompt-preview strong { font-size: var(--settings-text-label); font-weight: var(--settings-weight-heading); line-height: var(--settings-leading-label); }
 .translation-prompt-preview small { color: var(--text-quiet); font-size: var(--settings-text-caption); line-height: var(--settings-leading-copy); }
 .translation-prompt-preview pre {
   max-height: 240px;
@@ -226,7 +235,7 @@
 }
 .translation-context-source:active:not(.disabled) { transform: scale(0.985); }
 .translation-context-source:focus-within {
-  outline: 3px solid rgba(116, 214, 255, 0.2);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 1px;
 }
 .translation-context-source.selected {
@@ -248,7 +257,7 @@
   width: 28px;
   height: 28px;
   place-items: center;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   color: var(--text-quiet);
   background: var(--surface-subtle);
   transition: color 140ms ease-out, background-color 140ms ease-out;
@@ -297,10 +306,10 @@
 .translation-context-limit input {
   width: 100%;
   min-width: 0;
-  height: 36px;
+  height: var(--settings-control-compact-height);
   padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   background: var(--surface);
   font: 12px/1 var(--font-mono);

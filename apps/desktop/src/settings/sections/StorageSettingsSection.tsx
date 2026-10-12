@@ -7,7 +7,7 @@ import { localizedError } from "../../app/app-utils";
 import type { Settings } from "../types";
 import type { DatabaseStorageStats } from "../../storage/types";
 import { formatBytes } from "../settings-derived";
-import type { ApplySettings, SaveState } from "../settings-types";
+import type { ApplySettings } from "../settings-types";
 
 const MEBIBYTE = 1024 * 1024;
 const MIN_QUOTA_MIB = 10;
@@ -16,12 +16,10 @@ const MAX_QUOTA_MIB = 10 * 1024;
 export function StorageSettingsSection({
   locale,
   draft,
-  saveState,
   applySettings,
 }: {
   locale: string;
   draft: Settings;
-  saveState: SaveState;
   applySettings: ApplySettings;
 }) {
   const { t } = useTranslation();
@@ -156,7 +154,6 @@ export function StorageSettingsSection({
               max={MAX_QUOTA_MIB}
               step={10}
               value={quotaText}
-              disabled={saveState === "saving"}
               onChange={(event) => setQuotaText(event.target.value)}
               onBlur={commitQuota}
               onKeyDown={(event) => {

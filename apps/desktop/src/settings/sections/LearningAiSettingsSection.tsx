@@ -75,15 +75,6 @@ export function LearningAiSettingsSection() {
         </div>
       </div>
 
-      <div className={`learning-ai-privacy-note ${ai.selectedProfile?.capabilities.is_local ? "local" : "cloud"}`}>
-        <strong>{ai.selectedProfile?.capabilities.is_local ? t("learning.ai.localNoticeTitle") : t("learning.ai.cloudNoticeTitle")}</strong>
-        <p>{ai.selectedProfile
-          ? t(ai.selectedProfile.capabilities.is_local ? "learning.ai.localNotice" : "learning.ai.cloudNotice", {
-              provider: ai.selectedProfile.provider_display_name,
-              model: ai.preferences.model || t("learning.ai.modelUnset"),
-            })
-          : t("learning.ai.profileMissing")}</p>
-      </div>
     </section>
   );
 }

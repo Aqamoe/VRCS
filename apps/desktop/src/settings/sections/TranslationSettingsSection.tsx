@@ -8,16 +8,15 @@ import type {
   Settings,
   TranslationSettings,
 } from "../types";
-import type { ApplySettings, SaveState } from "../settings-types";
+import type { ApplySettings } from "../settings-types";
 import { Select } from "../SettingsControls";
 import { LanguagePresetSettings } from "../translation/LanguagePresetSettings";
 import { TranslationEnhancementSettings } from "../translation/TranslationEnhancementSettings";
 import { TranslationRouteList } from "../translation/TranslationRouteList";
 
-export function TranslationSettingsSection({ draft, apiProfiles, saveState, applySettings }: {
+export function TranslationSettingsSection({ draft, apiProfiles, applySettings }: {
   draft: Settings;
   apiProfiles: ApiProfileView[];
-  saveState: SaveState;
   applySettings: ApplySettings;
 }) {
   const { t } = useTranslation();
@@ -27,7 +26,6 @@ export function TranslationSettingsSection({ draft, apiProfiles, saveState, appl
   const enhancementProfile = translationProfiles.find(
     (profile) => profile.id === preferred?.profile_id,
   );
-  const controlsDisabled = saveState === "saving";
   const updateTranslation = (translation: TranslationSettings) => applySettings((current) => ({
     ...current,
     translation,
@@ -44,7 +42,7 @@ export function TranslationSettingsSection({ draft, apiProfiles, saveState, appl
       </div>
 
       <div className="translation-config">
-        <div className="translation-config-row">
+        <div className="translation-config-row translation-mode-row">
           <div className="translation-config-title">
             <Workflow size={17} />
             <span><strong>{t("settings.translation.mode")}</strong></span>
@@ -52,8 +50,9 @@ export function TranslationSettingsSection({ draft, apiProfiles, saveState, appl
           <div className="translation-config-fields translation-config-fields-single">
             <Select
               label={t("settings.translation.mode")}
+              hideLabel
               value={draft.translation.mode}
-              disabled={controlsDisabled || (!liveTranslate && !translationProfiles.length)}
+              disabled={!liveTranslate && !translationProfiles.length}
               helper={!liveTranslate && !translationProfiles.length ? t("settings.translation.noProfiles") : undefined}
               options={["disabled", "manual", "automatic"].map((value) => ({
                 value,
@@ -80,7 +79,7 @@ export function TranslationSettingsSection({ draft, apiProfiles, saveState, appl
               targets={draft.translation.microphone_targets}
               liveService={liveTranslate && draft.translation.mode === "automatic" ? draft.asr.backend : undefined}
               profiles={translationProfiles}
-              disabled={controlsDisabled}
+              disabled={false}
               onChange={(microphone_targets) => updateTranslation({
                 ...draft.translation,
                 microphone_targets,
@@ -91,7 +90,7 @@ export function TranslationSettingsSection({ draft, apiProfiles, saveState, appl
               targets={draft.translation.speaker_targets}
               liveService={liveTranslate && draft.translation.mode === "automatic" ? draft.asr.backend : undefined}
               profiles={translationProfiles}
-              disabled={controlsDisabled}
+              disabled={false}
               onChange={(speaker_targets) => updateTranslation({
                 ...draft.translation,
                 speaker_targets,
@@ -99,7 +98,7 @@ export function TranslationSettingsSection({ draft, apiProfiles, saveState, appl
             />
             <LanguagePresetSettings
               settings={draft}
-              disabled={controlsDisabled}
+              disabled={false}
               onChange={updateSettings}
             />
           </div>
@@ -110,7 +109,7 @@ export function TranslationSettingsSection({ draft, apiProfiles, saveState, appl
             translation={draft.translation}
             preferredTarget={preferred?.target_language ?? "zh-Hans"}
             profile={enhancementProfile}
-            disabled={controlsDisabled}
+            disabled={false}
             onChange={(patch) => updateTranslation({
               ...draft.translation,
               prompt: { ...draft.translation.prompt, ...patch },

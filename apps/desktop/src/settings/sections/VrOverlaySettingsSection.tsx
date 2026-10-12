@@ -179,8 +179,7 @@ export function VrOverlaySettingsSection({
     ));
   };
 
-  const saving = saveState === "saving";
-  const overlayDisabled = saving || !draft.vr_overlay.enabled;
+  const overlayDisabled = !draft.vr_overlay.enabled;
   const headsetDisabled = overlayDisabled || !draft.vr_overlay.headset.enabled;
   const wristDisabled = overlayDisabled || !draft.vr_overlay.wrist.enabled;
   const headsetStatus = status?.headset;
@@ -237,7 +236,7 @@ export function VrOverlaySettingsSection({
             <PreferenceToggle
               title={t("settings.vrOverlay.enable")}
               checked={draft.vr_overlay.enabled}
-              disabled={saving}
+              disabled={false}
               onChange={(enabled) => applySettings((current) => patchVrOverlay(current, { enabled }))}
             />
           </div>
@@ -342,7 +341,7 @@ export function VrOverlaySettingsSection({
           </div>
 
           <div className="vr-overlay-card-actions">
-            <button className="secondary-button" type="button" disabled={headsetDisabled || nativeBusy !== null} aria-pressed={headsetStatus?.sample_visible ?? false} onClick={() => toggleSample("headset", headsetStatus?.sample_visible ?? false)}>
+            <button className="secondary-button" type="button" disabled={headsetDisabled || nativeBusy !== null || saveState === "saving"} aria-pressed={headsetStatus?.sample_visible ?? false} onClick={() => toggleSample("headset", headsetStatus?.sample_visible ?? false)}>
               {headsetStatus?.sample_visible ? t("settings.vrOverlay.hideSample") : t("settings.vrOverlay.showSample")}
             </button>
             <button className="secondary-button" type="button" disabled={headsetDisabled} onClick={() => applySettings(resetVrOverlayHeadset)}>
@@ -450,7 +449,7 @@ export function VrOverlaySettingsSection({
           </div>
 
           <div className="vr-overlay-card-actions">
-            <button className="secondary-button" type="button" disabled={wristDisabled || nativeBusy !== null} aria-pressed={wristStatus?.sample_visible ?? false} onClick={() => toggleSample("wrist", wristStatus?.sample_visible ?? false)}>
+            <button className="secondary-button" type="button" disabled={wristDisabled || nativeBusy !== null || saveState === "saving"} aria-pressed={wristStatus?.sample_visible ?? false} onClick={() => toggleSample("wrist", wristStatus?.sample_visible ?? false)}>
               {wristStatus?.sample_visible ? t("settings.vrOverlay.hideSample") : t("settings.vrOverlay.showSample")}
             </button>
             <button className="secondary-button" type="button" disabled={wristDisabled} onClick={() => applySettings(resetVrOverlayWrist)}>

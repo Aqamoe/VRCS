@@ -253,7 +253,7 @@ export function VrcxIntegrationSettingsCard({ config, saveState, onChange }: {
         <PreferenceToggle
           title={t("settings.vrcx.enabled")}
           checked={config.enabled}
-          disabled={saveState === "saving"}
+          disabled={false}
           onChange={(enabled) => onChange({ enabled })}
         />
         <div className="external-api-address-row">
@@ -264,7 +264,6 @@ export function VrcxIntegrationSettingsCard({ config, saveState, onChange }: {
                 type="text"
                 inputMode="numeric"
                 value={portText}
-                disabled={saveState === "saving"}
                 aria-invalid={Boolean(portError)}
                 aria-describedby={portError ? "vrcx-port-help" : undefined}
                 onChange={(event) => setPortText(event.currentTarget.value.replace(/\D/g, "").slice(0, 5))}
@@ -283,13 +282,13 @@ export function VrcxIntegrationSettingsCard({ config, saveState, onChange }: {
         <PreferenceToggle
           title={t("settings.vrcx.includeInLlmContext")}
           checked={config.include_in_llm_context}
-          disabled={saveState === "saving"}
+          disabled={false}
           onChange={(include_in_llm_context) => onChange({ include_in_llm_context })}
         />
         <PreferenceToggle
           title={t("settings.vrcx.includeInAsrContext")}
           checked={config.include_in_asr_context}
-          disabled={saveState === "saving"}
+          disabled={false}
           onChange={(include_in_asr_context) => onChange({ include_in_asr_context })}
         />
 

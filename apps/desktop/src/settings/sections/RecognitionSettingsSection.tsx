@@ -89,7 +89,7 @@ export function RecognitionSettingsSection({
         <div><AudioLines size={18} /><h2>{t("settings.recognition.title")}</h2>{usesManagedQwen && <span className="status-chip">{t("settings.recognition.status", { status: modelStatus })}</span>}</div>
       </div>
       <div className="recognition-config">
-        <div className="recognition-config-row">
+        <div className="recognition-config-row recognition-source-row">
           <div className="recognition-config-title">
             <Languages size={17} />
             <span><strong>{t("settings.recognition.source")}</strong></span>
@@ -97,6 +97,7 @@ export function RecognitionSettingsSection({
           <div className="recognition-config-fields">
             <Select
               label={t("settings.recognition.source")}
+              hideLabel
               value={recognitionSource}
               options={sourceOptions}
               disabled={false}

@@ -129,7 +129,7 @@ export function AudioSettingsSection({
                 enabled={draft.audio.output.mode !== "disabled"}
                 captureRunning={transcriptionRunning}
                 threshold={draft.audio.output.trigger_threshold_dbfs}
-                disabled={saveState === "saving" || draft.audio.output.mode === "disabled"}
+                disabled={draft.audio.output.mode === "disabled"}
                 onCommit={updateOutputThreshold}
               />
             )}
@@ -165,7 +165,7 @@ export function AudioSettingsSection({
                 })),
               },
             ]}
-            disabled={saveState === "saving"}
+            disabled={false}
             onSelectDevice={(id) => applySettings((current) => ({
               ...current,
               audio: { ...current.audio, output: { ...current.audio.output, mode: "system", device_id: id } },
@@ -184,7 +184,8 @@ export function AudioSettingsSection({
                   testing={microphoneTestRunning}
                   busy={microphoneOperationBusy}
                   threshold={draft.audio.microphone.trigger_threshold_dbfs}
-                  disabled={saveState === "saving"}
+                  disabled={false}
+                  testDisabled={saveState === "saving"}
                   onToggleTest={() => void toggleMicrophoneTest()}
                   onCommit={(threshold) => {
                     calibration.reset();
@@ -215,7 +216,7 @@ export function AudioSettingsSection({
                     <button
                       className="secondary-button"
                       type="button"
-                      disabled={microphoneOperationBusy || saveState === "saving"}
+                      disabled={microphoneOperationBusy}
                       onClick={() => {
                         calibration.reset();
                         updateMicrophoneThreshold(DEFAULT_MICROPHONE_THRESHOLD_DBFS);
@@ -227,7 +228,6 @@ export function AudioSettingsSection({
                       <button
                         className="secondary-button"
                         type="button"
-                        disabled={saveState === "saving"}
                         onClick={() => updateMicrophoneThreshold(calibration.result!.threshold)}
                       >
                         {t("onboarding.microphone.applySuggestion")}
@@ -282,7 +282,7 @@ export function AudioSettingsSection({
                 },
               },
             ]}
-            disabled={saveState === "saving" || microphoneOperationBusy}
+            disabled={microphoneOperationBusy}
             onSelectDevice={(id) => {
               calibration.reset();
               applySettings((current) => ({

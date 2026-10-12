@@ -145,7 +145,7 @@ export function ConnectionSettingsSection({
               <PreferenceToggle
                 title={t("settings.osc.enable")}
                 checked={draft.osc.enabled}
-                disabled={saveState === "saving"}
+                disabled={false}
                 onChange={(enabled) => applySettings((current) => ({
                   ...current,
                   osc: { ...current.osc, enabled },
@@ -157,7 +157,7 @@ export function ConnectionSettingsSection({
                   label={t("settings.osc.translationStrategy")}
                   hideLabel
                   value={draft.osc.translation_strategy}
-                  disabled={saveState === "saving"}
+                  disabled={false}
                   options={[
                     { value: "preferred_only", label: t("settings.osc.translationStrategies.preferredOnly") },
                     { value: "round_robin", label: t("settings.osc.translationStrategies.roundRobin") },
@@ -176,7 +176,7 @@ export function ConnectionSettingsSection({
                 title={t("settings.osc.preserveOriginal")}
                 description={t("settings.osc.preserveOriginalDescription")}
                 checked={draft.osc.preserve_original_text}
-                disabled={saveState === "saving"}
+                disabled={false}
                 onChange={(preserve_original_text) => applySettings((current) => ({
                   ...current,
                   osc: { ...current.osc, preserve_original_text },
@@ -185,7 +185,7 @@ export function ConnectionSettingsSection({
               <PreferenceToggle
                 title={t("settings.osc.muteSync")}
                 checked={draft.osc.mute_sync_enabled}
-                disabled={saveState === "saving"}
+                disabled={false}
                 onChange={(mute_sync_enabled) => applySettings((current) => ({
                   ...current,
                   osc: { ...current.osc, mute_sync_enabled },
@@ -194,7 +194,7 @@ export function ConnectionSettingsSection({
               <PreferenceToggle
                 title={t("settings.osc.muteToast")}
                 checked={draft.osc.mute_status_toast_enabled}
-                disabled={saveState === "saving"}
+                disabled={false}
                 onChange={(mute_status_toast_enabled) => applySettings((current) => ({
                   ...current,
                   osc: { ...current.osc, mute_status_toast_enabled },
@@ -214,7 +214,6 @@ export function ConnectionSettingsSection({
                     type="text"
                     inputMode="numeric"
                     value={portText}
-                    disabled={saveState === "saving"}
                     aria-invalid={Boolean(portError)}
                     aria-describedby={portError ? "osc-port-help" : undefined}
                     onChange={(event) => setPortText(event.target.value.replace(/\D/g, "").slice(0, 5))}
@@ -239,7 +238,6 @@ export function ConnectionSettingsSection({
           message={anki.message}
           portText={anki.portText}
           portError={anki.portError}
-          saveState={saveState}
           deckNames={anki.deckNames}
           modelOptions={anki.modelOptions}
           frontFieldOptions={anki.frontFieldOptions}

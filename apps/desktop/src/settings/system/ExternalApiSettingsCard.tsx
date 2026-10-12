@@ -150,7 +150,7 @@ export function ExternalApiSettingsCard({ config, saveState, onChange }: {
         <PreferenceToggle
           title={t("settings.system.externalApi.enabled")}
           checked={config.enabled}
-          disabled={saveState === "saving"}
+          disabled={false}
           onChange={(enabled) => onChange({ enabled })}
         />
         <div className="external-api-address-row">
@@ -160,7 +160,6 @@ export function ExternalApiSettingsCard({ config, saveState, onChange }: {
               <input
                 key={config.host}
                 defaultValue={config.host}
-                disabled={saveState === "saving"}
                 onBlur={(event) => {
                   const host = event.currentTarget.value.trim();
                   if (!host || host === config.host) return;
@@ -177,7 +176,6 @@ export function ExternalApiSettingsCard({ config, saveState, onChange }: {
                 min={1}
                 max={65535}
                 defaultValue={config.port}
-                disabled={saveState === "saving"}
                 onBlur={(event) => {
                   const port = Number.parseInt(event.currentTarget.value, 10);
                   if (port >= 1 && port <= 65535 && port !== config.port) onChange({ port });
@@ -189,7 +187,7 @@ export function ExternalApiSettingsCard({ config, saveState, onChange }: {
         <PreferenceToggle
           title={t("settings.system.externalApi.requireToken")}
           checked={config.require_token}
-          disabled={saveState === "saving" || !["127.0.0.1", "::1"].includes(config.host)}
+          disabled={!["127.0.0.1", "::1"].includes(config.host)}
           onChange={(require_token) => onChange({ require_token })}
         />
         <div className="external-api-token-section">

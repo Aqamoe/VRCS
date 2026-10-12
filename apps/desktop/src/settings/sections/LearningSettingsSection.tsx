@@ -3,7 +3,6 @@ import { GraduationCap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { DictionarySource } from "../../dictionary/types";
-import type { SaveState } from "../settings-types";
 import { DictionarySettingsSection } from "./DictionarySettingsSection";
 import { LearningAiSettingsSection } from "./LearningAiSettingsSection";
 
@@ -15,7 +14,6 @@ export function LearningSettingsSection({
   dictionaryMessage,
   dictionaryProgress,
   dictionaryFileRef,
-  saveState,
   onSelectionLookupChange,
   onChooseDictionary,
   onRemoveDictionary,
@@ -27,7 +25,6 @@ export function LearningSettingsSection({
   dictionaryMessage: string;
   dictionaryProgress: number | null;
   dictionaryFileRef: RefObject<HTMLInputElement | null>;
-  saveState: SaveState;
   onSelectionLookupChange: (enabled: boolean) => void;
   onChooseDictionary: (file?: File) => Promise<void>;
   onRemoveDictionary: (dictionary: DictionarySource) => Promise<void>;
@@ -52,7 +49,6 @@ export function LearningSettingsSection({
           message={dictionaryMessage}
           progress={dictionaryProgress}
           fileInputRef={dictionaryFileRef}
-          saveState={saveState}
           onSelectionLookupChange={onSelectionLookupChange}
           onChoose={onChooseDictionary}
           onRemove={onRemoveDictionary}

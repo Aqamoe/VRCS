@@ -38,11 +38,11 @@ before(async () => {
           return settings;
         };
         function Harness() {
-          const { draft, saveState, applySettings } = useSettingsDraft(initial, onSave);
+          const { draft, applySettings } = useSettingsDraft(initial, onSave);
           const [model, setModel] = useState('original');
           return <>
-            <TranslationSettingsSection draft={draft} saveState={saveState} applySettings={applySettings} apiProfiles={[profile]} />
-            <OcrSettingsSection vrAvailable={true} draft={draft} saveState={saveState} applySettings={applySettings} profiles={[profile]} />
+            <TranslationSettingsSection draft={draft} applySettings={applySettings} apiProfiles={[profile]} />
+            <OcrSettingsSection vrAvailable={true} draft={draft} applySettings={applySettings} profiles={[profile]} />
             <div id="immediate-model"><EditableDropdownField label="Immediate model" value={model} options={[]} onChange={(next) => { window.modelUpdates.push(next); setModel(next); }} /></div>
           </>;
         }

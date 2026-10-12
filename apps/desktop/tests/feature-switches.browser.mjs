@@ -41,7 +41,7 @@ test("feature switches commit menu visibility and restore the switch on save fai
           const controller = useSettingsDraft(settings, save);
           return <div className="settings-section settings-section-active system-section">
             <SettingsTabBar activeCategory="system" visibleCategories={visibleSettingsCategories(settings.features)} onChange={noop} />
-            <FeatureSettingsCard features={controller.draft.features} disabled={controller.saveState === 'saving'} onChange={(key, enabled) => controller.applySettings(current => ({ ...current, features: { ...current.features, [key]: enabled } }))} />
+            <FeatureSettingsCard features={controller.draft.features} disabled={false} onChange={(key, enabled) => controller.applySettings(current => ({ ...current, features: { ...current.features, [key]: enabled } }))} />
             {controller.saveMessage && <p role="alert">{controller.saveMessage}</p>}
           </div>;
         }
@@ -80,7 +80,7 @@ test("feature switches commit menu visibility and restore the switch on save fai
     await learning.click();
     assert.equal(await learning.getAttribute("aria-checked"), "false");
     assert.equal(await page.getByRole("tab", { name: "Learning", exact: true }).count(), 1);
-    assert.equal(await learning.isDisabled(), true);
+    assert.equal(await learning.isDisabled(), false);
     await page.evaluate(() => window.completeSave(true));
     await page.getByRole("alert").waitFor();
     await page.waitForFunction(() => document.querySelector('[role=switch][aria-label="Dictionary and learning"]').getAttribute('aria-checked') === 'true');

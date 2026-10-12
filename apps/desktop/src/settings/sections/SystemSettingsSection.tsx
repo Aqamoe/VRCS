@@ -28,6 +28,7 @@ export function SystemSettingsSection({
   desktopPreferences,
   desktopPreferencesReady,
   desktopSaveState,
+  desktopMessage,
   uiLanguagePreference,
   interfaceScale,
   onUpdateDesktop,
@@ -37,13 +38,13 @@ export function SystemSettingsSection({
   onStartOnboarding,
   locale,
   draft,
-  saveState,
   applySettings,
   updater,
 }: {
   desktopPreferences: DesktopPreferences;
   desktopPreferencesReady: boolean;
   desktopSaveState: SaveState;
+  desktopMessage: string;
   uiLanguagePreference: UiLanguagePreference;
   interfaceScale: number;
   onUpdateDesktop: (key: keyof DesktopPreferences, enabled: boolean) => Promise<void>;
@@ -53,7 +54,6 @@ export function SystemSettingsSection({
   onStartOnboarding: () => void;
   locale: string;
   draft: Settings;
-  saveState: SaveState;
   applySettings: ApplySettings;
   updater: AppUpdaterState;
 }) {
@@ -93,6 +93,7 @@ export function SystemSettingsSection({
           <div className="section-heading">
             <div><Settings2 size={18} /><h3 id="system-general-title">{t("settings.system.general")}</h3></div>
           </div>
+          {desktopMessage && <p className="settings-validation-error" role="alert">{desktopMessage}</p>}
           <div className="system-select-setting">
             <div>
               <strong>{t("settings.system.language")}</strong>
@@ -221,7 +222,7 @@ export function SystemSettingsSection({
             </button>
           </div>
         </section>
-        <FeatureSettingsCard features={draft.features} disabled={saveState === "saving"}
+        <FeatureSettingsCard features={draft.features} disabled={false}
           onChange={(key, enabled) => applySettings((current) => ({
             ...current, features: { ...current.features, [key]: enabled },
           }))} />
@@ -229,7 +230,6 @@ export function SystemSettingsSection({
         <StorageSettingsSection
           locale={locale}
           draft={draft}
-          saveState={saveState}
           applySettings={applySettings}
         />
       </div>

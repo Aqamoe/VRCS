@@ -123,17 +123,20 @@
 .dock-button::after {
   z-index: 2;
   bottom: calc(100% + 13px);
+  transform: translateX(-50%) translateY(3px) scale(0.985);
+  transform-origin: bottom center;
+  content: attr(data-tooltip);
+}
+.dock-button::after,
+.settings-tab-tooltip {
   width: max-content;
   max-width: min(220px, calc(100vw - 24px));
   padding: 8px 10px;
-  transform: translateX(-50%) translateY(3px) scale(0.985);
-  transform-origin: bottom center;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   color: var(--text);
   background: var(--surface);
   box-shadow: 0 12px 32px rgba(29, 40, 52, 0.11), 0 1px 3px rgba(29, 40, 52, 0.07);
-  content: attr(data-tooltip);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.35;

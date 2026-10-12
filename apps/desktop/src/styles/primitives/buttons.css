@@ -4,7 +4,7 @@
 .model-download-button,
 .model-delete-button {
   display: inline-flex;
-  min-height: 40px;
+  min-height: var(--settings-control-height);
   align-items: center;
   justify-content: center;
   cursor: pointer;
@@ -12,7 +12,7 @@
 .secondary-button, .primary-button, .anki-button {
   gap: 7px;
   padding: 0 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: var(--settings-text-label);
   font-weight: var(--settings-weight-label);
   line-height: var(--settings-leading-label);

@@ -28,6 +28,7 @@ export function MicrophoneLevelSetting({
   busy,
   threshold,
   disabled,
+  testDisabled = false,
   onToggleTest,
   onCommit,
 }: {
@@ -39,6 +40,7 @@ export function MicrophoneLevelSetting({
   busy: boolean;
   threshold: number;
   disabled: boolean;
+  testDisabled?: boolean;
   onToggleTest: () => void;
   onCommit: (value: number) => void;
 }) {
@@ -74,7 +76,7 @@ export function MicrophoneLevelSetting({
           className="secondary-button microphone-test-button"
           type="button"
           aria-pressed={testing}
-          disabled={disabled || !enabled || transcriptionRunning || busy}
+          disabled={disabled || testDisabled || !enabled || transcriptionRunning || busy}
           onClick={onToggleTest}
         >
           {testing ? <Square size={14} /> : <AudioLines size={16} />}

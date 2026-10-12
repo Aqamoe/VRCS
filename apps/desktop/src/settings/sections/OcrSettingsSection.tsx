@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { VrOcrStatus } from "../../integrations/types";
 import type { ApiProfileView } from "../../providers/types";
 import type { Settings } from "../types";
-import type { ApplySettings, SaveState } from "../settings-types";
+import type { ApplySettings } from "../settings-types";
 import { getVrOverlayStatus, listenVrOverlayStatus } from "../../vr-overlay-native";
 import { getDesktopOcrStatus, listenDesktopOcrStatus } from "../../ocr/api";
 import { applyDesktopOcrStatus, type DesktopOcrStatus } from "../../ocr/status";
@@ -13,8 +13,8 @@ import { OcrSettingsCard } from "./OcrSettingsCard";
 import { VisionSettingsCard } from "./VisionSettingsCard";
 import { patchVision, selectVisionProfile } from "../vision-settings";
 
-export function OcrSettingsSection({ vrAvailable, draft, profiles, saveState, applySettings }: {
-  vrAvailable: boolean; draft: Settings; profiles: ApiProfileView[]; saveState: SaveState; applySettings: ApplySettings;
+export function OcrSettingsSection({ vrAvailable, draft, profiles, applySettings }: {
+  vrAvailable: boolean; draft: Settings; profiles: ApiProfileView[]; applySettings: ApplySettings;
 }) {
   const { t } = useTranslation();
   const [runtime, setRuntime] = useState<VrOcrStatus>();
@@ -46,11 +46,11 @@ export function OcrSettingsSection({ vrAvailable, draft, profiles, saveState, ap
   return <div className="settings-section settings-section-active vr-overlay-section ocr-settings-section"
     id="settings-panel-vision" role="tabpanel" aria-labelledby="settings-tab-vision">
     <div className="section-heading"><div><ScanEye size={18} /><h2>{t("settings.categories.vision")}</h2></div></div>
-    {draft.features.ocr && <div id="vision-ocr"><OcrSettingsCard vrAvailable={vrAvailable} config={draft.ocr} profiles={profiles} disabled={saveState === "saving"}
+    {draft.features.ocr && <div id="vision-ocr"><OcrSettingsCard vrAvailable={vrAvailable} config={draft.ocr} profiles={profiles} disabled={false}
       runtime={runtime} desktopStatus={desktopStatus}
       onChange={(patch) => applySettings((current) => patchOcr(current, patch))} /></div>}
     {draft.features.visual_question_answering && <VisionSettingsCard config={draft.vision} profiles={profiles}
-      vrAvailable={vrAvailable} disabled={saveState === "saving"}
+      vrAvailable={vrAvailable} disabled={false}
       onChange={(patch) => applySettings((current) => patchVision(current, patch))}
       onSelectProfile={(profileId) => applySettings((current) => selectVisionProfile(current, profileId))} />}
   </div>;

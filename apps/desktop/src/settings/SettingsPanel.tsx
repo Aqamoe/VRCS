@@ -134,6 +134,7 @@ export function SettingsPanel({
           desktopPreferences={desktop.desktopPreferences}
           desktopPreferencesReady={desktop.ready}
           desktopSaveState={desktop.saveState}
+          desktopMessage={desktop.message}
           uiLanguagePreference={desktop.uiLanguagePreference}
           interfaceScale={interfaceScale}
           onUpdateDesktop={desktop.updateDesktop}
@@ -143,7 +144,6 @@ export function SettingsPanel({
           onStartOnboarding={onStartOnboarding}
           locale={locale}
           draft={draft}
-          saveState={saveState}
           applySettings={applySettings}
           updater={updater}
         />
@@ -207,7 +207,6 @@ export function SettingsPanel({
         <TranslationSettingsSection
           draft={draft}
           apiProfiles={apiProfileCatalog.profiles}
-          saveState={saveState}
           applySettings={applySettings}
         />
       )}
@@ -215,7 +214,6 @@ export function SettingsPanel({
       {activeCategory === "glossary" && (
         <GlossarySettingsSection
           draft={draft}
-          saveState={saveState}
           applySettings={applySettings}
         />
       )}
@@ -236,7 +234,6 @@ export function SettingsPanel({
           dictionaryMessage={dictionary.message}
           dictionaryProgress={dictionary.progress}
           dictionaryFileRef={dictionary.fileInputRef}
-          saveState={saveState}
           onSelectionLookupChange={(enabled) => applySettings((current) => ({
             ...current,
             dictionary: {
@@ -277,7 +274,7 @@ export function SettingsPanel({
 
       {activeCategory === "vision" && (
         <OcrSettingsSection vrAvailable={settings.features.vr_overlay} draft={draft} profiles={apiProfileCatalog.profiles}
-          saveState={saveState} applySettings={applySettings} />
+          applySettings={applySettings} />
       )}
 
       {activeCategory === "vr_overlay" && (

@@ -20,6 +20,10 @@
 @import "./settings/dictionary-debug.css";
 
 :root {
+  --settings-control-height: 40px;
+  --settings-control-compact-height: 36px;
+  --settings-card-padding: 16px;
+  --settings-row-min-height: 50px;
   --settings-text-page-title: 18px;
   --settings-text-dialog-title: 16px;
   --settings-text-section-title: 15px;
