@@ -297,6 +297,14 @@ impl LlmClient {
     }
 }
 
+fn unsupported_adapter(adapter: ServiceAdapter) -> LlmError {
+    LlmError {
+        code: "llm.unsupported_provider",
+        detail: format!("Unsupported LLM service adapter: {adapter:?}"),
+        retryable: false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,13 +470,5 @@ mod tests {
             .unwrap();
         server.abort();
         assert_eq!(models, ["vision-model"]);
-    }
-}
-
-fn unsupported_adapter(adapter: ServiceAdapter) -> LlmError {
-    LlmError {
-        code: "llm.unsupported_provider",
-        detail: format!("Unsupported LLM service adapter: {adapter:?}"),
-        retryable: false,
     }
 }
