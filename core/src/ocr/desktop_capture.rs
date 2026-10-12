@@ -1,20 +1,23 @@
 use std::{
-    mem::size_of,
-    path::Path,
+    sync::{Mutex, OnceLock},
     thread,
     time::{Duration, Instant},
 };
 
 use windows::{
-    core::{factory, Error, Interface, BOOL, HRESULT, PWSTR},
+    core::{factory, Error, Interface, BOOL, HRESULT},
     Graphics::{
-        Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession},
+        Capture::{
+            Direct3D11CaptureFramePool, GraphicsCaptureAccess, GraphicsCaptureAccessKind,
+            GraphicsCaptureItem, GraphicsCaptureSession, IGraphicsCaptureSession3,
+        },
         DirectX::{Direct3D11::IDirect3DDevice, DirectXPixelFormat},
     },
+    Security::Authorization::AppCapabilityAccess::AppCapabilityAccessStatus,
     Win32::{
         Foundation::{
-            CloseHandle, ERROR_TIMEOUT, E_ABORT, E_FAIL, E_HANDLE, E_NOINTERFACE, E_NOTIMPL,
-            E_POINTER, HMODULE, HWND, LPARAM, POINT, RECT, REGDB_E_CLASSNOTREG,
+            ERROR_TIMEOUT, E_ACCESSDENIED, E_FAIL, E_HANDLE, E_NOINTERFACE, E_NOTIMPL, E_POINTER,
+            HMODULE, HWND, LPARAM, RECT, REGDB_E_CLASSNOTREG,
         },
         Graphics::{
             Direct3D::D3D_DRIVER_TYPE_HARDWARE,
@@ -24,15 +27,12 @@ use windows::{
                 D3D11_MAP_FLAG_DO_NOT_WAIT, D3D11_MAP_READ, D3D11_SDK_VERSION,
                 D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
-            Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
+            Dwm::DwmFlush,
             Dxgi::{IDXGIDevice, DXGI_ERROR_WAS_STILL_DRAWING},
-            Gdi::ClientToScreen,
+            Gdi::{EnumDisplayMonitors, HDC, HMONITOR},
         },
         System::{
-            Threading::{
-                OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
-                PROCESS_QUERY_LIMITED_INFORMATION,
-            },
+            Com::CoIncrementMTAUsage,
             WinRT::{
                 Direct3D11::{CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess},
                 Graphics::Capture::IGraphicsCaptureItemInterop,
@@ -45,99 +45,26 @@ use windows::{
                 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
             },
             WindowsAndMessaging::{
-                EnumWindows, GetClientRect, GetForegroundWindow, GetWindowThreadProcessId,
-                IsIconic, IsWindow, IsWindowVisible,
+                GetWindowDisplayAffinity, IsWindow, IsWindowVisible, SetWindowDisplayAffinity,
+                WDA_EXCLUDEFROMCAPTURE, WINDOW_DISPLAY_AFFINITY,
             },
         },
     },
 };
 
 pub struct DesktopCapture {
-    pub window: isize,
+    pub origin: (i32, i32),
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>,
 }
 
-/// Captures a fresh VRChat client frame without changing focus.
-/// Call from a blocking worker; capture and GPU readback share a two-second deadline.
-pub fn capture_vrchat(
-    previous_window: Option<isize>,
-    result_window: Option<isize>,
-) -> Result<DesktopCapture, String> {
-    let foreground = unsafe { GetForegroundWindow() };
-    let window = if is_vrchat(foreground) {
-        foreground
-    } else if result_window.is_some_and(|window| window == foreground.0 as isize) {
-        let previous = previous_window
-            .map(|window| HWND(window as *mut _))
-            .filter(|window| is_vrchat(*window));
-        previous.ok_or("desktop_ocr.unavailable")?
-    } else {
-        return Err("desktop_ocr.not_game".into());
-    };
-    capture_game_window(window)
-}
-
-/// Allows an explicit capture from a trusted app window, including the first screenshot.
-/// Other foreground applications must not trigger background game capture.
-pub fn capture_vrchat_from_app(
-    previous_window: Option<isize>,
-    app_windows: &[isize],
-) -> Result<DesktopCapture, String> {
-    let foreground = unsafe { GetForegroundWindow() };
-    let window = if is_vrchat(foreground) {
-        foreground
-    } else if app_windows.contains(&(foreground.0 as isize)) {
-        previous_window
-            .map(|window| HWND(window as *mut _))
-            .filter(|window| is_vrchat(*window))
-            .or_else(find_game_window)
-            .ok_or("desktop_ocr.game_not_found")?
-    } else {
-        return Err("desktop_ocr.not_game".into());
-    };
-    capture_game_window(window)
-}
-
-fn find_game_window() -> Option<HWND> {
-    unsafe extern "system" fn collect(window: HWND, data: LPARAM) -> BOOL {
-        let windows = unsafe { &mut *(data.0 as *mut Vec<HWND>) };
-        if unsafe { IsWindowVisible(window) }.as_bool() && is_vrchat(window) {
-            let mut client = RECT::default();
-            if unsafe { GetClientRect(window, &mut client) }.is_ok()
-                && client.right > client.left
-                && client.bottom > client.top
-            {
-                windows.push(window);
-            }
-        }
-        BOOL(1)
-    }
-    let mut windows = Vec::<HWND>::new();
-    unsafe {
-        EnumWindows(
-            Some(collect),
-            LPARAM((&mut windows as *mut Vec<HWND>) as isize),
-        )
-    }
-    .ok()?;
-    // Keep a minimized candidate only to return the specific restore-window error.
-    windows
-        .iter()
-        .copied()
-        .find(|window| !unsafe { IsIconic(*window) }.as_bool())
-        .or_else(|| windows.first().copied())
-}
-
-fn capture_game_window(window: HWND) -> Result<DesktopCapture, String> {
-    if unsafe { IsIconic(window) }.as_bool() {
-        return Err("desktop_ocr.minimized".into());
-    }
-    capture_window(window).map_err(|error| {
-        tracing::warn!(%error, "Desktop game capture failed");
+/// Captures visible desktop content for local region selection, without changing focus.
+/// Call from a blocking worker. Each monitor has a two-second capture/readback deadline.
+pub fn capture_desktop(excluded_windows: &[isize]) -> Result<DesktopCapture, String> {
+    capture_desktop_inner(excluded_windows).map_err(|error| {
+        tracing::warn!(%error, "Desktop capture failed");
         let code = match error.code() {
-            E_ABORT => "desktop_ocr.minimized",
             E_HANDLE | E_NOINTERFACE | E_NOTIMPL | REGDB_E_CLASSNOTREG => "desktop_ocr.unavailable",
             code if code == HRESULT::from_win32(ERROR_TIMEOUT.0) => "desktop_ocr.capture_timeout",
             _ => "desktop_ocr.capture_failed",
@@ -146,37 +73,54 @@ fn capture_game_window(window: HWND) -> Result<DesktopCapture, String> {
     })
 }
 
-fn is_vrchat(window: HWND) -> bool {
-    if !unsafe { IsWindow(Some(window)) }.as_bool() {
-        return false;
-    }
-    unsafe {
-        let mut pid = 0;
-        GetWindowThreadProcessId(window, Some(&mut pid));
-        let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
-            return false;
-        };
-        let mut path = vec![0u16; 32768];
-        let mut length = path.len() as u32;
-        let queried = QueryFullProcessImageNameW(
-            process,
-            PROCESS_NAME_WIN32,
-            PWSTR(path.as_mut_ptr()),
-            &mut length,
-        );
-        let _ = CloseHandle(process);
-        queried.is_ok()
-            && Path::new(&String::from_utf16_lossy(&path[..length as usize]))
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("VRChat.exe"))
-    }
-}
-
 struct Apartment;
 
 impl Drop for Apartment {
     fn drop(&mut self) {
         unsafe { RoUninitialize() };
+    }
+}
+
+struct DpiContext(DPI_AWARENESS_CONTEXT);
+
+impl Drop for DpiContext {
+    fn drop(&mut self) {
+        unsafe { SetThreadDpiAwarenessContext(self.0) };
+    }
+}
+
+// Restore screenshot visibility even if capture fails or its async caller is cancelled.
+struct ExcludedWindows(Vec<(HWND, WINDOW_DISPLAY_AFFINITY)>);
+
+impl ExcludedWindows {
+    fn new(windows: &[isize]) -> windows::core::Result<Self> {
+        let mut guard = Self(Vec::new());
+        for &window in windows {
+            let window = HWND(window as *mut _);
+            if !unsafe { IsWindow(Some(window)) }.as_bool()
+                || !unsafe { IsWindowVisible(window) }.as_bool()
+            {
+                continue;
+            }
+            let mut affinity = 0;
+            unsafe {
+                GetWindowDisplayAffinity(window, &mut affinity)?;
+                SetWindowDisplayAffinity(window, WDA_EXCLUDEFROMCAPTURE)?;
+            }
+            guard.0.push((window, WINDOW_DISPLAY_AFFINITY(affinity)));
+        }
+        if !guard.0.is_empty() {
+            unsafe { DwmFlush()? };
+        }
+        Ok(guard)
+    }
+}
+
+impl Drop for ExcludedWindows {
+    fn drop(&mut self) {
+        for &(window, affinity) in &self.0 {
+            let _ = unsafe { SetWindowDisplayAffinity(window, affinity) };
+        }
     }
 }
 
@@ -194,43 +138,175 @@ impl Drop for CaptureSession {
     }
 }
 
-fn capture_window(window: HWND) -> windows::core::Result<DesktopCapture> {
+// The immediate context must not be used by overlapping capture workers.
+static CAPTURE_DEVICE: Mutex<Option<CaptureDevice>> = Mutex::new(None);
+
+struct CaptureDevice {
+    device: ID3D11Device,
+    context: ID3D11DeviceContext,
+}
+
+impl CaptureDevice {
+    fn new() -> windows::core::Result<Self> {
+        if !GraphicsCaptureSession::IsSupported()? {
+            return Err(Error::new(
+                E_NOTIMPL,
+                "Windows Graphics Capture is unavailable",
+            ));
+        }
+        let mut device = None;
+        let mut context = None;
+        unsafe {
+            D3D11CreateDevice(
+                None,
+                D3D_DRIVER_TYPE_HARDWARE,
+                HMODULE::default(),
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                None,
+                D3D11_SDK_VERSION,
+                Some(&mut device),
+                None,
+                Some(&mut context),
+            )?;
+        }
+        let device: ID3D11Device = device.ok_or_else(|| Error::from(E_POINTER))?;
+        let context = context.ok_or_else(|| Error::from(E_POINTER))?;
+        Ok(Self { device, context })
+    }
+}
+
+fn monitors() -> windows::core::Result<Vec<(HMONITOR, RECT)>> {
+    unsafe extern "system" fn collect(
+        monitor: HMONITOR,
+        _: HDC,
+        rect: *mut RECT,
+        data: LPARAM,
+    ) -> BOOL {
+        let monitors = &mut *(data.0 as *mut Vec<(HMONITOR, RECT)>);
+        monitors.push((monitor, *rect));
+        BOOL(1)
+    }
+    let mut monitors = Vec::new();
+    unsafe {
+        EnumDisplayMonitors(
+            None,
+            None,
+            Some(collect),
+            LPARAM(&mut monitors as *mut _ as isize),
+        )
+        .ok()?;
+    }
+    if monitors.is_empty() {
+        return Err(Error::new(E_HANDLE, "No desktop monitors are available"));
+    }
+    Ok(monitors)
+}
+
+fn desktop_bounds(monitors: &[(HMONITOR, RECT)]) -> windows::core::Result<RECT> {
+    let mut bounds = monitors
+        .first()
+        .ok_or_else(|| Error::new(E_HANDLE, "No desktop monitors are available"))?
+        .1;
+    for (_, rect) in monitors {
+        bounds.left = bounds.left.min(rect.left);
+        bounds.top = bounds.top.min(rect.top);
+        bounds.right = bounds.right.max(rect.right);
+        bounds.bottom = bounds.bottom.max(rect.bottom);
+    }
+    let width = i64::from(bounds.right) - i64::from(bounds.left);
+    let height = i64::from(bounds.bottom) - i64::from(bounds.top);
+    // The picker holds additional image buffers; also keep Win32 mouse coordinates valid.
+    if width <= 0
+        || height <= 0
+        || width > i16::MAX as i64
+        || height > i16::MAX as i64
+        || width * height > 64 * 1024 * 1024
+    {
+        return Err(Error::new(E_FAIL, "The desktop is too large to capture"));
+    }
+    Ok(bounds)
+}
+
+fn capture_desktop_inner(excluded_windows: &[isize]) -> windows::core::Result<DesktopCapture> {
+    // WinRT caches factories across calls. Keep the MTA alive for the process lifetime,
+    // including when blocking workers retire, so those factories remain valid.
+    static MTA: OnceLock<Result<(), HRESULT>> = OnceLock::new();
+    MTA.get_or_init(|| unsafe {
+        CoIncrementMTAUsage()
+            .map(|_| ())
+            .map_err(|error| error.code())
+    })
+    .map_err(Error::from)?;
     unsafe { RoInitialize(RO_INIT_MULTITHREADED)? };
     let _apartment = Apartment;
-    if !GraphicsCaptureSession::IsSupported()? {
-        return Err(Error::new(
-            E_NOTIMPL,
-            "Windows Graphics Capture is unavailable",
-        ));
+    let previous =
+        unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+    if previous.0.is_null() {
+        return Err(Error::from_thread());
     }
-    let interop: IGraphicsCaptureItemInterop = factory::<GraphicsCaptureItem, _>()?;
-    let item: GraphicsCaptureItem = unsafe { interop.CreateForWindow(window)? };
-    let size = item.Size()?;
-    if size.Width <= 0 || size.Height <= 0 {
-        return Err(Error::new(E_HANDLE, "The game window has no visible area"));
+    let _dpi = DpiContext(previous);
+    let displays = monitors()?;
+    let bounds = desktop_bounds(&displays)?;
+    let width = (bounds.right - bounds.left) as u32;
+    let height = (bounds.bottom - bounds.top) as u32;
+    let mut capture = DesktopCapture {
+        origin: (bounds.left, bounds.top),
+        width,
+        height,
+        pixels: vec![0; width as usize * height as usize * 4],
+    };
+    let mut cached = CAPTURE_DEVICE.lock().unwrap();
+    if cached
+        .as_ref()
+        .is_some_and(|graphics| unsafe { graphics.device.GetDeviceRemovedReason().is_err() })
+    {
+        *cached = None;
     }
-    let mut device = None;
-    let mut context = None;
-    unsafe {
-        D3D11CreateDevice(
-            None,
-            D3D_DRIVER_TYPE_HARDWARE,
-            HMODULE::default(),
-            D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-            None,
-            D3D11_SDK_VERSION,
-            Some(&mut device),
-            None,
-            Some(&mut context),
-        )?;
+    if cached.is_none() {
+        *cached = Some(CaptureDevice::new()?);
     }
-    let device: ID3D11Device = device.ok_or_else(|| Error::from(E_POINTER))?;
-    let context: ID3D11DeviceContext = context.ok_or_else(|| Error::from(E_POINTER))?;
-    let dxgi: IDXGIDevice = device.cast()?;
+    let graphics = cached.as_ref().unwrap();
+    let dxgi: IDXGIDevice = graphics.device.cast()?;
     let capture_device: IDirect3DDevice =
         unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi)?.cast()? };
+    let interop: IGraphicsCaptureItemInterop = factory::<GraphicsCaptureItem, _>()?;
+    let _excluded = ExcludedWindows::new(excluded_windows)?;
+    for &(monitor, rect) in &displays {
+        let item: GraphicsCaptureItem = unsafe { interop.CreateForMonitor(monitor)? };
+        let pixels = capture_monitor(
+            &item,
+            &capture_device,
+            &graphics.device,
+            &graphics.context,
+            &rect,
+        )?;
+        paste_monitor(&mut capture, &rect, &pixels)?;
+    }
+    if monitors()? != displays {
+        return Err(Error::new(
+            E_FAIL,
+            "The display layout changed; capture again",
+        ));
+    }
+    Ok(capture)
+}
+
+fn capture_monitor(
+    item: &GraphicsCaptureItem,
+    capture_device: &IDirect3DDevice,
+    device: &ID3D11Device,
+    context: &ID3D11DeviceContext,
+    bounds: &RECT,
+) -> windows::core::Result<Vec<u8>> {
+    let size = item.Size()?;
+    if size.Width != bounds.right - bounds.left || size.Height != bounds.bottom - bounds.top {
+        return Err(Error::new(
+            E_FAIL,
+            "The display layout changed; capture again",
+        ));
+    }
     let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
-        &capture_device,
+        capture_device,
         DirectXPixelFormat::B8G8R8A8UIntNormalized,
         1,
         size,
@@ -239,40 +315,88 @@ fn capture_window(window: HWND) -> windows::core::Result<DesktopCapture> {
         pool,
         session: None,
     };
-    let session = capture.pool.CreateCaptureSession(&item)?;
+    let session = capture.pool.CreateCaptureSession(item)?;
     capture.session = Some(session.clone());
     session.SetIsCursorCaptureEnabled(false)?;
+    if let Err(error) = disable_capture_border(&session) {
+        tracing::warn!(%error, "Borderless desktop capture is unavailable; keeping the system border");
+    }
     let deadline = Instant::now() + Duration::from_secs(2);
     session.StartCapture()?;
     let frame = loop {
         match capture.pool.TryGetNextFrame() {
             Ok(frame) => break frame,
-            Err(error) if is_pending_frame(&error) => wait_for_frame(window, deadline)?,
+            Err(error) if is_pending_frame(&error) => wait_for_frame(deadline)?,
             Err(error) => return Err(error),
         }
     };
     let result = (|| {
         let content = frame.ContentSize()?;
-        let (x, y, width, height) = client_crop(window, content.Width, content.Height)?;
+        if content.Width != size.Width || content.Height != size.Height {
+            return Err(Error::new(
+                E_FAIL,
+                "The display layout changed; capture again",
+            ));
+        }
         let access: IDirect3DDxgiInterfaceAccess = frame.Surface()?.cast()?;
         let texture: ID3D11Texture2D = unsafe { access.GetInterface()? };
-        let pixels = read_pixels(
-            &device,
-            &context,
+        read_pixels(
+            device,
+            context,
             &texture,
-            (x, y, width, height),
-            window,
+            size.Width as u32,
+            size.Height as u32,
             deadline,
-        )?;
-        Ok(DesktopCapture {
-            window: window.0 as isize,
-            width,
-            height,
-            pixels,
-        })
+        )
     })();
     let _ = frame.Close();
     result
+}
+
+fn disable_capture_border(session: &GraphicsCaptureSession) -> windows::core::Result<()> {
+    // Check support before requesting access on older Windows versions.
+    session.cast::<IGraphicsCaptureSession3>()?;
+    let access =
+        GraphicsCaptureAccess::RequestAccessAsync(GraphicsCaptureAccessKind::Borderless)?.join()?;
+    if access != AppCapabilityAccessStatus::Allowed {
+        return Err(Error::new(
+            E_ACCESSDENIED,
+            "Borderless capture access was denied",
+        ));
+    }
+    session.SetIsBorderRequired(false)
+}
+
+fn paste_monitor(
+    capture: &mut DesktopCapture,
+    rect: &RECT,
+    pixels: &[u8],
+) -> windows::core::Result<()> {
+    let x = i64::from(rect.left) - i64::from(capture.origin.0);
+    let y = i64::from(rect.top) - i64::from(capture.origin.1);
+    let width = i64::from(rect.right) - i64::from(rect.left);
+    let height = i64::from(rect.bottom) - i64::from(rect.top);
+    if x < 0
+        || y < 0
+        || width <= 0
+        || height <= 0
+        || x + width > capture.width as i64
+        || y + height > capture.height as i64
+        || width * height * 4 != pixels.len() as i64
+    {
+        return Err(Error::new(
+            E_FAIL,
+            "The monitor is outside the desktop image",
+        ));
+    }
+    let stride = capture.width as usize * 4;
+    let row_bytes = width as usize * 4;
+    for row in 0..height as usize {
+        let offset = (y as usize + row) * stride + x as usize * 4;
+        capture.pixels[offset..offset + row_bytes]
+            .copy_from_slice(&pixels[row * row_bytes..(row + 1) * row_bytes]);
+    }
+    Ok(())
 }
 
 fn is_pending_frame(error: &Error) -> bool {
@@ -280,93 +404,32 @@ fn is_pending_frame(error: &Error) -> bool {
     matches!(error.code(), HRESULT(0) | E_POINTER)
 }
 
-fn wait_for_frame(window: HWND, deadline: Instant) -> windows::core::Result<()> {
-    if !unsafe { IsWindow(Some(window)) }.as_bool() {
-        return Err(Error::new(E_HANDLE, "The game window was closed"));
-    }
-    if unsafe { IsIconic(window) }.as_bool() {
-        return Err(Error::new(E_ABORT, "The game window was minimized"));
-    }
+fn wait_for_frame(deadline: Instant) -> windows::core::Result<()> {
     if Instant::now() >= deadline {
         return Err(Error::new(
             HRESULT::from_win32(ERROR_TIMEOUT.0),
-            "Timed out waiting for a game frame",
+            "Timed out waiting for a desktop frame",
         ));
     }
     thread::sleep(Duration::from_millis(10));
     Ok(())
 }
 
-struct DpiContext(DPI_AWARENESS_CONTEXT);
-
-impl Drop for DpiContext {
-    fn drop(&mut self) {
-        unsafe { SetThreadDpiAwarenessContext(self.0) };
-    }
-}
-
-fn client_crop(
-    window: HWND,
-    frame_width: i32,
-    frame_height: i32,
-) -> windows::core::Result<(u32, u32, u32, u32)> {
-    unsafe {
-        let previous = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        if previous.0.is_null() {
-            return Err(Error::from_thread());
-        }
-        let _dpi = DpiContext(previous);
-        let mut client = RECT::default();
-        GetClientRect(window, &mut client)?;
-        let mut origin = POINT {
-            x: client.left,
-            y: client.top,
-        };
-        ClientToScreen(window, &mut origin).ok()?;
-        let mut bounds = RECT::default();
-        DwmGetWindowAttribute(
-            window,
-            DWMWA_EXTENDED_FRAME_BOUNDS,
-            (&mut bounds as *mut RECT).cast(),
-            size_of::<RECT>() as u32,
-        )?;
-        let x = origin.x - bounds.left;
-        let y = origin.y - bounds.top;
-        let width = client.right - client.left;
-        let height = client.bottom - client.top;
-        if bounds.right - bounds.left != frame_width
-            || bounds.bottom - bounds.top != frame_height
-            || x < 0
-            || y < 0
-            || width <= 0
-            || height <= 0
-            || x + width > frame_width
-            || y + height > frame_height
-        {
-            return Err(Error::new(
-                E_FAIL,
-                "The game window changed size; capture again",
-            ));
-        }
-        Ok((x as u32, y as u32, width as u32, height as u32))
-    }
-}
-
 fn read_pixels(
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
     texture: &ID3D11Texture2D,
-    crop: (u32, u32, u32, u32),
-    window: HWND,
+    width: u32,
+    height: u32,
     deadline: Instant,
 ) -> windows::core::Result<Vec<u8>> {
     unsafe {
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         texture.GetDesc(&mut desc);
-        if crop.0 + crop.2 > desc.Width || crop.1 + crop.3 > desc.Height {
+        if width > desc.Width || height > desc.Height {
             return Err(Error::new(
                 E_FAIL,
-                "The game window changed size; capture again",
+                "The display layout changed; capture again",
             ));
         }
         desc.Usage = D3D11_USAGE_STAGING;
@@ -389,7 +452,7 @@ fn read_pixels(
                 Ok(()) => break,
                 Err(error) if error.code() == DXGI_ERROR_WAS_STILL_DRAWING => {
                     context.Flush();
-                    wait_for_frame(window, deadline)?;
+                    wait_for_frame(deadline)?;
                 }
                 Err(error) => return Err(error),
             }
@@ -399,12 +462,9 @@ fn read_pixels(
             mapped.pData as *const u8,
             mapped.RowPitch as usize * desc.Height as usize,
         );
-        let (x, y, width, height) = crop;
         let rgba = bgra_to_rgba(
             bgra,
             mapped.RowPitch as usize,
-            x as usize,
-            y as usize,
             width as usize,
             height as usize,
         );
@@ -416,25 +476,31 @@ fn read_pixels(
 fn bgra_to_rgba(
     pixels: &[u8],
     stride: usize,
-    x: usize,
-    y: usize,
     width: usize,
     height: usize,
 ) -> Result<Vec<u8>, String> {
-    let end_x = x.checked_add(width).and_then(|n| n.checked_mul(4));
-    let end_y = y.checked_add(height).and_then(|n| n.checked_mul(stride));
+    let row_bytes = width.checked_mul(4);
+    let end = height.checked_mul(stride);
     if width == 0
         || height == 0
-        || end_x.is_none_or(|n| n > stride)
-        || end_y.is_none_or(|n| n > pixels.len())
+        || row_bytes.is_none_or(|n| n > stride)
+        || end.is_none_or(|n| n > pixels.len())
     {
-        return Err("The game client area is outside the captured frame".into());
+        return Err("The image is outside the captured frame".into());
     }
-    let mut rgba = Vec::with_capacity(width * height * 4);
-    for row in y..y + height {
-        let start = row * stride + x * 4;
-        for pixel in pixels[start..start + width * 4].as_chunks::<4>().0 {
-            rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], 255]);
+    let row_bytes = width * 4;
+    let mut rgba = vec![0; row_bytes * height];
+    for row in 0..height {
+        let start = row * stride;
+        let source = &pixels[start..start + row_bytes];
+        let destination = &mut rgba[row * row_bytes..(row + 1) * row_bytes];
+        for (source, destination) in source
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(destination.as_chunks_mut::<4>().0)
+        {
+            *destination = [source[2], source[1], source[0], 255];
         }
     }
     Ok(rgba)
@@ -445,22 +511,108 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "Requires a running, restored VRChat window"]
-    fn captures_a_live_vrchat_client_without_a_previous_window() {
-        let window = find_game_window().expect("Start VRChat before running this test");
-        assert!(is_vrchat(window));
-        let capture = capture_game_window(window).expect("VRChat client capture failed");
-        assert_eq!(capture.window, window.0 as isize);
-        assert!(capture.width > 0 && capture.height > 0);
+    #[ignore = "Requires an interactive Windows desktop"]
+    fn captures_repeatedly_without_a_game_window() {
+        let mut devices = Vec::new();
+        for _ in 0..2 {
+            let capture = thread::spawn(|| capture_desktop(&[]))
+                .join()
+                .unwrap()
+                .expect("Desktop capture failed");
+            assert!(capture.width > 0 && capture.height > 0);
+            assert_eq!(
+                capture.pixels.len(),
+                capture.width as usize * capture.height as usize * 4
+            );
+            devices.push(
+                CAPTURE_DEVICE
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .device
+                    .clone(),
+            );
+        }
         assert_eq!(
-            capture.pixels.len(),
-            capture.width as usize * capture.height as usize * 4
+            devices[0], devices[1],
+            "Capture workers must reuse the device"
         );
     }
 
     #[test]
+    #[ignore = "Requires an interactive Windows desktop"]
+    fn concurrent_capture_workers_share_the_device_safely() {
+        let workers: Vec<_> = (0..3)
+            .map(|_| thread::spawn(|| capture_desktop(&[])))
+            .collect();
+        for worker in workers {
+            let capture = worker.join().unwrap().expect("Concurrent capture failed");
+            assert!(capture.width > 0 && capture.height > 0);
+            assert_eq!(
+                capture.pixels.len(),
+                capture.width as usize * capture.height as usize * 4
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "Requires an interactive Windows desktop"]
+    fn recreates_an_empty_capture_device_cache() {
+        capture_desktop(&[]).unwrap();
+        let old_device = CAPTURE_DEVICE.lock().unwrap().take().unwrap().device;
+        capture_desktop(&[]).unwrap();
+        let cached = CAPTURE_DEVICE.lock().unwrap();
+        let new_device = &cached.as_ref().unwrap().device;
+        assert_ne!(&old_device, new_device);
+        assert!(unsafe { new_device.GetDeviceRemovedReason() }.is_ok());
+    }
+
+    #[test]
+    #[ignore = "Requires an interactive Windows desktop"]
+    fn restores_result_window_capture_visibility() {
+        use windows::{
+            core::w,
+            Win32::UI::WindowsAndMessaging::{
+                CreateWindowExW, DestroyWindow, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+                WS_VISIBLE,
+            },
+        };
+        unsafe {
+            let window = CreateWindowExW(
+                WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+                w!("STATIC"),
+                w!(""),
+                WS_POPUP | WS_VISIBLE,
+                0,
+                0,
+                32,
+                32,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let mut before = 0;
+            let mut during = 0;
+            let mut after = 0;
+            let result = (|| -> windows::core::Result<()> {
+                GetWindowDisplayAffinity(window, &mut before)?;
+                let excluded = ExcludedWindows::new(&[window.0 as isize])?;
+                GetWindowDisplayAffinity(window, &mut during)?;
+                drop(excluded);
+                GetWindowDisplayAffinity(window, &mut after)
+            })();
+            DestroyWindow(window).unwrap();
+            result.unwrap();
+            assert_eq!(during, WDA_EXCLUDEFROMCAPTURE.0);
+            assert_eq!(after, before);
+        }
+    }
+
+    #[test]
     fn null_capture_frame_waits_without_masking_capture_failures() {
-        // WinRT returns S_OK with a null object while the frame pool is empty.
         let frame: windows::core::Result<windows::Graphics::Capture::Direct3D11CaptureFrame> =
             unsafe { windows::core::Type::from_abi(std::ptr::null_mut()) };
         let error = frame.expect_err("The binding rejects a null frame");
@@ -471,19 +623,91 @@ mod tests {
     }
 
     #[test]
-    fn crops_client_pixels_and_skips_bgra_row_padding() {
+    fn converts_pixels_and_skips_bgra_row_padding() {
         let bgra = [
             1, 2, 3, 255, 4, 5, 6, 255, 0, 0, 0, 0, 7, 8, 9, 255, 10, 11, 12, 255, 0, 0, 0, 0,
         ];
         assert_eq!(
-            bgra_to_rgba(&bgra, 12, 1, 0, 1, 2).unwrap(),
-            [6, 5, 4, 255, 12, 11, 10, 255]
+            bgra_to_rgba(&bgra, 12, 2, 2).unwrap(),
+            [3, 2, 1, 255, 6, 5, 4, 255, 9, 8, 7, 255, 12, 11, 10, 255]
         );
     }
 
     #[test]
-    fn rejects_a_crop_outside_the_mapped_buffer() {
-        assert!(bgra_to_rgba(&[0; 16], 8, 1, 0, 2, 1).is_err());
-        assert!(bgra_to_rgba(&[0; 16], 8, 0, 1, 1, 2).is_err());
+    fn rejects_invalid_pixel_buffers() {
+        assert!(bgra_to_rgba(&[0; 16], 8, 3, 1).is_err());
+        assert!(bgra_to_rgba(&[0; 16], 8, 1, 3).is_err());
+        assert!(bgra_to_rgba(&[], 0, 0, 0).is_err());
+    }
+
+    #[test]
+    fn combines_monitors_with_negative_coordinates_and_gaps() {
+        let displays = [
+            (
+                HMONITOR::default(),
+                RECT {
+                    left: -2,
+                    top: -1,
+                    right: 0,
+                    bottom: 1,
+                },
+            ),
+            (
+                HMONITOR::default(),
+                RECT {
+                    left: 1,
+                    top: 0,
+                    right: 3,
+                    bottom: 2,
+                },
+            ),
+        ];
+        let bounds = desktop_bounds(&displays).unwrap();
+        assert_eq!(
+            (bounds.left, bounds.top, bounds.right, bounds.bottom),
+            (-2, -1, 3, 2)
+        );
+        let mut capture = DesktopCapture {
+            origin: (-2, -1),
+            width: 5,
+            height: 3,
+            pixels: vec![0; 60],
+        };
+        paste_monitor(&mut capture, &displays[0].1, &[1; 16]).unwrap();
+        paste_monitor(&mut capture, &displays[1].1, &[2; 16]).unwrap();
+        let row = |y: usize| {
+            capture.pixels[y * 20..(y + 1) * 20]
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|p| p[0])
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(row(0), [1, 1, 0, 0, 0]);
+        assert_eq!(row(1), [1, 1, 0, 2, 2]);
+        assert_eq!(row(2), [0, 0, 0, 2, 2]);
+        assert!(paste_monitor(&mut capture, &displays[0].1, &[1; 12]).is_err());
+    }
+
+    #[test]
+    fn rejects_empty_or_oversized_desktops() {
+        assert!(desktop_bounds(&[]).is_err());
+        for rect in [
+            RECT::default(),
+            RECT {
+                left: 0,
+                top: 0,
+                right: 32768,
+                bottom: 1,
+            },
+            RECT {
+                left: 0,
+                top: 0,
+                right: 16384,
+                bottom: 16384,
+            },
+        ] {
+            assert!(desktop_bounds(&[(HMONITOR::default(), rect)]).is_err());
+        }
     }
 }

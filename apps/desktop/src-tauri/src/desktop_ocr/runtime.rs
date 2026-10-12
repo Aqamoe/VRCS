@@ -21,7 +21,7 @@ struct State {
     active_config: Option<VrOcrConfig>,
     status: DesktopOcrStatus,
     task: Option<tauri::async_runtime::JoinHandle<()>>,
-    game_window: Option<isize>,
+
     #[cfg(windows)]
     selection_cancelled: Arc<AtomicBool>,
 }
@@ -61,6 +61,7 @@ impl State {
 pub struct Manager {
     app: AppHandle,
     state: Mutex<State>,
+    window_creation: Mutex<()>,
     bridge: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     #[cfg(windows)]
     hotkey: Mutex<Option<super::hotkey::Hotkey>>,
@@ -71,6 +72,7 @@ impl Manager {
         Self {
             app,
             state: Mutex::new(State::default()),
+            window_creation: Mutex::new(()),
             bridge: Mutex::new(None),
             #[cfg(windows)]
             hotkey: Mutex::new(None),
@@ -199,8 +201,10 @@ impl Manager {
 
     fn show_result(&self, scan_id: u64) {
         let app = self.app.clone();
-        let _ = self.app.run_on_main_thread(move || {
-            if app.state::<Self>().status().scan_id != scan_id {
+        tauri::async_runtime::spawn_blocking(move || {
+            let manager = app.state::<Self>();
+            let _creation = manager.window_creation.lock().unwrap();
+            if manager.status().scan_id != scan_id {
                 return;
             }
             let window = match app.get_webview_window("ocr") {
@@ -220,28 +224,34 @@ impl Manager {
                 .focused(false)
                 .build(),
             };
-            match window {
-                Ok(window) => {
-                    #[cfg(windows)]
-                    if let Ok(hwnd) = window.hwnd() {
-                        unsafe {
-                            windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(
-                                hwnd.0 as _,
-                                windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNOACTIVATE,
-                            );
+            let app = app.clone();
+            let _ = app.clone().run_on_main_thread(move || {
+                if app.state::<Self>().status().scan_id != scan_id {
+                    return;
+                }
+                match window {
+                    Ok(window) => {
+                        #[cfg(windows)]
+                        if let Ok(hwnd) = window.hwnd() {
+                            unsafe {
+                                windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(
+                                    hwnd.0 as _,
+                                    windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNOACTIVATE,
+                                );
+                            }
                         }
+                        #[cfg(not(windows))]
+                        let _ = window.show();
                     }
-                    #[cfg(not(windows))]
-                    let _ = window.show();
+                    Err(error) => {
+                        tracing::warn!(%error, "Desktop OCR result window failed");
+                        app.state::<Self>().update(scan_id, |status| {
+                            status.state = "error";
+                            status.error = Some("desktop_ocr.unavailable".into());
+                        });
+                    }
                 }
-                Err(error) => {
-                    tracing::warn!(%error, "Desktop OCR result window failed");
-                    app.state::<Self>().update(scan_id, |status| {
-                        status.state = "error";
-                        status.error = Some("desktop_ocr.unavailable".into());
-                    });
-                }
-            }
+            });
         });
     }
 
@@ -252,17 +262,18 @@ impl Manager {
 
     #[cfg(windows)]
     pub fn scan(&self) -> Result<(), String> {
-        use vrcs_core::ocr::desktop_capture::capture_vrchat;
+        use vrcs_core::ocr::desktop_capture::capture_desktop;
         if self.status().state == "selecting" {
             self.close();
             return Ok(());
         }
         // Native getters can wait for the UI thread. Do not hold scan state here.
-        let result_window = self
-            .app
-            .get_webview_window("ocr")
-            .and_then(|window| window.hwnd().ok())
-            .map(|hwnd| hwnd.0 as isize);
+        let result_windows: Vec<isize> = ["ocr", "vision"]
+            .into_iter()
+            .filter_map(|label| self.app.get_webview_window(label))
+            .filter_map(|window| window.hwnd().ok())
+            .map(|hwnd| hwnd.0 as isize)
+            .collect();
         let hint = crate::desktop_capture::selection_hint(&self.app, "ocrWindow");
         let mut state = self.state.lock().unwrap();
         let service = state
@@ -285,23 +296,15 @@ impl Manager {
         state.status.error = None;
         state.status.timed_out = false;
         self.publish(&state.status);
-        let game_window = state.game_window;
+
         let app = self.app.clone();
         state.task = Some(tauri::async_runtime::spawn(async move {
             let result = async {
-                let mut capture = tauri::async_runtime::spawn_blocking(move || {
-                    capture_vrchat(game_window, result_window)
-                })
-                .await
-                .map_err(|_| "desktop_ocr.capture_failed".to_string())??;
-                {
-                    let manager = app.state::<Self>();
-                    let mut state = manager.state.lock().unwrap();
-                    if state.status.scan_id != scan_id {
-                        return Err("Cancelled scan".into());
-                    }
-                    state.game_window = Some(capture.window);
-                }
+                let mut capture =
+                    tauri::async_runtime::spawn_blocking(move || capture_desktop(&result_windows))
+                        .await
+                        .map_err(|_| "desktop_ocr.capture_failed".to_string())??;
+
                 if !app
                     .state::<Self>()
                     .update(scan_id, |status| status.state = "selecting")
@@ -310,10 +313,7 @@ impl Manager {
                 }
                 let selected = tauri::async_runtime::spawn_blocking(move || {
                     let region = super::selection_window::select_region_reserved(
-                        capture.window,
-                        capture.width,
-                        capture.height,
-                        &capture.pixels,
+                        &capture,
                         &selection_cancelled,
                         &hint,
                         &picker,
@@ -321,6 +321,9 @@ impl Manager {
                     let Some(region) = region else {
                         return Ok::<_, String>(None);
                     };
+                    if selection_cancelled.load(Ordering::Acquire) {
+                        return Ok(None);
+                    }
                     capture.pixels = region.crop(capture.width, capture.height, &capture.pixels)?;
                     capture.width = region.width;
                     capture.height = region.height;
@@ -484,7 +487,7 @@ mod tests {
         let pixels = vec![42; 3840 * 2 * 4];
         let image = prepare_image(
             DesktopCapture {
-                window: 0,
+                origin: (0, 0),
                 width: 3840,
                 height: 2,
                 pixels: pixels.clone(),

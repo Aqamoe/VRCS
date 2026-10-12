@@ -4,7 +4,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use tauri::{AppHandle, Emitter, Manager as _, WebviewUrl, WebviewWindowBuilder};
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch};
 use vrcs_core::{
     vision::{VisionMode, VisionService, VisionSession},
     VisionConfig, VrOcrConfig, VrOverlayConfig,
@@ -21,7 +21,7 @@ struct State {
     recording: Option<VisionSession>,
     task: Option<tauri::async_runtime::JoinHandle<()>>,
     selection_cancelled: Arc<AtomicBool>,
-    game_window: Option<isize>,
+
     binding: Option<(Option<String>, bool)>,
 }
 
@@ -47,7 +47,7 @@ impl State {
     fn clear(&mut self) {
         self.cancel();
         self.image = None;
-        self.game_window = None;
+
         self.status.image_id = None;
         self.status.question.clear();
         self.status.answer.clear();
@@ -97,6 +97,7 @@ impl State {
 pub struct Manager {
     app: AppHandle,
     state: Mutex<State>,
+    window_creation: Mutex<()>,
     bridge: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     #[cfg(windows)]
     hotkey: Mutex<Option<crate::desktop_capture::hotkey::Hotkey>>,
@@ -107,6 +108,7 @@ impl Manager {
         Self {
             app,
             state: Mutex::new(State::default()),
+            window_creation: Mutex::new(()),
             bridge: Mutex::new(None),
             #[cfg(windows)]
             hotkey: Mutex::new(None),
@@ -236,20 +238,18 @@ impl Manager {
         true
     }
 
-    fn show_window(&self, id: u64) -> Result<(), String> {
-        let app = self.app.clone();
-        self.app
-            .run_on_main_thread(move || {
-                if app.state::<Self>().status().session_id != id {
-                    return;
+    async fn show_window(&self, id: u64) -> Result<(), String> {
+        let result: Result<(), String> = async {
+            let app = self.app.clone();
+            // WebView2 creation must not block the UI thread or hold the picker permit.
+            let window = tauri::async_runtime::spawn_blocking(move || {
+                let manager = app.state::<Self>();
+                let _creation = manager.window_creation.lock().unwrap();
+                if manager.status().session_id != id {
+                    return Ok(None);
                 }
-                // A result or error window must not steal focus from either native picker.
-                #[cfg(windows)]
-                let Ok(_picker) = crate::desktop_capture::reserve_picker() else {
-                    return;
-                };
-                let window = match app.get_webview_window("vision") {
-                    Some(window) => Ok(window),
+                match app.get_webview_window("vision") {
+                    Some(window) => Ok(Some(window)),
                     None => WebviewWindowBuilder::new(
                         &app,
                         "vision",
@@ -262,22 +262,48 @@ impl Manager {
                     .always_on_top(true)
                     .skip_taskbar(true)
                     .visible(false)
-                    .build(),
-                };
-                match window {
-                    Ok(window) => {
-                        if window.show().and_then(|_| window.set_focus()).is_err() {
-                            app.state::<Self>()
-                                .update(id, |state| state.status.fail("openFailed", None));
-                        }
-                    }
-                    Err(_) => {
-                        app.state::<Self>()
-                            .update(id, |state| state.status.fail("openFailed", None));
-                    }
+                    .focused(false)
+                    .build()
+                    .map(Some)
+                    .map_err(|error| error.to_string()),
                 }
             })
-            .map_err(|_| "desktop_vision.openFailed".into())
+            .await
+            .map_err(|error| error.to_string())??;
+            let Some(window) = window else {
+                return Ok(());
+            };
+            let app = self.app.clone();
+            let (sender, receiver) = oneshot::channel();
+            self.app
+                .run_on_main_thread(move || {
+                    let result = (|| {
+                        if app.state::<Self>().status().session_id != id {
+                            return Ok(());
+                        }
+                        // Only showing and focusing the window competes with selection.
+                        #[cfg(windows)]
+                        let _picker = crate::desktop_capture::reserve_picker()
+                            .map_err(|_| "desktop_vision.selection_busy".to_string())?;
+                        window
+                            .show()
+                            .and_then(|_| window.set_focus())
+                            .map_err(|error| error.to_string())
+                    })();
+                    let _ = sender.send(result);
+                })
+                .map_err(|error| error.to_string())?;
+            receiver.await.map_err(|error| error.to_string())?
+        }
+        .await;
+        result.map_err(|detail| {
+            tracing::warn!(%detail, "Desktop vision window failed to open");
+            if detail == "desktop_vision.selection_busy" {
+                return detail;
+            }
+            self.update(id, |state| state.status.fail("openFailed", Some(detail)));
+            "desktop_vision.openFailed".into()
+        })
     }
 
     fn hide_window(&self, id: u64) {
@@ -291,8 +317,8 @@ impl Manager {
         });
     }
 
-    pub fn open(&self) -> Result<(), String> {
-        self.show_window(self.status().session_id)
+    pub async fn open(&self) -> Result<(), String> {
+        self.show_window(self.status().session_id).await
     }
 
     pub fn cancel(&self) {
@@ -374,7 +400,10 @@ impl Manager {
                 show.then_some(state.status.session_id)
             };
             if let Some(id) = show {
-                let _ = self.show_window(id);
+                let app = self.app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = app.state::<Self>().show_window(id).await;
+                });
             }
         }
         result
@@ -390,7 +419,7 @@ impl Manager {
             return Ok(());
         }
         // Native window access can wait on the UI thread; do it before locking state.
-        let app_windows: Vec<isize> = ["main", "vision"]
+        let result_windows: Vec<isize> = ["ocr", "vision"]
             .into_iter()
             .filter_map(|label| self.app.get_webview_window(label))
             .filter_map(|window| window.hwnd().ok())
@@ -407,7 +436,7 @@ impl Manager {
             .map_err(|_| "desktop_vision.selection_busy".to_string())?;
         state.cancel();
         let id = state.status.session_id;
-        let previous_window = state.game_window;
+
         let cancelled = Arc::new(AtomicBool::new(false));
         state.selection_cancelled = cancelled.clone();
         state.status.state = "capturing";
@@ -416,10 +445,7 @@ impl Manager {
         state.task = Some(tauri::async_runtime::spawn(async move {
             let result = async {
                 let capture = tauri::async_runtime::spawn_blocking(move || {
-                    vrcs_core::ocr::desktop_capture::capture_vrchat_from_app(
-                        previous_window,
-                        &app_windows,
-                    )
+                    vrcs_core::ocr::desktop_capture::capture_desktop(&result_windows)
                 })
                 .await
                 .map_err(|_| "desktop_vision.capture_failed".to_string())?
@@ -435,13 +461,7 @@ impl Manager {
                         return Ok(None);
                     }
                     let region = crate::desktop_capture::selection_window::select_region_reserved(
-                        capture.window,
-                        capture.width,
-                        capture.height,
-                        &capture.pixels,
-                        &cancelled,
-                        &hint,
-                        &picker,
+                        &capture, &cancelled, &hint, &picker,
                     )
                     .map_err(capture_error)?;
                     let Some(region) = region else {
@@ -453,7 +473,7 @@ impl Manager {
                     let pixels = region
                         .crop(capture.width, capture.height, &capture.pixels)
                         .map_err(capture_error)?;
-                    let window = capture.window;
+
                     drop(capture);
                     let image = crate::vr_overlay::renderer::Texture {
                         width: region.width,
@@ -462,7 +482,7 @@ impl Manager {
                     };
                     let bytes = crate::vision_image::prepare_image(image, &config)
                         .map_err(|_| "desktop_vision.capture_failed".to_string())?;
-                    Ok::<_, String>(Some((window, bytes)))
+                    Ok::<_, String>(Some(bytes))
                 })
                 .await
                 .map_err(|_| "desktop_vision.capture_failed".to_string())?
@@ -472,8 +492,7 @@ impl Manager {
             let updated = manager.update(id, |state| {
                 state.task = None;
                 match result {
-                    Ok(Some((window, image))) => {
-                        state.game_window = Some(window);
+                    Ok(Some(image)) => {
                         state.image = Some(Arc::new(image));
                         state.status.image_id = Some(id);
                         state.status.question.clear();
@@ -495,7 +514,7 @@ impl Manager {
                 }
             });
             if updated {
-                let _ = manager.show_window(id);
+                let _ = manager.show_window(id).await;
             }
         }));
         Ok(())
@@ -647,6 +666,12 @@ fn capture_error(error: String) -> String {
 mod tests {
     use super::*;
 
+    // Native Tauri windows require Common Controls v6; library tests have no app resources.
+    #[cfg(all(windows, target_env = "msvc"))]
+    #[used]
+    #[link_section = ".drectve"]
+    static COMMON_CONTROLS: [u8; 168] = *b" /MANIFESTDEPENDENCY:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\" ";
+
     fn selected() -> State {
         State {
             image: Some(Arc::new(vec![1, 2, 3])),
@@ -691,10 +716,10 @@ mod tests {
     #[test]
     fn close_clears_sensitive_content_and_rejects_old_image_ids() {
         let mut state = selected();
-        state.game_window = Some(123);
+
         state.clear();
         assert!(state.image.is_none());
-        assert!(state.game_window.is_none());
+
         assert!(state.status.image_id.is_none());
         assert!(state.status.question.is_empty());
         assert!(state.status.answer.is_empty());
@@ -717,6 +742,68 @@ mod tests {
             assert!(status.busy());
         }
         assert!(!selected().status.busy());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "Requires an interactive Windows desktop and WebView2"]
+    fn native_question_window_opens_reopens_and_respects_selection() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut context = tauri::generate_context!();
+        context.config_mut().identifier = "app.vrcs.desktop.window-test".into();
+        context.config_mut().app.windows.clear();
+        context.config_mut().build.dev_url = None;
+        let app = tauri::Builder::default()
+            .any_thread()
+            .plugin(tauri_plugin_store::Builder::default().build())
+            .invoke_handler(tauri::generate_handler![
+                crate::desktop_vision::desktop_vision_status,
+                crate::desktop_vision::desktop_vision_close,
+            ])
+            .setup(move |app| {
+                app.manage(Manager::new(app.handle().clone()));
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let result: Result<(), String> = async {
+                        let manager = app.state::<Manager>();
+                        let (first, second) = tokio::join!(manager.open(), manager.open());
+                        first?;
+                        second?;
+                        let window = app.get_webview_window("vision").ok_or("Missing window")?;
+                        if !window.is_visible().map_err(|error| error.to_string())? {
+                            return Err("The first open did not show the window".into());
+                        }
+                        let stale = manager.status().session_id;
+                        manager.close();
+                        manager.show_window(stale).await?;
+                        if window.is_visible().map_err(|error| error.to_string())? {
+                            return Err("A cancelled open showed the closed window".into());
+                        }
+                        let picker = crate::desktop_capture::reserve_picker()?;
+                        if manager.open().await != Err("desktop_vision.selection_busy".into()) {
+                            return Err("Opening did not report the active selection".into());
+                        }
+                        if window.is_visible().map_err(|error| error.to_string())? {
+                            return Err("Opening during selection showed the window".into());
+                        }
+                        drop(picker);
+                        manager.open().await?;
+                        if !window.is_visible().map_err(|error| error.to_string())? {
+                            return Err("Reopening did not show the window".into());
+                        }
+                        let _picker = crate::desktop_capture::reserve_picker()?;
+                        Ok(())
+                    }
+                    .await;
+                    let _ = sender.send(result);
+                    app.exit(0);
+                });
+                Ok(())
+            })
+            .build(context)
+            .unwrap();
+        assert_eq!(app.run_return(|_, _| {}), 0);
+        receiver.recv().unwrap().unwrap();
     }
 
     #[test]

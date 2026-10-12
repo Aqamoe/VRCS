@@ -7,8 +7,9 @@ use std::{
         OnceLock,
     },
 };
+use vrcs_core::ocr::desktop_capture::DesktopCapture;
 use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+    Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     Graphics::Gdi::*,
     System::LibraryLoader::GetModuleHandleW,
     UI::{
@@ -39,10 +40,7 @@ struct Picker {
 
 #[cfg(test)]
 fn select_region(
-    game_window: isize,
-    width: u32,
-    height: u32,
-    pixels: &[u8],
+    capture: &DesktopCapture,
     cancelled: &AtomicBool,
     hint: &str,
 ) -> Result<Option<Region>, String> {
@@ -50,20 +48,18 @@ fn select_region(
         return Ok(None);
     }
     let permit = super::reserve_picker().map_err(|_| "desktop_ocr.selection_busy")?;
-    select_region_reserved(game_window, width, height, pixels, cancelled, hint, &permit)
+    select_region_reserved(capture, cancelled, hint, &permit)
 }
 
 /// Runs on a blocking worker, using a reservation acquired before capture.
 /// Cancellation also closes a pending picker.
 pub fn select_region_reserved(
-    game_window: isize,
-    width: u32,
-    height: u32,
-    pixels: &[u8],
+    capture: &DesktopCapture,
     cancelled: &AtomicBool,
     hint: &str,
     _permit: &super::PickerPermit,
 ) -> Result<Option<Region>, String> {
+    let (width, height, pixels) = (capture.width, capture.height, &capture.pixels);
     if cancelled.load(Ordering::Acquire) {
         return Ok(None);
     }
@@ -91,18 +87,17 @@ pub fn select_region_reserved(
             }
         }
         let _dpi = DpiGuard(previous_dpi as isize);
-        let game = game_window as HWND;
-        let mut client: RECT = zeroed();
-        let mut origin = POINT { x: 0, y: 0 };
-        if IsWindow(game) == 0
-            || IsIconic(game) != 0
-            || GetClientRect(game, &mut client) == 0
-            || ClientToScreen(game, &mut origin) == 0
-            || client.right - client.left != width as i32
-            || client.bottom - client.top != height as i32
+        if capture.origin
+            != (
+                GetSystemMetrics(SM_XVIRTUALSCREEN),
+                GetSystemMetrics(SM_YVIRTUALSCREEN),
+            )
+            || width as i32 != GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            || height as i32 != GetSystemMetrics(SM_CYVIRTUALSCREEN)
         {
             return Err("desktop_ocr.capture_failed".into());
         }
+        let previous_window = GetForegroundWindow();
         let instance = GetModuleHandleW(null());
         if !*WINDOW_CLASS.get_or_init(|| {
             let class = WNDCLASSW {
@@ -116,16 +111,7 @@ pub fn select_region_reserved(
         }) {
             return Err("desktop_ocr.unavailable".into());
         }
-        let mut bgra = pixels.to_vec();
-        for pixel in bgra.as_chunks_mut::<4>().0 {
-            pixel.swap(0, 2);
-        }
-        let mut dimmed = bgra.clone();
-        for pixel in dimmed.as_chunks_mut::<4>().0 {
-            pixel[0] /= 2;
-            pixel[1] /= 2;
-            pixel[2] /= 2;
-        }
+        let (bgra, dimmed) = picker_pixels(pixels);
         let mut picker = Picker {
             width,
             height,
@@ -143,8 +129,8 @@ pub fn select_region_reserved(
             CLASS_NAME,
             CLASS_NAME,
             WS_POPUP,
-            origin.x,
-            origin.y,
+            capture.origin.0,
+            capture.origin.1,
             width as i32,
             height as i32,
             null_mut(),
@@ -180,17 +166,15 @@ pub fn select_region_reserved(
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
             }
-            if IsWindow(game) == 0 || IsIconic(game) != 0 {
-                picker.finished = true;
-            }
+
             if !picker.finished {
                 MsgWaitForMultipleObjectsEx(0, null(), 50, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
             }
         }
         let restore_focus = GetForegroundWindow() == window;
         DestroyWindow(window);
-        if restore_focus && IsWindow(game) != 0 {
-            SetForegroundWindow(game);
+        if restore_focus && IsWindow(previous_window) != 0 && IsIconic(previous_window) == 0 {
+            SetForegroundWindow(previous_window);
         }
         Ok(if cancelled.load(Ordering::Acquire) {
             None
@@ -198,6 +182,23 @@ pub fn select_region_reserved(
             picker.selected
         })
     }
+}
+
+fn picker_pixels(rgba: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let mut bgra = vec![0; rgba.len()];
+    let mut dimmed = vec![0; rgba.len()];
+    for ((source, normal), dimmed) in rgba
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(bgra.as_chunks_mut::<4>().0)
+        .zip(dimmed.as_chunks_mut::<4>().0)
+    {
+        let [r, g, b, a] = *source;
+        *normal = [b, g, r, a];
+        *dimmed = [b / 2, g / 2, r / 2, a];
+    }
+    (bgra, dimmed)
 }
 
 fn mouse_point(position: LPARAM) -> (i32, i32) {
@@ -256,6 +257,16 @@ unsafe extern "system" fn window_proc(
         }
         WM_KEYDOWN if wparam == VK_ESCAPE as usize => {
             (*picker).finished = true;
+            0
+        }
+        WM_DISPLAYCHANGE => {
+            (*picker).finished = true;
+            (*picker).selected = None;
+            0
+        }
+        WM_DPICHANGED => {
+            (*picker).dpi = GetDpiForWindow(window).max(96);
+            InvalidateRect(window, null(), 0);
             0
         }
         WM_RBUTTONDOWN | WM_CLOSE | WM_KILLFOCUS => {
@@ -418,6 +429,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn picker_images_preserve_colors_alpha_and_source_pixels() {
+        let rgba = [11, 22, 33, 44, 255, 128, 1, 0];
+        let (bgra, dimmed) = picker_pixels(&rgba);
+        assert_eq!(bgra, [33, 22, 11, 44, 1, 128, 255, 0]);
+        assert_eq!(dimmed, [16, 11, 5, 44, 0, 64, 127, 0]);
+        assert_eq!(rgba, [11, 22, 33, 44, 255, 128, 1, 0]);
+    }
+
+    #[test]
     fn pending_drag_can_still_be_cancelled() {
         unsafe {
             let instance = GetModuleHandleW(null());
@@ -432,6 +452,7 @@ mod tests {
             for (message, key) in [
                 (WM_KILLFOCUS, 0),
                 (WM_RBUTTONDOWN, 0),
+                (WM_DISPLAYCHANGE, 0),
                 (WM_KEYDOWN, VK_ESCAPE as usize),
             ] {
                 let mut picker = Picker {
@@ -543,7 +564,13 @@ mod tests {
     #[test]
     fn cancellation_before_opening_does_not_show_a_window() {
         let cancelled = AtomicBool::new(true);
-        assert_eq!(select_region(0, 0, 0, &[], &cancelled, "").unwrap(), None);
+        let capture = DesktopCapture {
+            origin: (0, 0),
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        };
+        assert_eq!(select_region(&capture, &cancelled, "").unwrap(), None);
     }
 
     #[test]

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy, Image, LoaderCircle, Mic, RefreshCw, ScanEye, Send, Square, TriangleAlert, X } from "lucide-react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
+import Markdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   askDesktopVision, cancelDesktopVision, captureDesktopVision, closeDesktopVision,
   finishDesktopVisionRecording, getDesktopVisionImage, startDesktopVisionRecording,
@@ -9,6 +11,14 @@ import { canAskDesktopVision, DESKTOP_VISION_QUESTION_LIMIT, desktopVisionBusy, 
 import { useDesktopVisionSession } from "./useDesktopVisionSession";
 
 import "./vision-window.css";
+
+const answerComponents: Components = {
+  a: ({ node: _node, ...props }) => props.href
+    ? <a {...props} target={props.href.startsWith("#") ? undefined : "_blank"} rel="noopener noreferrer" />
+    : <>{props.children}</>,
+  img: ({ alt }) => <>{alt}</>,
+  table: ({ node: _node, ...props }) => <div className="vision-window-answer-table"><table {...props} /></div>,
+};
 
 export function VisionWindow() {
   const { t } = useTranslation();
@@ -122,8 +132,9 @@ export function VisionWindow() {
       {imageId === null && <div className="empty-state vision-window-empty">
         <span className="vision-window-empty-icon" aria-hidden="true"><ScanEye size={32} strokeWidth={1.5} /></span>
         <h2>{t("visionWindow.title")}</h2>
-        <p>{t(enabled ? "visionWindow.captureHint" : "visionWindow.errors.disabled", { shortcut: status?.shortcut || "Ctrl+Alt+V" })}</p>
-        {enabled && <kbd>{status?.shortcut || "Ctrl+Alt+V"}</kbd>}
+        <p>{enabled
+          ? <Trans i18nKey="visionWindow.captureHint" values={{ shortcut: status?.shortcut || "Ctrl+Alt+V" }} components={{ shortcut: <kbd /> }} />
+          : t("visionWindow.errors.disabled")}</p>
       </div>}
       {imageId !== null && <>
         <figure className="settings-surface vision-window-image-card">
@@ -162,15 +173,16 @@ export function VisionWindow() {
 
       </>}
       {status?.answer && <section className="vision-window-answer" aria-label={t("visionWindow.answer")}>
-        <div className="vision-window-answer-heading">
-          <h2 className="vision-window-section-heading">{t("visionWindow.answer")}</h2>
+        <div className="bubble vision-window-answer-text">
+          <Markdown remarkPlugins={[remarkGfm]} components={answerComponents} skipHtml>{status.answer}</Markdown>
+        </div>
+        <div className="vision-window-answer-actions">
+          <button className="secondary-button vision-window-ask-again" type="button" disabled={!editable} onClick={() => { input.current?.focus(); input.current?.select(); }}>{t("visionWindow.askAgain")}</button>
           <button className="secondary-button vision-window-copy" type="button" aria-label={t(copied ? "visionWindow.copied" : "visionWindow.copy")} onClick={() => void copy()}>
             {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
             {t(copied ? "visionWindow.copied" : "visionWindow.copy")}
           </button>
         </div>
-        <p className="bubble vision-window-answer-text">{status.answer}</p>
-        <button className="secondary-button vision-window-ask-again" type="button" disabled={!editable} onClick={() => { input.current?.focus(); input.current?.select(); }}>{t("visionWindow.askAgain")}</button>
       </section>}
 
     </div>

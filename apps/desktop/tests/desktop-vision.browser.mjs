@@ -109,7 +109,7 @@ test("desktop VQA preserves edits, sends explicitly, and isolates voice and imag
     assert.deepEqual(await page.evaluate(() => window.order), ["desktop-vision-status-changed", "snapshot"]);
     assert.deepEqual(await commands(page, "desktop_vision_capture"), []);
     await emit(page, { state: "idle" });
-    await page.getByText(/Click Capture VRChat below/).waitFor();
+    await page.getByText(/Click Capture screen below/).waitFor();
     await emit(page, { state: "editing", image_id: 7, question: "Old recognition" });
     await page.evaluate(() => window.resolveSnapshot({ ...window.status, revision: 0, state: 'idle', image_id: null }));
     const question = page.getByRole("textbox", { name: "Question", exact: true });

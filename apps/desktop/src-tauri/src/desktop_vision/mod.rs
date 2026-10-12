@@ -33,12 +33,12 @@ pub fn desktop_vision_status(
 }
 
 #[tauri::command]
-pub fn desktop_vision_open(
+pub async fn desktop_vision_open(
     window: WebviewWindow,
     manager: State<'_, Manager>,
 ) -> Result<(), String> {
     check_window(&window)?;
-    manager.open()
+    manager.open().await
 }
 
 #[tauri::command]

@@ -13,6 +13,22 @@ const browser = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], pro
     join(root, "Microsoft/Edge/Application/msedge.exe"),
   ]).find(existsSync);
 
+const markdownCode = '  const text = "' + 'x'.repeat(240) + '";\n  console.log("<tag>");';
+const markdownAnswer = [
+  '## Summary', '', '**Bold** and *italic*, ~~removed~~, and `inline()`.', '',
+  '> Quoted text', '', '1. First', '2. Second', '', '- Item', '  - Nested item', '',
+  '- [x] Done', '- [ ] Pending', '', '---', '',
+  '[Safe link](https://example.com) [Unsafe link](javascript:alert(1))',
+  '[Encoded link](jav&#x61;script:alert(1)) [File link](file:///C:/private.txt)', '',
+  '![Remote image](https://example.com/tracker.png)', '',
+  '<script>window.markdownExecuted = true</script>', '',
+  '<img src="https://example.com/tracker.png" onerror="window.markdownExecuted = true">', '',
+  '| Name | Value | Unit | Source | Status | Note |',
+  '| --- | ---: | --- | --- | --- | --- |',
+  '| sample | 42 | px | local | ready | result |', '',
+  '```ts', markdownCode, '```', '', 'Footnote[^note].', '', '[^note]: Extra detail.',
+].join('\n');
+
 for (const viewport of [{ width: 600, height: 760 }, { width: 380, height: 400 }]) {
 test(`system browser validates VQA layout and interactions at ${viewport.width}Ã—${viewport.height}`, {
   timeout: 45000, skip: !browser && "No installed Chrome or Edge executable was found.",
@@ -46,7 +62,23 @@ test(`system browser validates VQA layout and interactions at ${viewport.width}Ã
         check(document.documentElement.scrollWidth <= innerWidth, 'Window does not overflow horizontally');
         const question = document.querySelector('.vision-window-question textarea');
         if (question) check(getComputedStyle(question).resize === 'none', 'Question editor cannot be resized by dragging');
+        const answer = document.querySelector('.vision-window-answer');
+        if (answer) {
+          check(!answer.querySelector(':scope > h2'), 'Answer section has no separate title');
+          const text = answer.querySelector('.vision-window-answer-text');
+          const style = getComputedStyle(text);
+          const corners = [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomLeftRadius, style.borderBottomRightRadius];
+          check(corners.every(radius => radius === corners[0] && parseFloat(radius) > 0), 'Answer has matching rounded corners');
+          const textRect = text.getBoundingClientRect();
+          const copyRect = answer.querySelector('.vision-window-copy').getBoundingClientRect();
+          check(copyRect.top >= textRect.bottom && Math.abs(copyRect.right - textRect.right) <= 5, 'Copy action is below the answer on the right');
+        }
         const toolbar = document.querySelector('.vision-window-toolbar').getBoundingClientRect();
+        check(Math.abs(content.getBoundingClientRect().bottom - innerHeight) <= 1, 'Content extends behind the floating dock without a separate footer strip');
+        if (answer && Math.abs(content.scrollTop + content.clientHeight - content.scrollHeight) <= 1) {
+          const copyRect = answer.querySelector('.vision-window-copy').getBoundingClientRect();
+          check(copyRect.bottom <= toolbar.top, 'Bottom content remains clear of the dock when scrolled to the end');
+        }
         for (const button of document.querySelectorAll('.vision-window-actions button')) {
           const rect = button.getBoundingClientRect();
           check(rect.left >= 0 && rect.right <= innerWidth && rect.top >= toolbar.top && rect.bottom <= innerHeight, 'Toolbar actions remain inside the window');
@@ -94,16 +126,29 @@ test(`system browser validates VQA layout and interactions at ${viewport.width}Ã
         await settle();
       };
       try {
-        await wait(() => document.querySelector('button[aria-label="Capture VRChat"]')?.disabled === false);
+        await wait(() => document.querySelector('button[aria-label="Capture screen"]')?.disabled === false);
         check(count('desktop_vision_capture') === 0 && count('desktop_vision_start_recording') === 0 && count('desktop_vision_ask') === 0, 'Opening an empty session performs no capture, recording or send');
         check(!document.querySelector('textarea, img'), 'First screenshot has no existing image or editor');
         check(innerWidth === ${viewport.width} && innerHeight === ${viewport.height}, 'Browser uses the requested viewport: ' + innerWidth + 'x' + innerHeight);
+        for (const language of ['en-US', 'zh-CN', 'ja-JP']) {
+          await i18next.changeLanguage(language);
+          document.documentElement.lang = language;
+          await emit({ shortcut: 'Ctrl+Shift+X' });
+          const hint = document.querySelector('.vision-window-empty p');
+          check(hint.querySelector('kbd')?.textContent === status.shortcut, 'Configured shortcut is displayed inline in the capture hint');
+          check(document.querySelectorAll('.vision-window-empty kbd').length === 1, 'Shortcut hint is not duplicated below the text');
+          checkLayout();
+        }
+        await i18next.changeLanguage('en-US');
+        document.documentElement.lang = 'en-US';
+        await settle();
+        check(!document.querySelector('.vision-window-empty p').textContent.includes('Opening this window'), 'Redundant opening disclaimer is removed');
         checkLayout();
-        await click('Capture VRChat');
+        await click('Capture screen');
         check(calls.filter(call => ['desktop_vision_cancel', 'desktop_vision_capture'].includes(call.command)).map(call => call.command).join(',') === 'desktop_vision_cancel,desktop_vision_capture', 'First screenshot is available without an existing image');
-        await emit({ state: 'error', error: 'desktop_vision.game_not_found' });
-        check(document.querySelector('[role="alert"]')?.textContent.includes(en.translation.visionWindow.errors.game_not_found), 'Explain a missing game window');
-        await click('Capture VRChat');
+        await emit({ state: 'error', error: 'desktop_vision.capture_failed' });
+        check(document.querySelector('[role="alert"]')?.textContent.includes(en.translation.visionWindow.errors.capture_failed), 'Explain a screen capture failure');
+        await click('Capture screen');
         check(count('desktop_vision_capture') === 2, 'First screenshot can be retried after failure');
         await emit({ state: 'editing', session_id: 1, revision: 0, image_id: 7, error: null });
         await wait(() => document.querySelector('textarea') && document.querySelector('img')?.naturalWidth === 1);
@@ -187,10 +232,39 @@ test(`system browser validates VQA layout and interactions at ${viewport.width}Ã
         check(count('desktop_vision_image') === 1 && revoked.length === 0 && count('desktop_vision_ask') === 1, 'Cancellation neither refetches the preview nor sends');
         await emit({ state: 'complete', answer: 'Final answer' });
         await click('Copy answer');
-        check(copiedText === 'Final answer', 'Answer header copies the current answer');
+        check(copiedText === 'Final answer', 'Answer action copies the current answer');
         check(document.querySelector('.vision-window-copy').textContent.trim() === 'Copied', 'Copy action shows confirmation');
         await click('Ask another question');
         check(document.activeElement === textarea, 'Ask again focuses the question editor');
+        const markdownAnswer = ${JSON.stringify(markdownAnswer)};
+        await emit({ answer: markdownAnswer });
+        const rendered = document.querySelector('.vision-window-answer-text');
+        check(rendered.querySelector('h2')?.textContent === 'Summary', 'Markdown headings render');
+        check(rendered.querySelector('strong')?.textContent === 'Bold' && rendered.querySelector('em')?.textContent === 'italic', 'Markdown emphasis renders');
+        check(rendered.querySelector('del')?.textContent === 'removed', 'GFM strikethrough renders');
+        check(rendered.querySelector('blockquote')?.textContent.includes('Quoted text'), 'Markdown quotes render');
+        check(rendered.querySelector('ol li')?.textContent === 'First' && rendered.querySelector('ul ul li')?.textContent === 'Nested item', 'Ordered and nested lists render');
+        const tasks = Array.from(rendered.querySelectorAll('input[type="checkbox"]'));
+        check(tasks.length === 2 && tasks.every(task => task.disabled) && tasks[0].checked && !tasks[1].checked, 'GFM task lists render as read-only checkboxes');
+        check(rendered.querySelector('hr') && rendered.querySelector('code')?.textContent === 'inline()', 'Markdown separators and inline code render');
+        const code = rendered.querySelector('pre code');
+        check(code?.textContent === ${JSON.stringify(markdownCode + '\n')} && code.classList.contains('language-ts'), 'Fenced code retains indentation, content and language');
+        const pre = rendered.querySelector('pre');
+        check(getComputedStyle(pre).overflowX === 'auto' && pre.scrollWidth > pre.clientWidth, 'Long code scrolls within its block');
+        const table = rendered.querySelector('.vision-window-answer-table');
+        check(table?.querySelectorAll('th').length === 6 && table.querySelector('td')?.textContent === 'sample', 'GFM tables render');
+        check(getComputedStyle(table.querySelectorAll('td')[1]).textAlign === 'right', 'Table column alignment is preserved');
+        check(getComputedStyle(table).overflowX === 'auto' && table.scrollWidth > table.clientWidth, 'Wide tables scroll within their container');
+        const link = rendered.querySelector('a[href="https://example.com"]');
+        check(link?.target === '_blank' && link.rel.includes('noopener') && link.rel.includes('noreferrer'), 'External links do not replace the question window');
+        check(!rendered.querySelector('a[href^="javascript:"], a[href^="file:"], a[href=""]'), 'Unsafe URLs are not rendered as clickable links');
+        check(rendered.textContent.includes('Unsafe link') && rendered.textContent.includes('Encoded link') && rendered.textContent.includes('File link'), 'Unsafe links retain their visible text');
+        check(!rendered.querySelector('script, img') && !window.markdownExecuted && rendered.textContent.includes('Remote image'), 'Raw HTML is skipped and Markdown images cannot load remote content');
+        const reference = rendered.querySelector('a[data-footnote-ref]');
+        check(reference?.id && reference.target === '' && reference.getAttribute('href').startsWith('#'), 'Footnote links retain their local target and reference ID');
+        await click('Copy answer');
+        check(copiedText === markdownAnswer, 'Copy preserves the original Markdown, not rendered text');
+        checkLayout();
         await emit({ answer: 'A long answer\\n'.repeat(100), profile_name: 'VeryLongServiceName'.repeat(20), model: 'very-long-model-name'.repeat(20) });
         for (const language of ['en-US', 'zh-CN', 'ja-JP']) {
           await i18next.changeLanguage(language);

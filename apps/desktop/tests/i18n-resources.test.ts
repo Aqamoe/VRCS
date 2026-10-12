@@ -83,6 +83,33 @@ test("repository localization validator accepts every locale", () => {
   );
 });
 
+test("desktop OCR and vision use generic screen capture errors in every locale", async () => {
+  const i18n = createInstance();
+  await i18n.init({
+    resources: Object.fromEntries(localeNames.map((name) => [name, {
+      translation: loadLocale(name).translation as JsonObject,
+    }])),
+    lng: "en-US",
+    fallbackLng: "en-US",
+    interpolation: { escapeValue: false },
+  });
+
+  for (const locale of localeNames) {
+    await i18n.changeLanguage(locale);
+    const resource = leaves(loadLocale(locale).translation);
+    for (const window of ["ocrWindow", "visionWindow"]) {
+      for (const code of ["capture_failed", "unavailable", "capture_timeout"]) {
+        const key = `${window}.errors.${code}`;
+        assert.ok(resource.get(key)?.trim(), `${locale}:${key} must not be empty`);
+        assert.equal(i18n.t(key), resource.get(key), `${locale}:${key} must use the current locale`);
+      }
+      for (const code of ["not_game", "game_not_found", "minimized"]) {
+        assert.equal(resource.has(`${window}.errors.${code}`), false, `${locale}:${window} retains ${code}`);
+      }
+    }
+  }
+});
+
 test("VR OCR progress labels follow the UI language and preserve runtime placeholders", async () => {
   const i18n = createInstance();
   await i18n.init({
