@@ -235,6 +235,17 @@ impl Hotkey {
     }
 }
 
+impl Drop for Hotkey {
+    fn drop(&mut self) {
+        unsafe {
+            PostThreadMessageW(self.thread_id, WM_QUIT, 0, 0);
+        }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,16 +295,5 @@ mod tests {
         assert!(binding.registration().is_none());
         binding.paused = false;
         assert!(binding.registration().unwrap().is_err());
-    }
-}
-
-impl Drop for Hotkey {
-    fn drop(&mut self) {
-        unsafe {
-            PostThreadMessageW(self.thread_id, WM_QUIT, 0, 0);
-        }
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
     }
 }
