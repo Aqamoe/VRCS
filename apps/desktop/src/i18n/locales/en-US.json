@@ -524,6 +524,17 @@
       }
     },
     "settings": {
+      "shortcut": {
+        "record": "Change",
+        "cancel": "Cancel",
+        "unset": "Not set",
+        "preparing": "Preparing to listen…",
+        "listening": "Press a shortcut…",
+        "hint": "Click to record. Use Ctrl, Alt or Shift with a letter, number or F1–F11.",
+        "listeningHint": "Press and release the shortcut to save. Esc or a click outside cancels.",
+        "unsupported": "Use Ctrl, Alt or Shift with one letter, number or F1–F11. Win, AltGr and F12 are not supported.",
+        "startFailed": "Could not start shortcut recording. Try again."
+      },
       "vision": {
         "title": "Visual question answering",
         "description": "Ask questions about a captured image in desktop or VR mode.",
@@ -533,7 +544,7 @@
         "desktopEnable": "Enable desktop visual question answering",
         "desktopDescription": "Drag to select visible content on the desktop or in another app, including across monitors. Type or dictate a question, check the text, then send it.",
         "desktopShortcut": "Screenshot shortcut",
-        "desktopShortcutHint": "Applied when this field loses focus. Native registration reports invalid or occupied shortcuts.",
+        "desktopShortcutHint": "If the shortcut is already in use, a registration error is shown below.",
         "openDesktop": "Open question window",
         "vrEnable": "Enable VR visual question answering",
         "profile": "API profile",

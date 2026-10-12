@@ -470,6 +470,7 @@ pub fn run() {
         .manage(connection)
         .manage(diagnostic_state)
         .manage(app_updates::UpdateState::new())
+        .manage(desktop_capture::ShortcutRecording::default())
         .manage(NativeUiState {
             show_item: Mutex::new(None),
             quit_item: Mutex::new(None),
@@ -496,6 +497,7 @@ pub fn run() {
             vr_overlay::vr_overlay_show_sample,
             vr_overlay::vr_overlay_hide_sample,
             vr_overlay::vr_dashboard_update_view,
+            desktop_capture::set_shortcut_recording,
             desktop_ocr::desktop_ocr_status,
             desktop_ocr::desktop_ocr_scan,
             desktop_ocr::desktop_ocr_close,
@@ -595,6 +597,14 @@ pub fn run() {
                 }
             }
             if window.label() == "main" {
+                if matches!(
+                    event,
+                    WindowEvent::Focused(false)
+                        | WindowEvent::Destroyed
+                        | WindowEvent::CloseRequested { .. }
+                ) {
+                    desktop_capture::finish_shortcut_recording(window.app_handle());
+                }
                 if matches!(event, WindowEvent::Focused(false)) {
                     if let Some(window) = window.app_handle().get_webview_window("main") {
                         reassert_compact_topmost(&window, "focus_lost");

@@ -524,6 +524,17 @@
       }
     },
     "settings": {
+      "shortcut": {
+        "record": "修改",
+        "cancel": "取消",
+        "unset": "未设置",
+        "preparing": "正在准备监听…",
+        "listening": "请按下快捷键…",
+        "hint": "点击录制快捷键。使用 Ctrl、Alt 或 Shift 搭配字母、数字或 F1–F11。",
+        "listeningHint": "按下并松开组合键后自动保存。按 Esc 或点击其他位置取消。",
+        "unsupported": "请使用 Ctrl、Alt 或 Shift 搭配一个字母、数字或 F1–F11，不支持 Win、AltGr 和 F12。",
+        "startFailed": "无法开始快捷键录制，请重试。"
+      },
       "vision": {
         "title": "视觉问答",
         "description": "在桌面或 VR 模式下针对采集的图像提问。",
@@ -533,7 +544,7 @@
         "desktopEnable": "启用桌面视觉问答",
         "desktopDescription": "拖动框选桌面或其他应用的可见内容，支持跨屏。输入或口述问题，检查文字后明确发送。",
         "desktopShortcut": "截图快捷键",
-        "desktopShortcutHint": "输入框失去焦点时应用。快捷键无效或被占用时，将显示原生注册错误。",
+        "desktopShortcutHint": "如果快捷键已被占用，下方会显示注册错误。",
         "openDesktop": "打开问答窗口",
         "vrEnable": "启用 VR 视觉问答",
         "profile": "API 档案",

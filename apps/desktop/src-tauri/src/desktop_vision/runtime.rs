@@ -132,12 +132,18 @@ impl Manager {
             state.lifecycle
         };
         #[cfg(windows)]
-        match crate::desktop_capture::hotkey::Hotkey::new(
-            self.app.clone(),
-            crate::desktop_capture::hotkey::Action::Vision(lifecycle),
-        ) {
-            Ok(hotkey) => *self.hotkey.lock().unwrap() = Some(hotkey),
-            Err(_) => self.shortcut_error_for(lifecycle, Some("desktop_vision.unavailable".into())),
+        {
+            // Serialize installation with recording transitions, including worker startup.
+            let mut worker = self.hotkey.lock().unwrap();
+            match crate::desktop_capture::hotkey::Hotkey::new(
+                self.app.clone(),
+                crate::desktop_capture::hotkey::Action::Vision(lifecycle),
+            ) {
+                Ok(hotkey) => *worker = Some(hotkey),
+                Err(_) => {
+                    self.shortcut_error_for(lifecycle, Some("desktop_vision.unavailable".into()))
+                }
+            }
         }
         self.configure(
             lifecycle,
@@ -213,6 +219,18 @@ impl Manager {
         }
         #[cfg(not(windows))]
         let _ = changed_binding;
+    }
+
+    #[cfg(windows)]
+    pub fn set_hotkey_paused(&self, paused: bool) -> Result<(), String> {
+        if let Some(hotkey) = self.hotkey.lock().unwrap().as_ref() {
+            if let Err(error) = hotkey.set_paused(paused) {
+                let lifecycle = self.state.lock().unwrap().lifecycle;
+                self.shortcut_error_for(lifecycle, Some("desktop_vision.unavailable".into()));
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 
     pub fn shortcut_error_for(&self, lifecycle: u64, error: Option<String>) {

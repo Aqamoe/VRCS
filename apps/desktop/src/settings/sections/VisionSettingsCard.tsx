@@ -7,6 +7,7 @@ import type { VrOcrWristSettings } from "../../integrations/types";
 import { TRANSLATION_LANGUAGE_CODES } from "../../translation-languages";
 import { DropdownField } from "../../shared/ui/DropdownField";
 import { LanguagePicker } from "../../shared/ui/LanguagePicker";
+import { ShortcutField } from "../../shared/ui/ShortcutField";
 import type { VisionSettings } from "../types";
 import { PreferenceToggle, RangeField, Select } from "../SettingsControls";
 import { useTranslationProfileModels } from "../hooks/useTranslationProfileModels";
@@ -27,9 +28,9 @@ export function VisionSettingsCard({ config, profiles, vrAvailable, disabled, on
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage ?? "en-US";
   const { status: desktopStatus, statusError } = useDesktopVisionSession();
-  const [shortcut, setShortcut] = useState(config.desktop_shortcut);
+
   const [openError, setOpenError] = useState(false);
-  useEffect(() => setShortcut(config.desktop_shortcut), [config.desktop_shortcut]);
+
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState("");
   const [testError, setTestError] = useState("");
@@ -174,18 +175,10 @@ export function VisionSettingsCard({ config, profiles, vrAvailable, disabled, on
       <PreferenceToggle title={t("settings.vision.desktopEnable")} checked={config.desktop_enabled}
         description={t("settings.vision.desktopDescription")} disabled={disabled || !config.enabled}
         onChange={(desktop_enabled) => onChange({ desktop_enabled })} />
-      <label className="field">
-        <span>{t("settings.vision.desktopShortcut")}</span>
-        <input type="text" value={shortcut} disabled={disabled} placeholder="Ctrl+Alt+V"
-          onChange={(event) => setShortcut(event.target.value)}
-          onBlur={() => {
-            const value = shortcut.trim();
-            if (value && value !== config.desktop_shortcut) onChange({ desktop_shortcut: value });
-            else setShortcut(config.desktop_shortcut);
-          }} />
-        <small>{t("settings.vision.desktopShortcutHint")}</small>
-      </label>
-      <p className="vision-settings-note">{t("visionWindow.captureHint", { shortcut: config.desktop_shortcut })}</p>
+      <ShortcutField label={t("settings.vision.desktopShortcut")} value={config.desktop_shortcut} disabled={disabled}
+
+        onChange={(desktop_shortcut) => onChange({ desktop_shortcut })} />
+
       {desktopStatus?.shortcut_error && <p className="vr-overlay-native-error" role="alert" title={desktopStatus.shortcut_error}>
         {t(`visionWindow.errors.${desktopStatus.shortcut_error.replace("desktop_vision.", "")}`, { defaultValue: t("visionWindow.errors.shortcutFailed") })}
       </p>}

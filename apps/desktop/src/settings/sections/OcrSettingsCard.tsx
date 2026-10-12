@@ -12,6 +12,7 @@ import { TranslationRouteList } from "../translation/TranslationRouteList";
 import type { DesktopOcrStatus } from "../../ocr/status";
 import { openVrOcrBindings } from "../../vr-overlay-native";
 import { ModelDeleteDialog } from "../components/ModelDeleteDialog";
+import { ShortcutField } from "../../shared/ui/ShortcutField";
 
 export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: saving, runtime, desktopStatus, onChange }: {
   vrAvailable: boolean;
@@ -25,8 +26,7 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: savin
   const { t, i18n } = useTranslation();
   const disabled = saving || !config.master_enabled;
   const [status, setStatus] = useState<CredentialStatus | null>(null);
-  const [shortcut, setShortcut] = useState(config.shortcut);
-  useEffect(() => setShortcut(config.shortcut), [config.shortcut]);
+
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -242,15 +242,8 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: savin
           checked={config.desktop_enabled}
           disabled={disabled || (!config.desktop_enabled && !isVrOcrBackendReady(config.backend, Boolean(status?.configured), models?.state))}
           onChange={(desktop_enabled) => onChange({ desktop_enabled })} />
-        <label className="field ocr-shortcut-field">
-          <span>{t("settings.ocr.shortcut")}</span>
-          <span className="external-api-token-input">
-            <input value={shortcut} placeholder="Ctrl+Alt+O" maxLength={64} disabled={disabled} spellCheck={false} autoComplete="off"
-              onChange={(event) => setShortcut(event.target.value)}
-              onBlur={() => { if (shortcut.trim() && shortcut.trim() !== config.shortcut) onChange({ shortcut: shortcut.trim() }); else setShortcut(config.shortcut); }}
-              onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
-          </span>
-        </label>
+        <ShortcutField label={t("settings.ocr.shortcut")} value={config.shortcut} disabled={disabled}
+          onChange={(shortcut) => onChange({ shortcut })} />
         {desktopStatus?.shortcut_error && <p className="vr-overlay-native-error" role="alert">
           {t(`ocrWindow.errors.${desktopStatus.shortcut_error.replace("desktop_ocr.", "")}`, { defaultValue: t("ocrWindow.errors.failed") })}
         </p>}

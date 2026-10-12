@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScanText } from "lucide-react";
+import { ScanEye } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { VrOcrStatus } from "../../integrations/types";
 import type { ApiProfileView } from "../../providers/types";
@@ -45,7 +45,7 @@ export function OcrSettingsSection({ vrAvailable, draft, profiles, saveState, ap
   }, [vrAvailable, draft.features.ocr]);
   return <div className="settings-section settings-section-active vr-overlay-section ocr-settings-section"
     id="settings-panel-vision" role="tabpanel" aria-labelledby="settings-tab-vision">
-    <div className="section-heading"><div><ScanText size={18} /><h2>{t("settings.categories.vision")}</h2></div></div>
+    <div className="section-heading"><div><ScanEye size={18} /><h2>{t("settings.categories.vision")}</h2></div></div>
     {draft.features.ocr && <div id="vision-ocr"><OcrSettingsCard vrAvailable={vrAvailable} config={draft.ocr} profiles={profiles} disabled={saveState === "saving"}
       runtime={runtime} desktopStatus={desktopStatus}
       onChange={(patch) => applySettings((current) => patchOcr(current, patch))} /></div>}

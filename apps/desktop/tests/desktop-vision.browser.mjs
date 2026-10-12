@@ -238,9 +238,10 @@ test("common and desktop controls work without VR, show registration errors, and
     assert.equal(await desktop.isEnabled(), true);
     await desktop.click();
     assert.equal(await page.evaluate(() => window.config.vr_enabled), true, "desktop edits preserve the VR preference");
-    const shortcut = page.getByRole("textbox", { name: "Screenshot shortcut", exact: true });
-    await shortcut.fill("Ctrl+Shift+V");
-    await shortcut.press("Tab");
+    const shortcut = page.getByRole("button", { name: /^Screenshot shortcut/ });
+    await shortcut.click();
+    await shortcut.getByText("Press a shortcut…", { exact: true }).waitFor();
+    await page.keyboard.press("Control+Shift+V");
     await page.waitForFunction(() => window.config.desktop_shortcut === 'Ctrl+Shift+V');
     await emit(page, { shortcut_error: "desktop_vision.shortcut_conflict" });
     await page.getByRole("alert").filter({ hasText: "This shortcut is already in use" }).waitFor();

@@ -142,6 +142,48 @@
 .settings-switch-button[aria-checked="true"] .switch-track { background: var(--primary); }
 .settings-switch-button[aria-checked="true"] .switch-track > span { transform: translateX(16px); }
 .settings-switch-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.shortcut-field {
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 8px 16px;
+}
+.field.shortcut-field > span { color: var(--text); font-weight: var(--settings-weight-heading); }
+.shortcut-field > small { grid-column: 1 / -1; }
+.shortcut-recorder {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--control-shadow);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out;
+}
+.shortcut-recorder:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-elevated); }
+.shortcut-recorder:focus-visible,
+.shortcut-recorder.recording { outline: 0; border-color: var(--primary); box-shadow: var(--control-focus-shadow); }
+.shortcut-recorder.recording { background: var(--primary-softer); }
+.shortcut-recorder:disabled { opacity: 0.5; cursor: not-allowed; }
+.shortcut-recorder > svg { flex-shrink: 0; color: var(--text-quiet); }
+.shortcut-preview { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 6px; font-size: var(--settings-text-label); }
+.shortcut-key { display: inline-flex; align-items: center; gap: 6px; }
+.shortcut-key > span { color: var(--text-quiet); }
+.shortcut-key kbd {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-subtle);
+  font: 12px var(--font-mono);
+}
+.shortcut-recorder-action { margin-left: auto; color: var(--text-quiet); font-size: var(--settings-text-caption); }
+.shortcut-recorder.recording .shortcut-recorder-action { color: var(--primary-ink); }
 .settings-validation-error {
   display: flex;
   align-items: center;

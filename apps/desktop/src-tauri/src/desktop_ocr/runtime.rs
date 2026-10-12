@@ -89,13 +89,22 @@ impl Manager {
         mut config: watch::Receiver<(VrOverlayConfig, VrOcrConfig)>,
     ) {
         self.stop();
-        self.state.lock().unwrap().service = service;
+        {
+            let mut state = self.state.lock().unwrap();
+            state.service = service;
+            // A replacement worker needs a binding even when the config is unchanged.
+            state.config = None;
+        }
         #[cfg(windows)]
-        match super::hotkey::Hotkey::new(self.app.clone(), super::hotkey::Action::Ocr) {
-            Ok(hotkey) => *self.hotkey.lock().unwrap() = Some(hotkey),
-            Err(error) => {
-                tracing::warn!(%error, "Desktop OCR shortcut thread failed");
-                self.shortcut_error(Some("desktop_ocr.unavailable".into()));
+        {
+            // Serialize installation with recording transitions, including worker startup.
+            let mut worker = self.hotkey.lock().unwrap();
+            match super::hotkey::Hotkey::new(self.app.clone(), super::hotkey::Action::Ocr) {
+                Ok(hotkey) => *worker = Some(hotkey),
+                Err(error) => {
+                    tracing::warn!(%error, "Desktop OCR shortcut thread failed");
+                    self.shortcut_error(Some("desktop_ocr.unavailable".into()));
+                }
             }
         }
         self.configure(config.borrow_and_update().1.clone());
@@ -128,6 +137,17 @@ impl Manager {
                 self.shortcut_error(Some("desktop_ocr.unavailable".into()));
             }
         }
+    }
+
+    #[cfg(windows)]
+    pub fn set_hotkey_paused(&self, paused: bool) -> Result<(), String> {
+        if let Some(hotkey) = self.hotkey.lock().unwrap().as_ref() {
+            if let Err(error) = hotkey.set_paused(paused) {
+                self.shortcut_error(Some("desktop_ocr.unavailable".into()));
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 
     pub fn shortcut_error(&self, error: Option<String>) {

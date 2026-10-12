@@ -6,6 +6,72 @@ mod selection;
 pub mod selection_window;
 pub mod shortcut;
 
+#[derive(Default)]
+pub struct ShortcutRecording {
+    active: std::sync::atomic::AtomicBool,
+    transition: std::sync::Mutex<()>,
+}
+
+impl ShortcutRecording {
+    pub fn is_active(&self) -> bool {
+        self.active.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn set(&self, app: &tauri::AppHandle, recording: bool) -> Result<(), String> {
+        let _transition = self.transition.lock().unwrap();
+        if self.is_active() == recording {
+            return Ok(());
+        }
+        self.active
+            .store(recording, std::sync::atomic::Ordering::Release);
+        #[cfg(windows)]
+        {
+            use tauri::Manager as _;
+            // Attempt both workers even if one cannot acknowledge the transition.
+            let ocr = app.state::<crate::desktop_ocr::Manager>();
+            let vision = app.state::<crate::desktop_vision::Manager>();
+            let ocr_result = ocr.set_hotkey_paused(recording);
+            let vision_result = vision.set_hotkey_paused(recording);
+            if let Err(error) = ocr_result.and(vision_result) {
+                self.active
+                    .store(false, std::sync::atomic::Ordering::Release);
+                let _ = ocr.set_hotkey_paused(false);
+                let _ = vision.set_hotkey_paused(false);
+                return Err(error);
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = app;
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn set_shortcut_recording(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, ShortcutRecording>,
+    recording: bool,
+) -> Result<(), String> {
+    use tauri::Manager as _;
+    if window.label() != "main" {
+        return Err("Unsupported shortcut recording window".into());
+    }
+    // Reject a late start request after native focus-loss cleanup has run.
+    if recording && !window.is_focused().map_err(|error| error.to_string())? {
+        return Err("Shortcut recording requires the main window to be focused".into());
+    }
+    state.set(window.app_handle(), recording)
+}
+
+pub fn finish_shortcut_recording(app: &tauri::AppHandle) {
+    use tauri::Manager as _;
+    if let Some(state) = app.try_state::<ShortcutRecording>() {
+        if let Err(error) = state.set(app, false) {
+            tracing::warn!(%error, "Desktop shortcut recording cleanup failed");
+        }
+    }
+}
+
 #[cfg(windows)]
 static PICKER_RESERVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
