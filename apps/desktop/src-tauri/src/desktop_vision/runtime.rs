@@ -710,8 +710,10 @@ mod tests {
             "finalizing_asr",
             "requesting",
         ] {
-            let mut status = DesktopVisionStatus::default();
-            status.state = phase;
+            let status = DesktopVisionStatus {
+                state: phase,
+                ..Default::default()
+            };
             assert!(status.busy());
         }
         assert!(!selected().status.busy());

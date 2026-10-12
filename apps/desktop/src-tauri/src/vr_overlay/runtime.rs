@@ -432,10 +432,8 @@ fn worker_loop(
         if let Ok(mut pending) = latest_config.lock() {
             if let Some((config, ocr_config)) = pending.take() {
                 #[cfg(windows)]
-                if state.ocr_config != ocr_config {
-                    if !state.ocr.vision.visible() {
-                        state.ocr.clear();
-                    }
+                if state.ocr_config != ocr_config && !state.ocr.vision.visible() {
+                    state.ocr.clear();
                 }
                 state.wrist.set_max_entries(config.wrist.max_entries);
                 state.headset.set_show_partials(
