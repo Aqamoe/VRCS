@@ -1,0 +1,99 @@
+.vision-window {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  flex-direction: column;
+  background: var(--canvas);
+}
+
+.vision-window-header { flex: 0 0 auto; justify-content: space-between; padding-left: 24px; }
+.vision-window-header h1 {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.vision-window-header h1 svg { color: var(--primary-ink); pointer-events: none; }
+
+.vision-window-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 24px 12px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.vision-window-content > * { flex-shrink: 0; }
+.vision-window .spinning { animation: subtitle-context-menu-spin 850ms linear infinite; }
+
+
+.vision-window-error { margin: 0; justify-content: flex-start; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.6; }
+.vision-window-error > svg { flex: none; margin-top: 2px; }
+.vision-window-error > div { min-width: 0; }
+.vision-window-error details { margin-top: 8px; }
+.vision-window-error summary { cursor: pointer; }
+.vision-window-error details p { margin-bottom: 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.vision-window-notice { display: flex; align-items: flex-start; gap: 8px; margin: 0; color: var(--warning); font-size: 11px; line-height: 1.6; }
+.vision-window-notice svg { flex: none; margin-top: 1px; }
+
+.vision-window-empty { min-height: 220px; flex: 1; gap: 14px; padding: 28px 20px; }
+.vision-window-empty-icon { display: grid; width: 72px; height: 72px; place-items: center; border-radius: var(--radius-lg); color: var(--primary-ink); background: var(--primary-soft); }
+.vision-window-empty h2 { margin: 2px 0 0; color: var(--text); font-size: 18px; font-weight: 650; }
+.vision-window-empty p { max-width: 38ch; color: var(--text-secondary); line-height: 1.8; text-wrap: pretty; }
+.vision-window-empty kbd { padding: 5px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); background: var(--surface); box-shadow: var(--control-shadow); font: 11px var(--font-mono); }
+
+.vision-window-image-card { margin: 0; overflow: hidden; }
+.vision-window-section-heading { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--text-secondary); font-size: 12px; font-weight: 600; line-height: 1.5; }
+.vision-window-image-card figcaption { padding: 12px 16px; }
+.vision-window-image-card figcaption svg { flex: none; color: var(--text-quiet); }
+.vision-window-preview { display: grid; min-height: 136px; place-items: center; padding: 12px; border-top: 1px solid var(--border); background: var(--surface-subtle); }
+.vision-window-preview img { display: block; max-width: 100%; max-height: 220px; object-fit: contain; border-radius: 4px; }
+.vision-window-preview p { display: grid; justify-items: center; gap: 10px; margin: 0; padding: 16px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; text-align: center; }
+.vision-window-preview p[role="alert"] { color: var(--error); }
+
+.vision-window-question-card { display: grid; min-width: 0; gap: 12px; padding: 16px; }
+.vision-window-question { gap: 10px; }
+.vision-window-question-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.vision-window-question-count { flex: none; color: var(--text-quiet); font: 10px var(--font-mono); font-weight: 400; }
+.vision-window-question:has([aria-invalid="true"]) .vision-window-question-count,
+.vision-window-question #vision-question-limit { color: var(--error); }
+.vision-window .vision-window-question textarea { width: 100%; min-height: 96px; resize: none; font-size: 13px; line-height: 1.7; transition: border-color 140ms ease-out, box-shadow 140ms ease-out; }
+.vision-window-question textarea:focus { outline: none; border-color: var(--primary); box-shadow: var(--control-focus-shadow); }
+.vision-window-question textarea:disabled { color: var(--text-secondary); background: var(--surface-elevated); cursor: not-allowed; }
+.vision-window-question textarea[aria-invalid="true"] { border-color: var(--error); }
+.vision-window-question > small { line-height: 1.6; }
+.vision-window-recording-draft { display: flex; align-items: flex-start; gap: 7px; margin: 0; color: var(--primary-ink); font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.vision-window-recording-draft svg { flex: none; margin-top: 3px; }
+
+.vision-window-answer { display: grid; min-width: 0; gap: 10px; }
+.vision-window-answer-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-inline: 4px; }
+.vision-window-copy { min-height: 30px; padding-inline: 10px; border-radius: var(--radius-pill); font-size: 11px; }
+.vision-window-copy svg { flex: none; }
+.vision-window-answer-text { font-size: 14px; white-space: pre-wrap; }
+.vision-window-ask-again { min-height: 32px; justify-self: start; padding-inline: 12px; border-radius: var(--radius-pill); font-size: 11px; }
+
+
+.vision-window-toolbar { position: relative; display: flex; flex: 0 0 auto; justify-content: center; padding: 16px 24px 24px; }
+.vision-window-copy-feedback { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.vision-window-actions { display: flex; max-width: 100%; align-items: center; gap: 4px; padding: 7px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); box-shadow: var(--overlay-shadow); }
+
+
+@media (max-width: 480px) {
+  .vision-window-header { padding-left: 16px; }
+  .vision-window-content { gap: 14px; padding: 14px 16px 8px; }
+  .vision-window-toolbar { padding: 12px 16px 16px; }
+
+  .vision-window-question-card { padding: 14px; }
+  .vision-window-preview img { max-height: 180px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vision-window-question textarea { transition: none; }
+  .vision-window .spinning { animation: none; }
+}

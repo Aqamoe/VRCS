@@ -145,6 +145,11 @@ impl CoreHandle {
         )
     }
 
+    /// Common effective settings; query `configuration_for` for mode availability.
+    pub fn subscribe_vision_config(&self) -> watch::Receiver<VisionConfig> {
+        self.state.config.vision_config_tx.subscribe()
+    }
+
     pub fn vision_service(&self) -> vision::VisionService {
         vision::VisionService::new(Arc::clone(&self.state))
     }

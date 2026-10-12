@@ -6,6 +6,9 @@ pub const DEFAULT_VISION_SYSTEM_PROMPT: &str = "Answer the user's question about
 #[serde(default, deny_unknown_fields)]
 pub struct VisionConfig {
     pub enabled: bool,
+    pub vr_enabled: bool,
+    pub desktop_enabled: bool,
+    pub desktop_shortcut: String,
     pub profile_id: Option<String>,
     pub model: String,
     pub answer_language: String,
@@ -24,6 +27,9 @@ impl Default for VisionConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            vr_enabled: true,
+            desktop_enabled: false,
+            desktop_shortcut: "Ctrl+Alt+V".into(),
             profile_id: None,
             model: String::new(),
             answer_language: "zh-Hans".into(),
@@ -43,6 +49,7 @@ impl Default for VisionConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct VrOcrConfig {
+    pub master_enabled: bool,
     pub enabled: bool,
     pub desktop_enabled: bool,
     pub shortcut: String,
@@ -145,6 +152,7 @@ pub enum VrOcrDisplayMode {
 impl Default for VrOcrConfig {
     fn default() -> Self {
         Self {
+            master_enabled: true,
             enabled: false,
             desktop_enabled: false,
             shortcut: "Ctrl+Alt+O".into(),

@@ -8,7 +8,7 @@ import type { Settings } from "../src/settings/types.ts";
 import type { ApiCapability, ApiProfile, ApiProfileView } from "../src/providers/types.ts";
 
 const settings = {
-  schema_version: 31,
+  schema_version: 32,
   features: { ...DEFAULT_FEATURE_SETTINGS },
   ocr: { ...DEFAULT_OCR_SETTINGS },
   vision: { ...DEFAULT_VISION_SETTINGS },
@@ -20,6 +20,9 @@ function profile(provider: string, capability: ApiCapability = "image_understand
 
 test("vision defaults are explicit, flat and opt-in", () => {
   assert.equal(DEFAULT_VISION_SETTINGS.enabled, false);
+  assert.equal(DEFAULT_VISION_SETTINGS.vr_enabled, true);
+  assert.equal(DEFAULT_VISION_SETTINGS.desktop_enabled, false);
+  assert.equal(DEFAULT_VISION_SETTINGS.desktop_shortcut, "Ctrl+Alt+V");
   assert.equal(DEFAULT_VISION_SETTINGS.profile_id, null);
   assert.equal(DEFAULT_VISION_SETTINGS.model, "");
   assert.equal(DEFAULT_VISION_SETTINGS.answer_language, "zh-Hans");
@@ -71,16 +74,39 @@ test("vision edits preserve OCR and profile changes do not reuse an unverified m
   assert.equal(selectVisionProfile(selected, "images"), selected);
 });
 
-test("dashboard vision toggle is independent of OCR and rejects unconfigured activation", () => {
+test("common and desktop edits preserve mode preferences without VR or OCR", () => {
+  const desktopOnly = {
+    ...settings,
+    features: { ...settings.features, visual_question_answering: true, vr_overlay: false, ocr: false },
+  };
+  const enabled = patchVision(desktopOnly, { enabled: true, desktop_enabled: true, desktop_shortcut: "Ctrl+Shift+V" });
+  assert.equal(enabled.features, desktopOnly.features);
+  assert.equal(enabled.vision.vr_enabled, true);
+  assert.equal(enabled.vision.desktop_enabled, true);
+  assert.equal(enabled.vision.wrist, settings.vision.wrist);
+  const commonOff = patchVision(enabled, { enabled: false });
+  assert.equal(commonOff.vision.desktop_enabled, true);
+  assert.equal(commonOff.vision.vr_enabled, true);
+  assert.equal(commonOff.vision.desktop_shortcut, "Ctrl+Shift+V");
+});
+
+test("dashboard vision toggle is independent of desktop and OCR and respects the common master", () => {
   const profiles = [profile("openrouter")] as ApiProfileView[];
   assert.equal(applyVrDashboardAction(settings, "toggle_vision", profiles), settings);
   const available = { ...settings, features: { ...settings.features, visual_question_answering: true, ocr: false } };
   assert.equal(applyVrDashboardAction(available, "toggle_vision", profiles), available);
-  const configured = patchVision(available, { profile_id: "images", model: "image-model" });
+  const configured = patchVision(available, { enabled: true, vr_enabled: false, desktop_enabled: true, profile_id: "images", model: "image-model" });
   const enabled = applyVrDashboardAction(configured, "toggle_vision", profiles);
   assert.equal(enabled.vision.enabled, true);
+  assert.equal(enabled.vision.vr_enabled, true);
+  assert.equal(enabled.vision.desktop_enabled, true);
   assert.equal(enabled.ocr, settings.ocr);
-  assert.equal(applyVrDashboardAction(enabled, "toggle_vision", profiles).vision.enabled, false);
+  const disabled = applyVrDashboardAction(enabled, "toggle_vision", profiles);
+  assert.equal(disabled.vision.vr_enabled, false);
+  assert.equal(disabled.vision.enabled, true);
+  assert.equal(disabled.vision.desktop_enabled, true);
+  const commonOff = patchVision(configured, { enabled: false });
+  assert.equal(applyVrDashboardAction(commonOff, "toggle_vision", profiles), commonOff);
   const noVr = { ...configured, features: { ...configured.features, vr_overlay: false } };
   assert.equal(applyVrDashboardAction(noVr, "toggle_vision", profiles), noVr);
 });

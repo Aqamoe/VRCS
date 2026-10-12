@@ -6,7 +6,7 @@ use super::{
     VadConfig, VrOcrConfig, VrOverlayConfig, VrcxConfig,
 };
 
-pub const SCHEMA_VERSION: u32 = 31;
+pub const SCHEMA_VERSION: u32 = 32;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -280,6 +280,8 @@ mod tests {
             [
                 "answer_language",
                 "asr_finalize_timeout_ms",
+                "desktop_enabled",
+                "desktop_shortcut",
                 "display_seconds",
                 "enabled",
                 "image_max_bytes",
@@ -290,10 +292,14 @@ mod tests {
                 "profile_id",
                 "request_timeout_seconds",
                 "system_prompt",
+                "vr_enabled",
                 "wrist",
             ],
         );
         assert_eq!(value["vision"]["answer_language"], "zh-Hans");
+        assert_eq!(value["vision"]["vr_enabled"], true);
+        assert_eq!(value["vision"]["desktop_enabled"], false);
+        assert_eq!(value["vision"]["desktop_shortcut"], "Ctrl+Alt+V");
         assert_eq!(value["vision"]["image_max_bytes"], 4_194_304);
         assert_eq!(value["vision"]["wrist"], value["ocr"]["wrist"]);
         assert_eq!(value["schema_version"], SCHEMA_VERSION);

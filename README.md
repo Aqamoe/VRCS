@@ -43,7 +43,8 @@ Open **Settings › System › Features** to turn off optional features. The fea
 - Desktop OCR: when VRChat is in the foreground, use a configurable shortcut to select a text region. View source text and multilingual translations in a result window, copy them, or scan again.
 - VR OCR: select text with hand gestures or controllers and display translations on a wrist panel or over the source in both eyes.
 - PaddleOCR cloud recognition or local PP-OCRv6 for OCR. Download local models in Settings and use CPU or a DirectML GPU.
-- VR visual question answering: select a region, then hold the left trigger to start temporary microphone capture and ask a question. 
+- Desktop visual question answering: enable visual question answering and desktop mode in Settings → Vision, then select an image-capable API profile and model. With VRChat in the foreground, press `Ctrl+Alt+V` (configurable) to select an image area. Type a question or recognize speech and edit the result, then send it from the question window. VR Overlay and OCR are not required.
+- VR visual question answering: select a region, then hold the left trigger to start temporary microphone capture and ask a question.
 - Import Yomitan dictionaries, look up subtitle text or Ask AI, collect learning material, and review definitions, sentence patterns, and conversations. Edit vocabulary, sentence-pattern, or cloze card drafts and create cards through AnkiConnect.
 
 ## Privacy

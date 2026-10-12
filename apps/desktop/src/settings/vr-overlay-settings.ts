@@ -112,6 +112,7 @@ export const DEFAULT_OCR_WRIST_SETTINGS: VrOcrWristSettings = {
 };
 
 export const DEFAULT_OCR_SETTINGS: VrOcrSettings = {
+  master_enabled: true,
   enabled: false,
   desktop_enabled: false,
   shortcut: "Ctrl+Alt+O",

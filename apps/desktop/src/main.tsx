@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./app/App";
 import { isTauri } from "@tauri-apps/api/core";
 import { OcrWindow } from "./ocr/OcrWindow";
+import { VisionWindow } from "./vision/VisionWindow";
 import { AppErrorBoundary, FatalErrorScreen } from "./shared/ui/AppErrorBoundary";
 import {
   installGlobalErrorReporting,
@@ -16,12 +17,14 @@ const rootElement = document.getElementById("root")!;
 
 async function render() {
   await initializeI18n();
-  const ocrWindow = new URLSearchParams(window.location.search).get("window") === "ocr"
-    || (isTauri() && (await import("@tauri-apps/api/window")).getCurrentWindow().label === "ocr");
+  const windowLabel = isTauri() ? (await import("@tauri-apps/api/window")).getCurrentWindow().label : "";
+  const route = new URLSearchParams(window.location.search).get("window");
+  const ocrWindow = route === "ocr" || windowLabel === "ocr";
+  const visionWindow = route === "vision" || windowLabel === "vision";
   createRoot(rootElement).render(
     <StrictMode>
       <AppErrorBoundary>
-        {ocrWindow ? <OcrWindow /> : <App />}
+        {visionWindow ? <VisionWindow /> : ocrWindow ? <OcrWindow /> : <App />}
       </AppErrorBoundary>
     </StrictMode>,
   );

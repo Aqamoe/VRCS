@@ -86,6 +86,7 @@ export interface VrOverlaySettings {
 }
 
 export interface VrOcrSettings {
+  master_enabled: boolean;
   enabled: boolean;
   desktop_enabled: boolean;
   shortcut: string;

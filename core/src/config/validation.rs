@@ -95,6 +95,9 @@ impl AppConfig {
 
 fn validate_vision(config: &AppConfig) -> Result<(), String> {
     let vision = &config.vision;
+    if vision.desktop_shortcut.trim().is_empty() || vision.desktop_shortcut.len() > 64 {
+        return Err("Vision desktop shortcut must contain 1 to 64 characters".into());
+    }
     for (field, value, min, max) in [
         (
             "max_capture_seconds",

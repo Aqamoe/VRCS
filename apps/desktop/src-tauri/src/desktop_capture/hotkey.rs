@@ -12,18 +12,58 @@ use windows_sys::Win32::{
     },
 };
 
+#[derive(Clone, Copy, Debug)]
+pub enum Action {
+    Ocr,
+    Vision(u64),
+}
+
+impl Action {
+    fn error(self, code: &str) -> String {
+        let prefix = match self {
+            Self::Ocr => "desktop_ocr",
+            Self::Vision(_) => "desktop_vision",
+        };
+        format!("{prefix}.{code}")
+    }
+
+    fn report(self, app: &AppHandle, error: Option<String>) {
+        match self {
+            Self::Ocr => app
+                .state::<crate::desktop_ocr::Manager>()
+                .shortcut_error(error),
+            Self::Vision(lifecycle) => app
+                .state::<crate::desktop_vision::Manager>()
+                .shortcut_error_for(lifecycle, error),
+        }
+    }
+
+    fn trigger(self, app: &AppHandle) {
+        match self {
+            Self::Ocr => {
+                let _ = app.state::<crate::desktop_ocr::Manager>().scan();
+            }
+            Self::Vision(lifecycle) => {
+                let _ = app
+                    .state::<crate::desktop_vision::Manager>()
+                    .capture_for(lifecycle);
+            }
+        }
+    }
+}
+
 pub struct Hotkey {
-    sender: Sender<Option<String>>,
+    sender: Sender<(Option<String>, Option<String>)>,
     thread_id: u32,
     worker: Option<JoinHandle<()>>,
 }
 
 impl Hotkey {
-    pub fn new(app: AppHandle) -> Result<Self, String> {
-        let (sender, receiver) = mpsc::channel::<Option<String>>();
+    pub fn new(app: AppHandle, action: Action) -> Result<Self, String> {
+        let (sender, receiver) = mpsc::channel::<(Option<String>, Option<String>)>();
         let (ready, thread_id) = mpsc::sync_channel(1);
         let worker = std::thread::Builder::new()
-            .name("vrcs-ocr-hotkey".into())
+            .name("vrcs-desktop-hotkey".into())
             .spawn(move || {
                 let mut message: MSG = unsafe { std::mem::zeroed() };
                 unsafe {
@@ -35,7 +75,7 @@ impl Hotkey {
                 let mut registered = false;
                 while unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) } > 0 {
                     if message.message == WM_APP {
-                        for shortcut in receiver.try_iter() {
+                        for (shortcut, preflight_error) in receiver.try_iter() {
                             if registered {
                                 unsafe {
                                     UnregisterHotKey(std::ptr::null_mut(), 1);
@@ -45,7 +85,7 @@ impl Hotkey {
                             let error =
                                 match shortcut.as_deref().map(super::shortcut::parse_shortcut) {
                                     None => None,
-                                    Some(Err(_)) => Some("desktop_ocr.invalid_shortcut".into()),
+                                    Some(Err(_)) => Some(action.error("invalid_shortcut")),
                                     Some(Ok((modifiers, key))) => {
                                         registered = unsafe {
                                             RegisterHotKey(
@@ -55,20 +95,24 @@ impl Hotkey {
                                                 key,
                                             ) != 0
                                         };
-                                        (!registered)
-                                            .then(|| "desktop_ocr.shortcut_conflict".into())
+                                        if !registered {
+                                            tracing::warn!(?action, error = %std::io::Error::last_os_error(), "RegisterHotKey failed");
+                                        }
+                                        (!registered).then(|| action.error("shortcut_conflict"))
                                     }
                                 };
-                            app.state::<super::Manager>().shortcut_error(error);
+                            let error = error.or(preflight_error);
+                            if let Some(error) = &error {
+                                tracing::warn!(?action, %error, "Desktop screenshot shortcut registration failed");
+                            } else if registered {
+                                tracing::info!(?action, "Desktop screenshot shortcut registered");
+                            }
+                            action.report(&app, error);
                         }
                     } else if message.message == WM_HOTKEY && registered {
                         let app = app.clone();
                         let dispatcher = app.clone();
-                        let _ = dispatcher.run_on_main_thread(move || {
-                            if let Err(error) = app.state::<super::Manager>().scan() {
-                                tracing::debug!(%error, "Desktop OCR shortcut was ignored");
-                            }
-                        });
+                        let _ = dispatcher.run_on_main_thread(move || action.trigger(&app));
                     }
                 }
                 if registered {
@@ -87,8 +131,16 @@ impl Hotkey {
     }
 
     pub fn update(&self, shortcut: Option<String>) -> Result<(), String> {
+        self.update_with_error(shortcut, None)
+    }
+
+    pub fn update_with_error(
+        &self,
+        shortcut: Option<String>,
+        error: Option<String>,
+    ) -> Result<(), String> {
         self.sender
-            .send(shortcut)
+            .send((shortcut, error))
             .map_err(|error| error.to_string())?;
         if unsafe { PostThreadMessageW(self.thread_id, WM_APP, 0, 0) } == 0 {
             return Err(std::io::Error::last_os_error().to_string());

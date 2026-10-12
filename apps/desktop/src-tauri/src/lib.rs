@@ -1,6 +1,10 @@
 mod app_updates;
+mod desktop_capture;
 mod desktop_ocr;
+mod desktop_vision;
 mod diagnostics;
+#[cfg(windows)]
+mod vision_image;
 mod vr_overlay;
 
 use std::net::TcpListener;
@@ -190,6 +194,11 @@ fn launch_core(app: &tauri::AppHandle) -> Result<(), String> {
                     .ok();
                 app.state::<desktop_ocr::Manager>()
                     .start(ocr_service.clone(), vr_overlay_config.clone());
+                app.state::<desktop_vision::Manager>().start(
+                    core.vision_service(),
+                    core.subscribe_vision_config(),
+                    vr_overlay_config.clone(),
+                );
                 if let Err(error) = app.state::<vr_overlay::Manager>().start(
                     presentation_events,
                     vr_overlay_config,
@@ -370,6 +379,7 @@ fn minimize_to_tray_enabled(app: &tauri::AppHandle) -> bool {
 
 pub(crate) fn prepare_for_exit(app: &tauri::AppHandle) {
     app.state::<desktop_ocr::Manager>().stop();
+    app.state::<desktop_vision::Manager>().stop();
     app.state::<vr_overlay::Manager>().stop();
     stop_core(app);
 }
@@ -488,7 +498,16 @@ pub fn run() {
             vr_overlay::vr_dashboard_update_view,
             desktop_ocr::desktop_ocr_status,
             desktop_ocr::desktop_ocr_scan,
-            desktop_ocr::desktop_ocr_close
+            desktop_ocr::desktop_ocr_close,
+            desktop_vision::desktop_vision_status,
+            desktop_vision::desktop_vision_open,
+            desktop_vision::desktop_vision_capture,
+            desktop_vision::desktop_vision_image,
+            desktop_vision::desktop_vision_start_recording,
+            desktop_vision::desktop_vision_finish_recording,
+            desktop_vision::desktop_vision_ask,
+            desktop_vision::desktop_vision_cancel,
+            desktop_vision::desktop_vision_close
         ])
         .setup(move |app| {
             app_updates::register_plugin(app)?;
@@ -541,6 +560,7 @@ pub fn run() {
                 .ok_or_else(|| std::io::Error::other("core URL is missing a valid port"))?;
             app.manage(vr_overlay::Manager::new(app.handle().clone()));
             app.manage(desktop_ocr::Manager::new(app.handle().clone()));
+            app.manage(desktop_vision::Manager::new(app.handle().clone()));
             app.manage(CoreRuntime {
                 handle: Mutex::new(None),
                 launch_task: Mutex::new(None),
@@ -563,6 +583,15 @@ pub fn run() {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     window.app_handle().state::<desktop_ocr::Manager>().close();
+                }
+            }
+            if window.label() == "vision" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    window
+                        .app_handle()
+                        .state::<desktop_vision::Manager>()
+                        .close();
                 }
             }
             if window.label() == "main" {

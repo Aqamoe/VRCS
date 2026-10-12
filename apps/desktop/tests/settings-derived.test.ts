@@ -14,7 +14,7 @@ import { DEFAULT_VISION_SETTINGS } from "../src/settings/vision-settings.ts";
 import type { Settings } from "../src/settings/types.ts";
 
 const settings: Settings = {
-  schema_version: 31,
+  schema_version: 32,
   features: { ...DEFAULT_FEATURE_SETTINGS },
   server: { host: "127.0.0.1", port: 8766 },
   storage: {

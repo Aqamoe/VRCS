@@ -1,12 +1,13 @@
 use super::{
     backend::{OpenVrBackend, OverlayKind},
-    ocr_capture::encode_png,
     ocr_input_state::TriggerUpdate,
     ocr_selection::Selection,
     ocr_wrist::{Action, LaserEvent, Pointer, View, ViewMode},
     ocr_wrist_renderer::{self, Button},
-    renderer::Texture,
 };
+use crate::vision_image::prepare_image;
+#[cfg(test)]
+use crate::{vision_image::resize, vr_overlay::renderer::Texture};
 use std::{sync::mpsc, time::Instant};
 use vrcs_core::{
     vision::{VisionAnswer, VisionProgress, VisionService, VisionSession},
@@ -365,48 +366,6 @@ impl VisionRuntime {
 impl Drop for VisionRuntime {
     fn drop(&mut self) {
         self.clear();
-    }
-}
-
-fn resize(image: &Texture, max_edge: u32) -> Texture {
-    let scale = (max_edge.max(1) as f64 / image.width.max(image.height) as f64).min(1.0);
-    let width = (image.width as f64 * scale).floor().max(1.0) as u32;
-    let height = (image.height as f64 * scale).floor().max(1.0) as u32;
-    let mut pixels = vec![0; width as usize * height as usize * 4];
-    for y in 0..height {
-        for x in 0..width {
-            let source_x = u64::from(x) * u64::from(image.width) / u64::from(width);
-            let source_y = u64::from(y) * u64::from(image.height) / u64::from(height);
-            let source = (source_y as usize * image.width as usize + source_x as usize) * 4;
-            let target = (y as usize * width as usize + x as usize) * 4;
-            pixels[target..target + 4].copy_from_slice(&image.pixels[source..source + 4]);
-        }
-    }
-    Texture {
-        width,
-        height,
-        pixels,
-    }
-}
-
-fn prepare_image(image: Texture, config: &VisionConfig) -> Result<Vec<u8>, String> {
-    if image.width == 0
-        || image.height == 0
-        || image.width as usize * image.height as usize * 4 != image.pixels.len()
-    {
-        return Err("Invalid visual image".into());
-    }
-    let mut image = resize(&image, config.image_max_edge.min(4096));
-    loop {
-        let bytes = encode_png(image.clone())?;
-        if bytes.len() <= config.image_max_bytes {
-            return Ok(bytes);
-        }
-        let edge = image.width.max(image.height);
-        if edge <= 1 {
-            return Err("Visual image exceeds the configured byte limit".into());
-        }
-        image = resize(&image, (edge * 3 / 4).max(1));
     }
 }
 

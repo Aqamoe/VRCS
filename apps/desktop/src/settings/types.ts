@@ -9,7 +9,7 @@ import type {
 import type { AsrSettings } from "../providers/types";
 
 export interface Settings {
-  schema_version: 31;
+  schema_version: 32;
   features: FeatureSettings;
   server: {
     host: string;
@@ -65,6 +65,9 @@ export type FeatureKey = keyof FeatureSettings;
 
 export interface VisionSettings {
   enabled: boolean;
+  vr_enabled: boolean;
+  desktop_enabled: boolean;
+  desktop_shortcut: string;
   profile_id: string | null;
   model: string;
   answer_language: string;

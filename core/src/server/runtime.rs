@@ -19,6 +19,8 @@ use crate::{asr, smart_turn, vad};
 
 pub(crate) struct ConfigRuntime {
     pub(crate) features_tx: watch::Sender<crate::config::FeatureConfig>,
+    pub(crate) vision_config_tx: watch::Sender<crate::config::VisionConfig>,
+    pub(crate) question_microphone: Arc<AtomicBool>,
     pub(crate) local_ocr: Arc<crate::ocr::LocalOcrRuntime>,
     pub(crate) config_path: PathBuf,
     pub(crate) asr_model_dir_override: Option<PathBuf>,
@@ -44,6 +46,11 @@ impl ConfigRuntime {
             .join("models/ocr/ppocrv6-small");
         Self {
             features_tx: watch::channel(input.config.features.clone()).0,
+            vision_config_tx: watch::channel(
+                crate::config::apply_feature_gates(&input.config).vision,
+            )
+            .0,
+            question_microphone: Arc::new(AtomicBool::new(false)),
             local_ocr: Arc::new(crate::ocr::LocalOcrRuntime::new(ocr_directory)),
             config_path: input.config_path,
             asr_model_dir_override: input.asr_model_dir_override,

@@ -2,6 +2,8 @@
 
 mod audio;
 mod capture;
+#[cfg(test)]
+mod desktop_tests;
 pub(crate) use audio::{AudioReader as QuestionAudioReader, MicrophoneTap};
 
 use std::sync::{Arc, Mutex};
@@ -11,6 +13,16 @@ use crate::config::{apply_feature_gates, ApiProfile, AppConfig, VisionConfig};
 use crate::llm::{LlmClient, LlmRequest};
 use crate::providers::{self, CAPABILITY_IMAGE_UNDERSTANDING};
 use crate::server::AppState;
+
+/// The caller's capture and display mode. Platform availability is checked by adapters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisionMode {
+    Desktop,
+    Vr,
+}
+
+/// Maximum question length in Unicode scalar values, after trimming.
+pub const MAX_QUESTION_CHARACTERS: usize = 4096;
 
 #[derive(Clone)]
 pub struct VisionService {
@@ -22,6 +34,7 @@ pub struct VisionService {
 pub struct VisionSession {
     service: VisionService,
     snapshot: AppConfig,
+    mode: VisionMode,
     audio: capture::QuestionCapture,
     api_key: String,
     draft: crate::asr::QuestionDraft,
@@ -53,17 +66,53 @@ impl VisionService {
     }
 
     pub fn configuration(&self) -> VisionConfig {
+        self.configuration_for(VisionMode::Vr)
+    }
+
+    pub fn configuration_for(&self, mode: VisionMode) -> VisionConfig {
+        self.snapshot_for(mode).vision
+    }
+
+    pub fn profile_name(&self) -> String {
         let config = self.state.config.config.read().expect("config lock");
-        let mut vision = config.vision.clone();
-        vision.enabled &= config.features.visual_question_answering && config.features.vr_overlay;
-        vision
+        config
+            .vision
+            .profile_id
+            .as_ref()
+            .and_then(|id| {
+                config
+                    .asr
+                    .api_profiles
+                    .iter()
+                    .find(|profile| &profile.id == id)
+            })
+            .map(|profile| profile.name.clone())
+            .unwrap_or_default()
+    }
+
+    fn snapshot_for(&self, mode: VisionMode) -> AppConfig {
+        let mut config = self.snapshot();
+        config.vision.enabled &= match mode {
+            VisionMode::Desktop => config.vision.desktop_enabled,
+            VisionMode::Vr => config.vision.vr_enabled,
+        };
+        config
     }
 
     pub fn configuration_matches(&self, config: &VisionConfig) -> bool {
-        self.configuration() == *config
+        let mut current = self.configuration();
+        current.desktop_enabled = config.desktop_enabled;
+        current
+            .desktop_shortcut
+            .clone_from(&config.desktop_shortcut);
+        current == *config
     }
 
     pub fn begin(&self) -> Result<VisionSession, String> {
+        self.begin_for(VisionMode::Vr)
+    }
+
+    pub fn begin_for(&self, mode: VisionMode) -> Result<VisionSession, String> {
         let runtime = self
             .runtime
             .clone()
@@ -71,7 +120,7 @@ impl VisionService {
             .ok_or(
                 "Visual questions need a Tokio runtime; use begin_with_runtime on the VR thread",
             )?;
-        self.begin_with_runtime(&runtime)
+        self.begin_with_capture(mode, &runtime, capture::QuestionCapture::begin)
     }
 
     /// Use a live application runtime when this service was created outside Tokio.
@@ -79,19 +128,21 @@ impl VisionService {
         &self,
         runtime: &tokio::runtime::Handle,
     ) -> Result<VisionSession, String> {
-        self.begin_with_capture(runtime, capture::QuestionCapture::begin)
+        self.begin_with_capture(VisionMode::Vr, runtime, capture::QuestionCapture::begin)
     }
 
     fn begin_with_capture(
         &self,
+        mode: VisionMode,
         runtime: &tokio::runtime::Handle,
         start_capture: impl FnOnce(
             Option<i64>,
             u32,
             &tokio::runtime::Handle,
+            Arc<capture::QuestionMicrophoneGuard>,
         ) -> Result<capture::QuestionCapture, String>,
     ) -> Result<VisionSession, String> {
-        let snapshot = self.snapshot();
+        let snapshot = self.snapshot_for(mode);
         if !snapshot.vision.enabled || *self.state.integrations.shutdown.borrow() {
             return Err("Visual questions are disabled".into());
         }
@@ -101,16 +152,21 @@ impl VisionService {
         if snapshot.asr.backend != crate::config::QWEN_MANAGED_BACKEND {
             crate::asr::validate_cloud_connection(&snapshot.asr)?;
         }
+        let microphone = capture::QuestionMicrophoneGuard::acquire(
+            self.state.config.question_microphone.clone(),
+        )?;
         let audio = start_capture(
             capture::device_id(&snapshot),
             snapshot.vision.max_capture_seconds,
             runtime,
+            microphone,
         )?;
         let draft = Arc::new(Mutex::new(String::new()));
         let reader = audio.reader();
         let status = audio.reader();
         let service = self.clone();
         let task_snapshot = snapshot.clone();
+        let task_api_key = api_key.clone();
         let task_draft = draft.clone();
         let error = Arc::new(Mutex::new(None));
         let task_error = error.clone();
@@ -139,7 +195,8 @@ impl VisionService {
                     result = &mut work => return result,
                     _ = tick.tick() => {
                         status.check()?;
-                        if !service.matches_session(&task_snapshot) {
+                        if !service.matches_session_for(mode, &task_snapshot)
+                                                    || !service.matches_credential(&task_snapshot, &task_api_key) {
                             return Err("The speech recognition or visual question settings changed. Ask again.".into());
                         }
                         if let Some(released) = status.released_at() {
@@ -161,6 +218,7 @@ impl VisionService {
         Ok(VisionSession {
             service: self.clone(),
             snapshot,
+            mode,
             audio,
             api_key,
             draft,
@@ -169,12 +227,94 @@ impl VisionService {
         })
     }
 
+    #[cfg(test)]
     fn matches_session(&self, snapshot: &AppConfig) -> bool {
-        let current = self.snapshot();
-        current.vision == snapshot.vision
+        self.matches_session_for(VisionMode::Vr, snapshot)
+    }
+
+    fn matches_session_for(&self, mode: VisionMode, snapshot: &AppConfig) -> bool {
+        let current = self.snapshot_for(mode);
+        self.matches_request(mode, snapshot)
             && current.asr == snapshot.asr
             && current.vad.silence_seconds == snapshot.vad.silence_seconds
-            && !*self.state.integrations.shutdown.borrow()
+            && current.vision.max_capture_seconds == snapshot.vision.max_capture_seconds
+            && current.vision.asr_finalize_timeout_ms == snapshot.vision.asr_finalize_timeout_ms
+    }
+
+    fn matches_request(&self, mode: VisionMode, snapshot: &AppConfig) -> bool {
+        let current = self.snapshot_for(mode);
+        !*self.state.integrations.shutdown.borrow()
+            && current.vision.enabled
+            && request_configuration(&current.vision) == request_configuration(&snapshot.vision)
+            && matches!((vision_profile(&current), vision_profile(snapshot)),
+                (Ok(current), Ok(previous)) if current == previous)
+    }
+
+    fn matches_credential(&self, snapshot: &AppConfig, api_key: &str) -> bool {
+        vision_profile(snapshot)
+            .and_then(credential)
+            .is_ok_and(|current| current == api_key)
+    }
+
+    fn check_request(
+        &self,
+        mode: VisionMode,
+        snapshot: &AppConfig,
+        api_key: &str,
+    ) -> Result<(), String> {
+        if !self.matches_request(mode, snapshot) {
+            return Err("The visual question settings changed. Ask again.".into());
+        }
+        if !self.matches_credential(snapshot, api_key) {
+            return Err("The visual question credential changed. Ask again.".into());
+        }
+        Ok(())
+    }
+
+    /// Submit an image question without opening a microphone or starting ASR.
+    /// Dropping this future cancels the pending HTTP work.
+    pub async fn answer_text(
+        &self,
+        mode: VisionMode,
+        question: String,
+        image: Vec<u8>,
+    ) -> Result<VisionAnswer, String> {
+        let question = validate_question(&question)?.to_owned();
+        let snapshot = self.snapshot_for(mode);
+        if !snapshot.vision.enabled || *self.state.integrations.shutdown.borrow() {
+            return Err("Visual questions are disabled".into());
+        }
+        let api_key = credential(vision_profile(&snapshot)?)?;
+        let answer = self
+            .generate_checked(mode, &snapshot, &api_key, &question, &image)
+            .await?;
+        Ok(VisionAnswer { question, answer })
+    }
+
+    async fn generate_checked(
+        &self,
+        mode: VisionMode,
+        snapshot: &AppConfig,
+        api_key: &str,
+        question: &str,
+        image: &[u8],
+    ) -> Result<String, String> {
+        validate_question(question)?;
+        validate_image(image, &snapshot.vision)?;
+        self.check_request(mode, snapshot, api_key)?;
+        let work = self.generate(snapshot, api_key, question, image);
+        tokio::pin!(work);
+        let mut tick = tokio::time::interval(Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                biased;
+                _ = tick.tick() => self.check_request(mode, snapshot, api_key)?,
+                result = &mut work => {
+                    self.check_request(mode, snapshot, api_key)?;
+                    return result;
+                }
+            }
+        }
     }
 
     async fn generate(
@@ -238,7 +378,11 @@ impl VisionSession {
     /// Latest cumulative source transcript. Partial hypotheses replace earlier ones.
     /// Poll from the VR tick; this method does not need a Tokio context.
     pub fn draft(&self) -> String {
-        if !self.service.matches_session(&self.snapshot) {
+        if !self.service.matches_session_for(self.mode, &self.snapshot)
+            || !self
+                .service
+                .matches_credential(&self.snapshot, &self.api_key)
+        {
             return String::new();
         }
         self.draft.lock().expect("question draft lock").clone()
@@ -256,10 +400,29 @@ impl VisionSession {
     ) -> Result<VisionAnswer, String> {
         validate_image(&image, &self.snapshot.vision)?;
         self.check_configuration()?;
-        if self.audio.released_at().is_none() {
-            return Err("Release the audio window before answering".into());
-        }
         on_progress(VisionProgress::FinalizingAsr);
+        let question = self.finalize_question().await?;
+        on_progress(VisionProgress::Requesting {
+            question: question.clone(),
+        });
+        let answer = self
+            .service
+            .generate_checked(self.mode, &self.snapshot, &self.api_key, &question, &image)
+            .await?;
+        self.check_configuration()?;
+        Ok(VisionAnswer { question, answer })
+    }
+
+    /// Complete recognition after `release`, without sending an image or invoking the LLM.
+    pub async fn finalize(mut self) -> Result<String, String> {
+        self.finalize_question().await
+    }
+
+    async fn finalize_question(&mut self) -> Result<String, String> {
+        self.check_configuration()?;
+        if self.audio.released_at().is_none() {
+            return Err("Release the audio window before finalizing".into());
+        }
         let question = tokio::time::timeout(
             Duration::from_millis(self.snapshot.vision.asr_finalize_timeout_ms),
             &mut self.recognition,
@@ -268,32 +431,21 @@ impl VisionSession {
         .map_err(|_| "Question speech recognition timed out. Ask again.".to_owned())?
         .map_err(|error| format!("Question speech recognition task failed: {error}"))??;
         self.audio.stop();
+        self.check_configuration()?;
         if question.trim().is_empty() {
             return Err("No question was recognized. Hold the trigger and speak again.".into());
         }
-        self.check_configuration()?;
-        // A changed credential must not redirect a session to a new identity.
-        if credential(vision_profile(&self.snapshot)?)? != self.api_key {
-            return Err("The visual question credential changed. Ask again.".into());
-        }
-        on_progress(VisionProgress::Requesting {
-            question: question.clone(),
-        });
-        let answer = self
-            .service
-            .generate(&self.snapshot, &self.api_key, &question, &image)
-            .await?;
-        self.check_configuration()?;
-        Ok(VisionAnswer { question, answer })
+        Ok(validate_question(&question)?.to_owned())
     }
 
     fn check_configuration(&self) -> Result<(), String> {
-        if !self.service.matches_session(&self.snapshot) {
+        if !self.service.matches_session_for(self.mode, &self.snapshot) {
             return Err(
                 "The speech recognition or visual question settings changed. Ask again.".into(),
             );
         }
-        Ok(())
+        self.service
+            .check_request(self.mode, &self.snapshot, &self.api_key)
     }
 }
 
@@ -301,6 +453,39 @@ impl Drop for VisionSession {
     fn drop(&mut self) {
         self.recognition.abort();
     }
+}
+
+fn request_configuration(config: &VisionConfig) -> VisionConfig {
+    let defaults = VisionConfig::default();
+    VisionConfig {
+        vr_enabled: defaults.vr_enabled,
+        desktop_enabled: defaults.desktop_enabled,
+        desktop_shortcut: defaults.desktop_shortcut,
+        max_capture_seconds: defaults.max_capture_seconds,
+        asr_finalize_timeout_ms: defaults.asr_finalize_timeout_ms,
+        display_seconds: defaults.display_seconds,
+        wrist: None,
+        ..config.clone()
+    }
+}
+
+fn validate_question(question: &str) -> Result<&str, String> {
+    let question = question.trim();
+    if question.is_empty() {
+        return Err("Enter a question before sending".into());
+    }
+    if question.chars().count() > MAX_QUESTION_CHARACTERS {
+        return Err(format!(
+            "The visual question exceeds {MAX_QUESTION_CHARACTERS} characters"
+        ));
+    }
+    if question
+        .chars()
+        .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
+    {
+        return Err("The visual question contains unsupported control characters".into());
+    }
+    Ok(question)
 }
 
 fn vision_profile(config: &AppConfig) -> Result<&ApiProfile, String> {
@@ -331,7 +516,11 @@ fn credential(profile: &ApiProfile) -> Result<String, String> {
 }
 
 fn validate_image(image: &[u8], config: &VisionConfig) -> Result<(), String> {
-    if image.len() < 24 || !image.starts_with(b"\x89PNG\r\n\x1a\n") || &image[12..16] != b"IHDR" {
+    if image.len() < 45
+        || !image.starts_with(b"\x89PNG\r\n\x1a\n")
+        || image[8..12] != 13_u32.to_be_bytes()
+        || &image[12..16] != b"IHDR"
+    {
         return Err("The visual question image is not a PNG".into());
     }
     if image.len() > config.image_max_bytes {
@@ -342,7 +531,39 @@ fn validate_image(image: &[u8], config: &VisionConfig) -> Result<(), String> {
     if width == 0 || height == 0 || width.max(height) > config.image_max_edge {
         return Err("The visual question image exceeds the dimension limit".into());
     }
-    Ok(())
+    let valid_depth = match image[25] {
+        0 => matches!(image[24], 1 | 2 | 4 | 8 | 16),
+        2 | 4 | 6 => matches!(image[24], 8 | 16),
+        3 => matches!(image[24], 1 | 2 | 4 | 8),
+        _ => false,
+    };
+    if !valid_depth || image[26] != 0 || image[27] != 0 || image[28] > 1 {
+        return Err("The visual question image has an invalid PNG header".into());
+    }
+    // Validate the complete chunk framing, not just frontend-supplied dimensions.
+    let mut offset = 33;
+    let mut has_data = false;
+    while image.len().saturating_sub(offset) >= 12 {
+        let length = u32::from_be_bytes(
+            image[offset..offset + 4]
+                .try_into()
+                .expect("PNG chunk length"),
+        ) as usize;
+        let end = offset
+            .checked_add(12)
+            .and_then(|start| start.checked_add(length))
+            .filter(|end| *end <= image.len())
+            .ok_or("The visual question image has a truncated PNG chunk")?;
+        match &image[offset + 4..offset + 8] {
+            b"IHDR" => return Err("The visual question image has a duplicate PNG header".into()),
+            b"IDAT" => has_data |= length > 0,
+            b"IEND" if length == 0 && has_data && end == image.len() => return Ok(()),
+            b"IEND" => return Err("The visual question image has an invalid PNG end".into()),
+            _ => {}
+        }
+        offset = end;
+    }
+    Err("The visual question image is an incomplete PNG".into())
 }
 
 pub(crate) fn test_png() -> Vec<u8> {
@@ -361,11 +582,11 @@ mod tests {
         tap: &MicrophoneTap,
         runtime: &tokio::runtime::Handle,
     ) -> Result<VisionSession, String> {
-        service.begin_with_capture(runtime, |device, seconds, _| {
+        service.begin_with_capture(VisionMode::Vr, runtime, |device, seconds, _, microphone| {
             assert_eq!(device, None);
             let window = tap.begin_capture(seconds)?;
             tap.started();
-            Ok(capture::QuestionCapture::from_window(window))
+            Ok(capture::QuestionCapture::from_window(window).with_microphone(microphone))
         })
     }
 
@@ -485,6 +706,21 @@ mod tests {
         .join()
         .unwrap()
         .unwrap();
+        // Separately created services and clones share the same question-only exclusion.
+        let other_service = handle.vision_service();
+        let other_tap = MicrophoneTap::default();
+        let rejected = begin_with_test_capture(
+            &other_service,
+            &other_tap,
+            &tokio::runtime::Handle::current(),
+        );
+        assert!(rejected.err().unwrap().contains("using the microphone"));
+        let rejected = begin_with_test_capture(
+            &service.clone(),
+            &other_tap,
+            &tokio::runtime::Handle::current(),
+        );
+        assert!(rejected.err().unwrap().contains("using the microphone"));
         tokio::time::sleep(Duration::from_millis(800)).await;
         let first_end = Instant::now();
         tap.push(&[0.1; 12800], base, first_end);
@@ -542,6 +778,17 @@ mod tests {
         .unwrap()
         .unwrap();
         drop(cancelled);
+        let startup_failure = service.begin_with_capture(
+            VisionMode::Vr,
+            &tokio::runtime::Handle::current(),
+            |_, _, _, _| Err("test startup failure".into()),
+        );
+        assert_eq!(startup_failure.err().unwrap(), "test startup failure");
+        assert!(!handle
+            .state
+            .config
+            .question_microphone
+            .load(Ordering::SeqCst));
         let failed =
             begin_with_test_capture(&service, &tap, &tokio::runtime::Handle::current()).unwrap();
         tap.discontinuity("test capture gap");
@@ -555,6 +802,39 @@ mod tests {
         assert_eq!(failed.error().as_deref(), Some("test capture gap"));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         drop(failed);
+        handle
+            .state
+            .config
+            .config
+            .write()
+            .unwrap()
+            .vision
+            .desktop_enabled = true;
+        let mut recognize_only = service
+            .begin_with_capture(
+                VisionMode::Desktop,
+                &tokio::runtime::Handle::current(),
+                |_, seconds, _, microphone| {
+                    let window = tap.begin_capture(seconds)?;
+                    tap.started();
+                    Ok(capture::QuestionCapture::from_window(window).with_microphone(microphone))
+                },
+            )
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let end = Instant::now();
+        tap.push(&[0.1; 480], end - Duration::from_millis(30), end);
+        recognize_only.release();
+        tap.push(&[0.1; 480], end, Instant::now());
+        let question = recognize_only.finalize().await.unwrap();
+        assert_eq!(question, "What is this button?");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(subtitles.try_recv().is_err());
+        assert!(!handle
+            .state
+            .config
+            .question_microphone
+            .load(Ordering::SeqCst));
         let mut stale =
             begin_with_test_capture(&service, &tap, &tokio::runtime::Handle::current()).unwrap();
         stale.release();
@@ -624,6 +904,11 @@ mod tests {
         assert!(validate_image(&image, &config).is_ok());
         assert!(validate_image(&[], &config).is_err());
         assert!(validate_image(b"not a png", &config).is_err());
+        assert!(validate_image(&image[..24], &config).is_err());
+        assert!(validate_image(&image[..image.len() - 1], &config).is_err());
+        let mut invalid_chunk = image.clone();
+        invalid_chunk[33..37].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert!(validate_image(&invalid_chunk, &config).is_err());
         config.image_max_bytes = image.len() - 1;
         assert!(validate_image(&image, &config).is_err());
         config.image_max_bytes = image.len();

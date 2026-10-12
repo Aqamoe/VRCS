@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ScanText, Save, Trash2, Gamepad2, Download, RefreshCw, Monitor, Glasses } from "lucide-react";
+import { ScanText, Save, Trash2, Gamepad2, Download, RefreshCw, Monitor, Glasses, RectangleGoggles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { request } from "../../core-client/transport";
 import type { CredentialStatus } from "../../shared/protocol/credentials";
@@ -13,7 +13,7 @@ import type { DesktopOcrStatus } from "../../ocr/status";
 import { openVrOcrBindings } from "../../vr-overlay-native";
 import { ModelDeleteDialog } from "../components/ModelDeleteDialog";
 
-export function OcrSettingsCard({ vrAvailable, config, profiles, disabled, runtime, desktopStatus, onChange }: {
+export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: saving, runtime, desktopStatus, onChange }: {
   vrAvailable: boolean;
   config: VrOcrSettings;
   profiles: ApiProfileView[];
@@ -23,6 +23,7 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled, runti
   onChange: (patch: Partial<VrOcrSettings>) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const disabled = saving || !config.master_enabled;
   const [status, setStatus] = useState<CredentialStatus | null>(null);
   const [shortcut, setShortcut] = useState(config.shortcut);
   useEffect(() => setShortcut(config.shortcut), [config.shortcut]);
@@ -83,12 +84,12 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled, runti
       } catch {
         if (!disposed) setExecution(null);
       } finally {
-        if (!disposed && ((vrAvailable && config.enabled) || config.desktop_enabled)) timer = setTimeout(() => void load(), 2000);
+        if (!disposed && config.master_enabled && ((vrAvailable && config.enabled) || config.desktop_enabled)) timer = setTimeout(() => void load(), 2000);
       }
     };
     void load();
     return () => { disposed = true; clearTimeout(timer); controller.abort(); };
-  }, [vrAvailable, config.backend, config.device, config.enabled, config.desktop_enabled]);
+  }, [vrAvailable, config.backend, config.device, config.master_enabled, config.enabled, config.desktop_enabled]);
 
   const prepareModels = async () => {
     setModelBusy(true);
@@ -137,12 +138,19 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled, runti
   const updateWrist = (patch: Partial<VrOcrWristSettings>) => onChange({ wrist: { ...wrist, ...patch } });
   const modelProgress = models?.total_bytes ? Math.min(1, Math.max(0, models.downloaded_bytes / models.total_bytes)) : 0;
   return (
-    <div className="vr-overlay-card-list">
-      <section className="vr-overlay-card" aria-labelledby="ocr-common-heading">
+    <section className="vr-overlay-card" aria-labelledby="ocr-heading">
+      <header className="vr-overlay-card-heading">
+        <div><ScanText size={18} /><span><strong id="ocr-heading">{t("settings.vrOcr.title")}</strong>
+          <small>{t(local ? "settings.vrOcr.localDescription" : "settings.vrOcr.description")}</small></span></div>
+        <span className="vr-overlay-status-badge muted">PP-OCRv6</span>
+      </header>
+      <div className="settings-toggle-list settings-feature-toggle">
+        <PreferenceToggle title={t("settings.ocr.enable")} checked={config.master_enabled}
+          disabled={saving} onChange={(master_enabled) => onChange({ master_enabled })} />
+      </div>
+      <section className="ocr-settings-group" aria-labelledby="ocr-common-heading">
         <header className="vr-overlay-card-heading">
-          <div><ScanText size={18} /><span><strong id="ocr-common-heading">{t("settings.ocr.common")}</strong>
-            <small>{t(local ? "settings.vrOcr.localDescription" : "settings.vrOcr.description")}</small></span></div>
-          <span className="vr-overlay-status-badge muted">PP-OCRv6</span>
+          <div><span><strong id="ocr-common-heading">{t("settings.ocr.common")}</strong></span></div>
         </header>
         <Select label={t("settings.vrOcr.backend")} value={config.backend}
           options={[
@@ -225,7 +233,7 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled, runti
             disabled={disabled} formatValue={(value) => `${Math.round(value * 100)}%`} onCommit={(minimum_confidence) => onChange({ minimum_confidence })} />
         </div>
       </section>
-      <section className="vr-overlay-card" aria-labelledby="ocr-desktop-heading">
+      <section className="ocr-settings-group" aria-labelledby="ocr-desktop-heading">
         <header className="vr-overlay-card-heading">
           <div><Monitor size={18} /><span><strong id="ocr-desktop-heading">{t("settings.ocr.desktop")}</strong>
             <small>{t("settings.ocr.desktopResults")}</small></span></div>
@@ -247,9 +255,9 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled, runti
           {t(`ocrWindow.errors.${desktopStatus.shortcut_error.replace("desktop_ocr.", "")}`, { defaultValue: t("ocrWindow.errors.failed") })}
         </p>}
       </section>
-      {vrAvailable && <section className="vr-overlay-card" aria-labelledby="ocr-vr-heading">
+      {vrAvailable && <section className="ocr-settings-group" aria-labelledby="ocr-vr-heading">
         <header className="vr-overlay-card-heading">
-          <div><Glasses size={18} /><span><strong id="ocr-vr-heading">{t("settings.ocr.vr")}</strong></span></div>
+          <div><RectangleGoggles size={18} /><span><strong id="ocr-vr-heading">{t("settings.ocr.vr")}</strong></span></div>
         </header>
         <PreferenceToggle title={t("settings.vrOcr.enable")} checked={config.enabled}
           disabled={disabled || (!config.enabled && !isVrOcrBackendReady(config.backend, Boolean(status?.configured), models?.state))}
@@ -292,42 +300,42 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled, runti
         </div>
         <PreferenceToggle title={t("settings.vrOcr.gesture")} checked={config.hand_gesture_enabled}
           disabled={disabled} onChange={(hand_gesture_enabled) => onChange({ hand_gesture_enabled })} />
-      </section>}
-      {vrAvailable && config.display_mode === "wrist" && <section className="vr-overlay-card" aria-labelledby="ocr-wrist-heading">
-        <header className="vr-overlay-card-heading">
-          <div><Glasses size={18} /><span><strong id="ocr-wrist-heading">{t("settings.vrOcr.wristTitle")}</strong>
-            <small>{t("settings.vrOcr.wristDescription")}</small></span></div>
-        </header>
-        <div className="vr-overlay-field-grid">
-          <Select label={t("settings.vrOverlay.hand")} value={wrist.hand}
-            options={["left", "right", "dominant"].map((value) => ({ value, label: t(`settings.vrOverlay.hands.${value}`) }))}
-            disabled={disabled} onChange={(hand) => updateWrist({ hand: hand as VrOcrWristSettings["hand"] })} />
-          <Select label={t("settings.vrOverlay.dominantHand")} value={wrist.dominant_hand}
-            options={["left", "right"].map((value) => ({ value, label: t(`settings.vrOverlay.hands.${value}`) }))}
-            disabled={disabled || wrist.hand !== "dominant"}
-            onChange={(dominant_hand) => updateWrist({ dominant_hand: dominant_hand as VrOcrWristSettings["dominant_hand"] })} />
-          <RangeField label={t("settings.vrOverlay.fontSize")} value={wrist.font_size_px} min={18} max={72} step={1}
-            disabled={disabled} formatValue={(value) => `${value}px`} onCommit={(font_size_px) => updateWrist({ font_size_px })} />
-          <RangeField label={t("settings.vrOverlay.width")} value={wrist.width_m} min={0.1} max={1} step={0.01}
-            disabled={disabled} formatValue={(value) => `${value.toFixed(2)}m`} onCommit={(width_m) => updateWrist({ width_m })} />
-          <RangeField label={t("settings.vrOverlay.opacity")} value={wrist.opacity} min={0.1} max={1} step={0.05}
-            disabled={disabled} formatValue={(value) => `${Math.round(value * 100)}%`} onCommit={(opacity) => updateWrist({ opacity })} />
-        </div>
-        <details className="vr-overlay-range-group">
-          <summary>{t("settings.vrOcr.wristPosition")}</summary>
-          <div className="vr-overlay-range-grid">
-            {([
-              ["offset_x_m", "horizontal"], ["offset_y_m", "vertical"], ["offset_z_m", "depth"],
-              ["pitch_deg", "pitch"], ["yaw_deg", "yaw"], ["roll_deg", "roll"],
-            ] as const).map(([field, label]) => <RangeField key={field} label={t(`settings.vrOverlay.${label}`)}
-              value={wrist[field]} {...VR_OVERLAY_POSITION_RANGES.wrist[field]} disabled={disabled}
-              formatValue={(value) => field.startsWith("offset_") ? `${value.toFixed(2)}m` : `${value}°`}
-              onCommit={(value) => updateWrist({ [field]: value })} />)}
+        {config.display_mode === "wrist" && <section className="ocr-settings-group" aria-labelledby="ocr-wrist-heading">
+          <header className="vr-overlay-card-heading">
+            <div><Glasses size={18} /><span><strong id="ocr-wrist-heading">{t("settings.vrOcr.wristTitle")}</strong>
+              <small>{t("settings.vrOcr.wristDescription")}</small></span></div>
+          </header>
+          <div className="vr-overlay-field-grid">
+            <Select label={t("settings.vrOverlay.hand")} value={wrist.hand}
+              options={["left", "right", "dominant"].map((value) => ({ value, label: t(`settings.vrOverlay.hands.${value}`) }))}
+              disabled={disabled} onChange={(hand) => updateWrist({ hand: hand as VrOcrWristSettings["hand"] })} />
+            <Select label={t("settings.vrOverlay.dominantHand")} value={wrist.dominant_hand}
+              options={["left", "right"].map((value) => ({ value, label: t(`settings.vrOverlay.hands.${value}`) }))}
+              disabled={disabled || wrist.hand !== "dominant"}
+              onChange={(dominant_hand) => updateWrist({ dominant_hand: dominant_hand as VrOcrWristSettings["dominant_hand"] })} />
+            <RangeField label={t("settings.vrOverlay.fontSize")} value={wrist.font_size_px} min={18} max={72} step={1}
+              disabled={disabled} formatValue={(value) => `${value}px`} onCommit={(font_size_px) => updateWrist({ font_size_px })} />
+            <RangeField label={t("settings.vrOverlay.width")} value={wrist.width_m} min={0.1} max={1} step={0.01}
+              disabled={disabled} formatValue={(value) => `${value.toFixed(2)}m`} onCommit={(width_m) => updateWrist({ width_m })} />
+            <RangeField label={t("settings.vrOverlay.opacity")} value={wrist.opacity} min={0.1} max={1} step={0.05}
+              disabled={disabled} formatValue={(value) => `${Math.round(value * 100)}%`} onCommit={(opacity) => updateWrist({ opacity })} />
           </div>
-        </details>
+          <details className="vr-overlay-range-group">
+            <summary>{t("settings.vrOcr.wristPosition")}</summary>
+            <div className="vr-overlay-range-grid">
+              {([
+                ["offset_x_m", "horizontal"], ["offset_y_m", "vertical"], ["offset_z_m", "depth"],
+                ["pitch_deg", "pitch"], ["yaw_deg", "yaw"], ["roll_deg", "roll"],
+              ] as const).map(([field, label]) => <RangeField key={field} label={t(`settings.vrOverlay.${label}`)}
+                value={wrist[field]} {...VR_OVERLAY_POSITION_RANGES.wrist[field]} disabled={disabled}
+                formatValue={(value) => field.startsWith("offset_") ? `${value.toFixed(2)}m` : `${value}°`}
+                onCommit={(value) => updateWrist({ [field]: value })} />)}
+            </div>
+          </details>
+        </section>}
       </section>}
       {confirmDelete && <ModelDeleteDialog name="PP-OCRv6 small" removing={modelRemoving}
         returnFocusRef={deleteButtonRef} onClose={() => setConfirmDelete(false)} onConfirm={deleteModels} />}
-    </div>
+    </section>
   );
 }

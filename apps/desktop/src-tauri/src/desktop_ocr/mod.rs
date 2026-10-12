@@ -1,12 +1,7 @@
-#[cfg(windows)]
-mod hotkey;
 mod runtime;
-#[cfg(windows)]
-mod selection;
-#[cfg(windows)]
-mod selection_window;
-mod shortcut;
 mod status;
+#[cfg(windows)]
+use crate::desktop_capture::{hotkey, selection_window};
 
 pub use runtime::Manager;
 use status::DesktopOcrStatus;

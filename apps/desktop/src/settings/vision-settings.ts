@@ -4,6 +4,9 @@ import { DEFAULT_OCR_WRIST_SETTINGS } from "./vr-overlay-settings.ts";
 
 export const DEFAULT_VISION_SETTINGS: VisionSettings = {
   enabled: false,
+  vr_enabled: true,
+  desktop_enabled: false,
+  desktop_shortcut: "Ctrl+Alt+V",
   profile_id: null,
   model: "",
   answer_language: "zh-Hans",

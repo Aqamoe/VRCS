@@ -89,7 +89,7 @@ impl Manager {
         self.stop();
         self.state.lock().unwrap().service = service;
         #[cfg(windows)]
-        match super::hotkey::Hotkey::new(self.app.clone()) {
+        match super::hotkey::Hotkey::new(self.app.clone(), super::hotkey::Action::Ocr) {
             Ok(hotkey) => *self.hotkey.lock().unwrap() = Some(hotkey),
             Err(error) => {
                 tracing::warn!(%error, "Desktop OCR shortcut thread failed");
@@ -263,7 +263,7 @@ impl Manager {
             .get_webview_window("ocr")
             .and_then(|window| window.hwnd().ok())
             .map(|hwnd| hwnd.0 as isize);
-        let hint = selection_hint(&self.app);
+        let hint = crate::desktop_capture::selection_hint(&self.app, "ocrWindow");
         let mut state = self.state.lock().unwrap();
         let service = state
             .service
@@ -273,6 +273,8 @@ impl Manager {
         if !config.ocr().desktop_enabled {
             return Err("desktop_ocr.disabled".into());
         }
+        let picker =
+            crate::desktop_capture::reserve_picker().map_err(|_| "desktop_ocr.selection_busy")?;
         state.cancel();
         let scan_id = state.status.scan_id;
         state.active_config = Some(config.ocr().clone());
@@ -307,13 +309,14 @@ impl Manager {
                     return Ok(None);
                 }
                 let selected = tauri::async_runtime::spawn_blocking(move || {
-                    let region = super::selection_window::select_region(
+                    let region = super::selection_window::select_region_reserved(
                         capture.window,
                         capture.width,
                         capture.height,
                         &capture.pixels,
                         &selection_cancelled,
                         &hint,
+                        &picker,
                     )?;
                     let Some(region) = region else {
                         return Ok::<_, String>(None);
@@ -404,44 +407,6 @@ impl Manager {
         }));
         Ok(())
     }
-}
-
-#[cfg(windows)]
-fn selection_hint(app: &AppHandle) -> String {
-    use tauri_plugin_store::StoreExt;
-    let preference = app
-        .store("preferences.json")
-        .ok()
-        .and_then(|store| store.get("uiLanguage"))
-        .and_then(|value| value.as_str().map(str::to_owned));
-    let locale = preference
-        .filter(|value| value != "system")
-        .unwrap_or_else(|| {
-            match unsafe { windows_sys::Win32::Globalization::GetUserDefaultUILanguage() } {
-                0x0404 | 0x0c04 | 0x1404 => "zh-Hant",
-                0x0804 | 0x1004 => "zh-CN",
-                0x0411 => "ja-JP",
-                _ => "en-US",
-            }
-            .into()
-        });
-    let messages = match locale.as_str() {
-        "zh-CN" => include_str!("../../../src/i18n/locales/zh-CN.json"),
-        "zh-Hant" => include_str!("../../../src/i18n/locales/zh-Hant.json"),
-        "ja-JP" => include_str!("../../../src/i18n/locales/ja-JP.json"),
-        _ => include_str!("../../../src/i18n/locales/en-US.json"),
-    };
-    serde_json::from_str::<serde_json::Value>(messages)
-        .ok()
-        .and_then(|value| {
-            value
-                .pointer("/translation/ocrWindow/selectionHint")
-                .and_then(|text| text.as_str())
-                .map(str::to_owned)
-        })
-        .unwrap_or_else(|| {
-            "Drag to select text. Release to recognize. Esc / right-click to cancel.".into()
-        })
 }
 
 fn upsert_block(blocks: &mut Vec<TranslatedBlock>, update: BlockUpdate) {

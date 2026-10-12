@@ -11,6 +11,7 @@ pub(super) struct PostCommitUpdates {
     storage_quota_changed: bool,
     vrcx_changed: bool,
     vr_overlay_changed: bool,
+    vision_changed: bool,
 }
 
 impl PostCommitUpdates {
@@ -21,6 +22,20 @@ impl PostCommitUpdates {
             vrcx_changed: candidate.vrcx != current.vrcx,
             vr_overlay_changed: candidate.vr_overlay != current.vr_overlay
                 || candidate.ocr != current.ocr,
+            vision_changed: candidate.vision != current.vision
+                || candidate.features != current.features
+                || current.vision.profile_id.as_ref().is_some_and(|id| {
+                    current
+                        .asr
+                        .api_profiles
+                        .iter()
+                        .find(|profile| &profile.id == id)
+                        != candidate
+                            .asr
+                            .api_profiles
+                            .iter()
+                            .find(|profile| &profile.id == id)
+                }),
         }
     }
 
@@ -42,6 +57,12 @@ impl PostCommitUpdates {
             *features = candidate.features.clone();
             true
         });
+        if self.vision_changed {
+            state
+                .config
+                .vision_config_tx
+                .send_replace(crate::config::apply_feature_gates(candidate).vision);
+        }
         if !candidate.features.ocr {
             state.config.local_ocr.cancel_download().await;
         }
@@ -130,6 +151,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn selected_profile_metadata_changes_notify_vision() {
+        let mut current = AppConfig::default();
+        current.vision.profile_id = Some("images".into());
+        current.asr.api_profiles.push(crate::config::ApiProfile {
+            id: "images".into(),
+            name: "Images".into(),
+            ..Default::default()
+        });
+        let mut candidate = current.clone();
+        candidate.asr.api_profiles[0].name = "Renamed images".into();
+        assert_eq!(candidate.vision, current.vision);
+        assert!(PostCommitUpdates::between(&current, &candidate).vision_changed);
+
+        candidate = current.clone();
+        candidate.asr.api_profiles.clear();
+        assert!(PostCommitUpdates::between(&current, &candidate).vision_changed);
+
+        candidate = current.clone();
+        candidate.asr.api_profiles.push(crate::config::ApiProfile {
+            id: "unrelated".into(),
+            name: "Other service".into(),
+            ..Default::default()
+        });
+        assert!(!PostCommitUpdates::between(&current, &candidate).vision_changed);
+    }
+
+    #[test]
     fn only_changed_runtime_notifications_are_marked() {
         let current = AppConfig::default();
         let mut candidate = current.clone();
@@ -141,5 +189,6 @@ mod tests {
         assert!(updates.storage_quota_changed);
         assert!(updates.vrcx_changed);
         assert!(!updates.vr_overlay_changed);
+        assert!(!updates.vision_changed);
     }
 }

@@ -10,7 +10,7 @@ import type { ApiProfileView } from "../src/providers/types.ts";
 import { VR_OVERLAY_POSITION_RANGES, type VrOverlayPositionField } from "../src/settings/vr-overlay-settings.ts";
 
 const settings = {
-  schema_version: 31,
+  schema_version: 32,
   features: { ...DEFAULT_FEATURE_SETTINGS },
   asr: { backend: "qwen_local_managed", language: "auto", managed_qwen: { package_id: "qwen3-asr-0.6b-q8_0", device: "auto" } },
   translation: {
@@ -248,6 +248,14 @@ test("dashboard OCR toggles change root VR settings without enabling desktop mod
   assert.equal(gesture.ocr.enabled, true);
 });
 
+
+test("dashboard OCR actions cannot bypass the master switch", () => {
+  const disabled = { ...settings, ocr: { ...settings.ocr, master_enabled: false } };
+  for (const action of ["toggle_ocr", "toggle_ocr_gesture"] as const) {
+    assert.equal(applyVrDashboardAction(disabled, action), disabled);
+  }
+  assert.notEqual(applyVrDashboardAction(disabled, "toggle_headset"), disabled);
+});
 
 test("dashboard actions cannot reactivate unavailable modules", () => {
   const disabledVr = { ...settings, features: { ...settings.features, vr_overlay: false } };

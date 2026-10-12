@@ -18,6 +18,16 @@ test("OCR defaults use original-position display while allowing independent wris
   assert.equal(settings.ocr.backend, "cloud");
 });
 
+test("OCR master switch preserves mode preferences and recognition settings", () => {
+  const settings = { ocr: { ...DEFAULT_OCR_SETTINGS, enabled: true, desktop_enabled: true } } as Settings;
+  assert.equal(DEFAULT_OCR_SETTINGS.master_enabled, true);
+  const disabled = patchOcr(settings, { master_enabled: false });
+  assert.deepEqual(disabled.ocr, { ...settings.ocr, master_enabled: false });
+  const enabled = patchOcr(disabled, { master_enabled: true });
+  assert.deepEqual(enabled.ocr, settings.ocr);
+  assert.equal(settings.ocr.master_enabled, true);
+});
+
 test("local OCR requires prepared models and does not require a cloud credential", () => {
   assert.equal(isVrOcrBackendReady("local", false, "ready"), true);
   for (const state of [undefined, "missing", "downloading", "error"] as const) {

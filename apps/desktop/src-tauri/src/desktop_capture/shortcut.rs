@@ -1,5 +1,5 @@
 pub fn parse_shortcut(value: &str) -> Result<(u32, u32), String> {
-    let invalid = || "Invalid OCR shortcut".to_string();
+    let invalid = || "Invalid desktop shortcut".to_string();
     let parts: Vec<_> = value.split('+').map(str::trim).collect();
     let (key, modifiers) = parts.split_last().ok_or_else(invalid)?;
     let mut flags = 0;

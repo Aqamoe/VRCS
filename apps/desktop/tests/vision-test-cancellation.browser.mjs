@@ -21,7 +21,8 @@ for (const field of ["model", "profile_id"]) {
           import { DEFAULT_VISION_SETTINGS } from './src/settings/vision-settings';
           await i18next.use(initReactI18next).init({ lng: 'en', resources: { en: { translation: {} } } });
           window.pending = [];
-          window.fetch = async (_url, init) => {
+          window.fetch = async (url, init) => {
+            if (String(url).endsWith('/models')) return new Response(JSON.stringify({ models: ['first-model', 'second-model'] }));
             const response = new Response('{}');
             const pending = { signal: init.signal, reading: false };
             // Keep the old body pending even after abort to exercise stale finally guards.

@@ -12,7 +12,7 @@ fn feature_switches_default_on_when_upgrading_v29() {
     let raw = serde_json::json!({"schema_version": 29});
     let config = config_from_value(&raw).unwrap();
     let value = serde_json::to_value(config).unwrap();
-    assert_eq!(value["schema_version"], 31);
+    assert_eq!(value["schema_version"], SCHEMA_VERSION);
     assert_eq!(value["features"]["visual_question_answering"], false);
     assert_eq!(value["vision"]["enabled"], false);
     for key in [
@@ -30,6 +30,42 @@ fn feature_switches_default_on_when_upgrading_v29() {
 }
 
 #[test]
+fn v31_vision_modes_preserve_old_preferences_and_shared_settings() {
+    for enabled in [false, true] {
+        let mut original = AppConfig::default();
+        original.features.visual_question_answering = true;
+        original.vision.enabled = enabled;
+        original.vision.model = "image-model".into();
+        original.vision.profile_id = Some("images".into());
+        original.asr.api_profiles.push(ApiProfile {
+            id: "images".into(),
+            name: "Images".into(),
+            provider: OPENAI_COMPATIBLE_PROVIDER.into(),
+            base_url: Some("http://127.0.0.1:1234/v1".into()),
+            enabled_capabilities: vec![providers::CAPABILITY_IMAGE_UNDERSTANDING.into()],
+            auth_mode: ApiAuthMode::None,
+            ..Default::default()
+        });
+        original.vision.system_prompt = "Existing instructions".into();
+        original.vision.wrist.as_mut().unwrap().offset_x_m = 0.2;
+        let mut raw = serde_json::to_value(&original).unwrap();
+        raw["schema_version"] = serde_json::json!(31);
+        let vision = raw["vision"].as_object_mut().unwrap();
+        for field in ["vr_enabled", "desktop_enabled", "desktop_shortcut"] {
+            vision.remove(field);
+        }
+        let migrated = config_from_value(&raw).unwrap();
+        assert_eq!(migrated, original);
+        assert!(migrated.vision.vr_enabled);
+        assert!(!migrated.vision.desktop_enabled);
+        assert_eq!(migrated.vision.desktop_shortcut, "Ctrl+Alt+V");
+        assert_eq!(apply_feature_gates(&migrated).vision.enabled, enabled);
+        let saved = serde_json::to_value(&migrated).unwrap();
+        assert_eq!(config_from_value(&saved).unwrap(), migrated);
+    }
+}
+
+#[test]
 fn v30_vision_migration_preserves_ocr_and_copies_its_wrist() {
     let mut raw = serde_json::to_value(AppConfig::default()).unwrap();
     raw["schema_version"] = serde_json::json!(30);
@@ -43,7 +79,7 @@ fn v30_vision_migration_preserves_ocr_and_copies_its_wrist() {
     raw["ocr"]["wrist"]["offset_x_m"] = serde_json::json!(0.2);
     let ocr: super::VrOcrConfig = serde_json::from_value(raw["ocr"].clone()).unwrap();
     let config = config_from_value(&raw).unwrap();
-    assert_eq!(config.schema_version, 31);
+    assert_eq!(config.schema_version, SCHEMA_VERSION);
     assert!(!config.features.visual_question_answering);
     assert!(!config.vision.enabled);
     assert_eq!(config.vision.profile_id, None);
@@ -125,6 +161,23 @@ fn removed_whisper_backend_is_rejected_in_current_settings() {
 }
 
 #[test]
+fn ocr_master_switch_preserves_existing_config_and_round_trips() {
+    let raw = serde_json::json!({
+        "schema_version": SCHEMA_VERSION,
+        "ocr": {"enabled": true, "desktop_enabled": true}
+    });
+    let mut config = config_from_value(&raw).unwrap();
+    assert!(config.ocr.master_enabled);
+    assert!(config.ocr.enabled);
+    assert!(config.ocr.desktop_enabled);
+
+    config.ocr.master_enabled = false;
+    let saved = serde_json::to_value(&config).unwrap();
+    assert_eq!(saved["ocr"]["master_enabled"], false);
+    assert_eq!(config_from_value(&saved).unwrap(), config);
+}
+
+#[test]
 fn legacy_ocr_moves_to_root_without_losing_vr_settings() {
     let raw = serde_json::json!({
         "schema_version": 27,
@@ -137,6 +190,7 @@ fn legacy_ocr_moves_to_root_without_losing_vr_settings() {
     let migrated = config_from_value(&raw).unwrap();
     let saved = serde_json::to_value(&migrated).unwrap();
     assert_eq!(saved["schema_version"], SCHEMA_VERSION);
+    assert_eq!(saved["ocr"]["master_enabled"], true);
     assert_eq!(saved["ocr"]["enabled"], true);
     assert_eq!(saved["ocr"]["desktop_enabled"], false);
     assert_eq!(saved["ocr"]["shortcut"], "Ctrl+Alt+O");

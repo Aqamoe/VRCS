@@ -1,10 +1,10 @@
 import type { ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
-import { GraduationCap, MessageSquare, MessageSquarePlus, Mic, Shrink, SlidersHorizontal, Square } from "lucide-react";
+import { Eye, GraduationCap, MessageSquare, MessageSquarePlus, Mic, Shrink, SlidersHorizontal, Square } from "lucide-react";
 
 import type { Page } from "../app/app-types";
 
-export function BottomDock({ learningAvailable, chatboxAvailable, page, running, chatboxOpen, captureDisabled, chatboxDisabled, chatboxButtonRef, onPageChange, onPageIntent, onCompact, onChatbox, onCapture }: {
+export function BottomDock({ learningAvailable, chatboxAvailable, page, running, chatboxOpen, captureDisabled, chatboxDisabled, chatboxButtonRef, onPageChange, onPageIntent, onCompact, onChatbox, onCapture, onVision, visionDisabled }: {
   learningAvailable: boolean;
   chatboxAvailable: boolean;
   page: Page;
@@ -18,6 +18,8 @@ export function BottomDock({ learningAvailable, chatboxAvailable, page, running,
   onCompact: () => void;
   onChatbox: () => void;
   onCapture: () => void;
+  onVision?: () => void;
+  visionDisabled?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -35,6 +37,7 @@ export function BottomDock({ learningAvailable, chatboxAvailable, page, running,
         expanded={chatboxOpen}
         onClick={onChatbox}
       ><MessageSquarePlus /></DockButton>}
+      {onVision && <DockButton label={t("visionWindow.title")} disabled={visionDisabled} onClick={onVision}><Eye /></DockButton>}
       <DockButton label={t(running ? "capture.stop" : "capture.start")} primary disabled={captureDisabled} onClick={onCapture}>{running ? <Square /> : <Mic />}</DockButton>
     </nav>
   );

@@ -6,7 +6,7 @@ use std::{
 };
 
 use windows::{
-    core::{factory, Error, Interface, HRESULT, PWSTR},
+    core::{factory, Error, Interface, BOOL, HRESULT, PWSTR},
     Graphics::{
         Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession},
         DirectX::{Direct3D11::IDirect3DDevice, DirectXPixelFormat},
@@ -14,7 +14,7 @@ use windows::{
     Win32::{
         Foundation::{
             CloseHandle, ERROR_TIMEOUT, E_ABORT, E_FAIL, E_HANDLE, E_NOINTERFACE, E_NOTIMPL,
-            E_POINTER, HMODULE, HWND, POINT, RECT, REGDB_E_CLASSNOTREG,
+            E_POINTER, HMODULE, HWND, LPARAM, POINT, RECT, REGDB_E_CLASSNOTREG,
         },
         Graphics::{
             Direct3D::D3D_DRIVER_TYPE_HARDWARE,
@@ -45,7 +45,8 @@ use windows::{
                 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
             },
             WindowsAndMessaging::{
-                GetClientRect, GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindow,
+                EnumWindows, GetClientRect, GetForegroundWindow, GetWindowThreadProcessId,
+                IsIconic, IsWindow, IsWindowVisible,
             },
         },
     },
@@ -75,11 +76,66 @@ pub fn capture_vrchat(
     } else {
         return Err("desktop_ocr.not_game".into());
     };
+    capture_game_window(window)
+}
+
+/// Allows an explicit capture from a trusted app window, including the first screenshot.
+/// Other foreground applications must not trigger background game capture.
+pub fn capture_vrchat_from_app(
+    previous_window: Option<isize>,
+    app_windows: &[isize],
+) -> Result<DesktopCapture, String> {
+    let foreground = unsafe { GetForegroundWindow() };
+    let window = if is_vrchat(foreground) {
+        foreground
+    } else if app_windows.contains(&(foreground.0 as isize)) {
+        previous_window
+            .map(|window| HWND(window as *mut _))
+            .filter(|window| is_vrchat(*window))
+            .or_else(find_game_window)
+            .ok_or("desktop_ocr.game_not_found")?
+    } else {
+        return Err("desktop_ocr.not_game".into());
+    };
+    capture_game_window(window)
+}
+
+fn find_game_window() -> Option<HWND> {
+    unsafe extern "system" fn collect(window: HWND, data: LPARAM) -> BOOL {
+        let windows = unsafe { &mut *(data.0 as *mut Vec<HWND>) };
+        if unsafe { IsWindowVisible(window) }.as_bool() && is_vrchat(window) {
+            let mut client = RECT::default();
+            if unsafe { GetClientRect(window, &mut client) }.is_ok()
+                && client.right > client.left
+                && client.bottom > client.top
+            {
+                windows.push(window);
+            }
+        }
+        BOOL(1)
+    }
+    let mut windows = Vec::<HWND>::new();
+    unsafe {
+        EnumWindows(
+            Some(collect),
+            LPARAM((&mut windows as *mut Vec<HWND>) as isize),
+        )
+    }
+    .ok()?;
+    // Keep a minimized candidate only to return the specific restore-window error.
+    windows
+        .iter()
+        .copied()
+        .find(|window| !unsafe { IsIconic(*window) }.as_bool())
+        .or_else(|| windows.first().copied())
+}
+
+fn capture_game_window(window: HWND) -> Result<DesktopCapture, String> {
     if unsafe { IsIconic(window) }.as_bool() {
         return Err("desktop_ocr.minimized".into());
     }
     capture_window(window).map_err(|error| {
-        tracing::warn!(%error, "Desktop OCR capture failed");
+        tracing::warn!(%error, "Desktop game capture failed");
         let code = match error.code() {
             E_ABORT => "desktop_ocr.minimized",
             E_HANDLE | E_NOINTERFACE | E_NOTIMPL | REGDB_E_CLASSNOTREG => "desktop_ocr.unavailable",
@@ -387,6 +443,20 @@ fn bgra_to_rgba(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "Requires a running, restored VRChat window"]
+    fn captures_a_live_vrchat_client_without_a_previous_window() {
+        let window = find_game_window().expect("Start VRChat before running this test");
+        assert!(is_vrchat(window));
+        let capture = capture_game_window(window).expect("VRChat client capture failed");
+        assert_eq!(capture.window, window.0 as isize);
+        assert!(capture.width > 0 && capture.height > 0);
+        assert_eq!(
+            capture.pixels.len(),
+            capture.width as usize * capture.height as usize * 4
+        );
+    }
 
     #[test]
     fn null_capture_frame_waits_without_masking_capture_failures() {

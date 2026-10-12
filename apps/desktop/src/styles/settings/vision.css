@@ -1,0 +1,46 @@
+.vision-settings-group {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.vision-settings-group .vr-overlay-card-heading strong { font-size: var(--settings-text-label); }
+.vision-settings-details { min-width: 0; padding-top: 14px; border-top: 1px solid var(--border); }
+.vision-settings-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+  font-size: var(--settings-text-label);
+  font-weight: var(--settings-weight-heading);
+  line-height: var(--settings-leading-label);
+  list-style: none;
+  cursor: pointer;
+}
+.vision-settings-details > summary::-webkit-details-marker { display: none; }
+.vision-settings-details > summary:focus-visible { outline: 3px solid var(--primary); outline-offset: 4px; border-radius: var(--radius-sm); }
+.vision-settings-details > summary > svg { flex: 0 0 auto; color: var(--text-secondary); transition: transform 150ms ease-out; }
+.vision-settings-details[open] > summary > svg { transform: rotate(180deg); }
+.vision-settings-details > :not(summary) { margin-top: 14px; }
+.vision-settings-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--settings-text-caption);
+  line-height: var(--settings-leading-reading);
+  overflow-wrap: anywhere;
+}
+.vision-settings-result {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  white-space: pre-wrap;
+}
+.vision-settings-card .field { min-width: 0; }
+.vision-settings-card .spin { animation: model-spin 900ms linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vision-settings-details > summary > svg { transition: none; }
+}

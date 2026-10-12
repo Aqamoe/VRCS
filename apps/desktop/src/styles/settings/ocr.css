@@ -1,4 +1,12 @@
 .ocr-shortcut-field { max-width: 320px; }
+.ocr-settings-group {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.ocr-settings-group .vr-overlay-card-heading strong { font-size: var(--settings-text-label); }
 .ocr-settings-section .model-row-title { flex-wrap: wrap; }
 .ocr-settings-section .model-row-title .model-size { white-space: normal; }
 .ocr-settings-section .model-row-body > .vr-overlay-native-error { margin-top: 8px; color: var(--error); }

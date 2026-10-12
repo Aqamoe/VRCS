@@ -177,7 +177,7 @@ export function useVrDashboardBridge(
         close: t("common.close"),
       },
       enabled: overlay.enabled,
-      ocr_available: settings.features.ocr,
+      ocr_available: settings.features.ocr && settings.ocr.master_enabled,
       vision_available: settings.features.visual_question_answering,
       osc_available: settings.features.osc_chatbox,
       headset: {
@@ -200,13 +200,13 @@ export function useVrDashboardBridge(
         position: positionFields("wrist"),
       },
       ocr: {
-        enabled: settings.ocr.enabled,
+        enabled: settings.ocr.master_enabled && settings.ocr.enabled,
         backend: t(`settings.vrOcr.backends.${settings.ocr.backend}`),
         gesture: settings.ocr.hand_gesture_enabled,
       },
       vision: {
-        enabled: settings.vision.enabled,
-        configured: Boolean(settings.vision.model.trim() && profiles.some((profile) =>
+        enabled: settings.vision.enabled && settings.vision.vr_enabled,
+        configured: settings.vision.enabled && Boolean(settings.vision.model.trim() && profiles.some((profile) =>
           profile.id === settings.vision.profile_id && supportsVision(profile))),
         model: settings.vision.model,
       },

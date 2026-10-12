@@ -97,15 +97,78 @@ pub fn apply_feature_gates(config: &AppConfig) -> AppConfig {
     effective.vrcx.enabled &= features.vrcx;
     effective.external_api.enabled &= features.external_api;
     effective.vr_overlay.enabled &= features.vr_overlay;
-    effective.ocr.enabled &= features.ocr && features.vr_overlay;
-    effective.ocr.desktop_enabled &= features.ocr;
-    effective.vision.enabled &= features.visual_question_answering && features.vr_overlay;
+    effective.ocr.enabled &= features.ocr && features.vr_overlay && config.ocr.master_enabled;
+    effective.ocr.desktop_enabled &= features.ocr && config.ocr.master_enabled;
+    effective.vision.enabled &= features.visual_question_answering;
+    effective.vision.vr_enabled &= features.vr_overlay;
     effective
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ocr_master_switch_gates_both_modes_without_changing_preferences() {
+        let mut config = AppConfig::default();
+        config.ocr.enabled = true;
+        config.ocr.desktop_enabled = true;
+        config.features.visual_question_answering = true;
+        config.vision.enabled = true;
+        config.ocr.master_enabled = false;
+
+        let effective = apply_feature_gates(&config);
+        assert!(!effective.ocr.enabled);
+        assert!(!effective.ocr.desktop_enabled);
+        assert!(effective.vision.enabled);
+        assert!(config.ocr.enabled);
+        assert!(config.ocr.desktop_enabled);
+
+        config.ocr.master_enabled = true;
+        config.ocr.enabled = false;
+        let effective = apply_feature_gates(&config);
+        assert!(!effective.ocr.enabled);
+        assert!(effective.ocr.desktop_enabled);
+
+        config.ocr.enabled = true;
+        config.ocr.desktop_enabled = false;
+        let effective = apply_feature_gates(&config);
+        assert!(effective.ocr.enabled);
+        assert!(!effective.ocr.desktop_enabled);
+
+        config.features.ocr = false;
+        assert!(!apply_feature_gates(&config).ocr.enabled);
+        config.features.ocr = true;
+        config.features.vr_overlay = false;
+        config.ocr.desktop_enabled = true;
+        let effective = apply_feature_gates(&config);
+        assert!(!effective.ocr.enabled);
+        assert!(effective.ocr.desktop_enabled);
+    }
+
+    #[test]
+    fn vision_common_master_and_mode_preferences_are_independent() {
+        let mut config = AppConfig::default();
+        config.features.visual_question_answering = true;
+        config.vision.enabled = true;
+        config.vision.desktop_enabled = true;
+        config.vision.vr_enabled = false;
+        let effective = apply_feature_gates(&config);
+        assert!(effective.vision.enabled);
+        assert!(effective.vision.desktop_enabled);
+        assert!(!effective.vision.vr_enabled);
+        config.features.vr_overlay = false;
+        config.vision.vr_enabled = true;
+        let effective = apply_feature_gates(&config);
+        assert!(effective.vision.enabled);
+        assert!(effective.vision.desktop_enabled);
+        assert!(!effective.vision.vr_enabled);
+        assert!(config.vision.vr_enabled);
+        config.vision.enabled = false;
+        assert!(!apply_feature_gates(&config).vision.enabled);
+        assert!(config.vision.desktop_enabled);
+        assert!(config.vision.vr_enabled);
+    }
 
     #[test]
     fn vision_gate_is_independent_of_ocr_and_preserves_preferences() {
@@ -117,7 +180,10 @@ mod tests {
         config.vr_overlay.enabled = false;
         assert!(apply_feature_gates(&config).vision.enabled);
         config.features.vr_overlay = false;
-        assert!(!apply_feature_gates(&config).vision.enabled);
+        let effective = apply_feature_gates(&config);
+        assert!(effective.vision.enabled);
+        assert!(!effective.vision.vr_enabled);
+        assert!(config.vision.vr_enabled);
         assert!(config.vision.enabled);
         assert_eq!(
             FeatureKey::VisualQuestionAnswering.name(),

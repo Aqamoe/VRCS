@@ -18,6 +18,7 @@ import { UpdateNotice } from "../updates/UpdateNotice";
 import { SelectionToolOverlays } from "./SelectionToolOverlays";
 import type { AppWorkspace } from "./useAppWorkspace";
 import { useVrDashboardBridge } from "../vr-dashboard/useVrDashboardBridge";
+import { openDesktopVision } from "../vision/api";
 
 let learningWorkspaceModule: Promise<typeof import("../learning/components/LearningWorkspace")> | undefined;
 let settingsPanelModule: Promise<typeof import("../settings/SettingsPanel")> | undefined;
@@ -92,6 +93,11 @@ export function DesktopShell({
   } = workspace;
   const features = settings.value?.features;
   const [sidebarResizing, setSidebarResizing] = useState(false);
+  const [visionOpenError, setVisionOpenError] = useState(false);
+  const openVision = () => {
+    setVisionOpenError(false);
+    void openDesktopVision().catch(() => setVisionOpenError(true));
+  };
   const chatboxButtonRef = useRef<HTMLButtonElement | null>(null);
   useVrDashboardBridge(settings.value, settings.save, providers.catalog.profiles);
 
@@ -190,6 +196,8 @@ export function DesktopShell({
               />
             )}
 
+            {visionOpenError && <ErrorBanner error={t("visionWindow.errors.openFailed")} retryable={false}
+              onRetry={openVision} onClose={() => setVisionOpenError(false)} />}
             {runtime.error && (
               <ErrorBanner
                 error={runtime.error}
@@ -322,6 +330,8 @@ export function DesktopShell({
       <BottomDock
         learningAvailable={features?.learning ?? false}
         chatboxAvailable={features?.osc_chatbox ?? false}
+        onVision={features?.visual_question_answering ? openVision : undefined}
+        visionDisabled={!runtime.ready}
         page={page}
         running={runtime.health?.capture_requested ?? false}
         captureDisabled={!runtime.ready || capture.pending}

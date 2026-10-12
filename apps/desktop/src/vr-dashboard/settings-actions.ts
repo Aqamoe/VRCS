@@ -94,7 +94,7 @@ export function applyVrDashboardAction(settings: Settings, action: VrDashboardAc
   if (!settings.features.vr_overlay) return settings;
   if (typeof action === "string") {
     if (action.includes("osc") && !settings.features.osc_chatbox) return settings;
-    if (action.includes("ocr") && !settings.features.ocr) return settings;
+    if (action.includes("ocr") && (!settings.features.ocr || !settings.ocr.master_enabled)) return settings;
     if (action === "toggle_vision" && !settings.features.visual_question_answering) return settings;
   }
   if (typeof action === "object") {
@@ -213,9 +213,10 @@ export function applyVrDashboardAction(settings: Settings, action: VrDashboardAc
           action.endsWith("down") ? -0.05 : 0.05, 0.1, 1),
       });
     case "toggle_vision":
-      if (!settings.vision.enabled && (!settings.vision.model.trim()
+      if (!settings.vision.enabled) return settings;
+      if (!settings.vision.vr_enabled && (!settings.vision.model.trim()
         || !profiles.some((profile) => profile.id === settings.vision.profile_id && supportsVision(profile)))) return settings;
-      return patchVision(settings, { enabled: !settings.vision.enabled });
+      return patchVision(settings, { vr_enabled: !settings.vision.vr_enabled });
     case "toggle_ocr":
       return patchOcr(settings, { enabled: !settings.ocr.enabled });
     case "toggle_ocr_gesture":

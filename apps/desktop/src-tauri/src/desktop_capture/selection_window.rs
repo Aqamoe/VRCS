@@ -4,7 +4,7 @@ use std::{
     ptr::{null, null_mut},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Mutex, OnceLock,
+        OnceLock,
     },
 };
 use windows_sys::Win32::{
@@ -21,9 +21,8 @@ use windows_sys::Win32::{
     },
 };
 
-static PICKER_LOCK: Mutex<()> = Mutex::new(());
 static WINDOW_CLASS: OnceLock<bool> = OnceLock::new();
-const CLASS_NAME: windows_sys::core::PCWSTR = windows_sys::core::w!("VRCSOcrSelection");
+const CLASS_NAME: windows_sys::core::PCWSTR = windows_sys::core::w!("VRCSImageSelection");
 
 struct Picker {
     width: u32,
@@ -38,9 +37,8 @@ struct Picker {
     finished: bool,
 }
 
-/// Displays the captured client frame at its physical screen position.
-/// Runs on a blocking worker. Cancellation also closes a pending picker.
-pub fn select_region(
+#[cfg(test)]
+fn select_region(
     game_window: isize,
     width: u32,
     height: u32,
@@ -48,7 +46,24 @@ pub fn select_region(
     cancelled: &AtomicBool,
     hint: &str,
 ) -> Result<Option<Region>, String> {
-    let _lock = PICKER_LOCK.lock().map_err(|_| "desktop_ocr.unavailable")?;
+    if cancelled.load(Ordering::Acquire) {
+        return Ok(None);
+    }
+    let permit = super::reserve_picker().map_err(|_| "desktop_ocr.selection_busy")?;
+    select_region_reserved(game_window, width, height, pixels, cancelled, hint, &permit)
+}
+
+/// Runs on a blocking worker, using a reservation acquired before capture.
+/// Cancellation also closes a pending picker.
+pub fn select_region_reserved(
+    game_window: isize,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    cancelled: &AtomicBool,
+    hint: &str,
+    _permit: &super::PickerPermit,
+) -> Result<Option<Region>, String> {
     if cancelled.load(Ordering::Acquire) {
         return Ok(None);
     }
