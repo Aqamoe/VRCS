@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Glasses,
   Hand,
   Layers3,
+  RectangleGoggles,
   RefreshCw,
   RotateCcw,
   TriangleAlert,
@@ -216,21 +216,23 @@ export function VrOverlaySettingsSection({
       </div>
 
       <div className="vr-overlay-runtime-card">
-        <div className="vr-overlay-runtime-main">
-          <div>
-            <strong>{t("settings.vrOverlay.runtimeTitle")}</strong>
-            <span>{t("settings.vrOverlay.runtimeDescription")}</span>
+        {draft.vr_overlay.enabled && <>
+          <div className="vr-overlay-runtime-main">
+            <div>
+              <strong>{t("settings.vrOverlay.runtimeTitle")}</strong>
+              <span>{t("settings.vrOverlay.runtimeDescription")}</span>
+            </div>
+            <OverlayStatusBadge
+              state={runtimeState}
+              label={t(`settings.vrOverlay.runtimeStates.${runtimeStateKey}`)}
+            />
           </div>
-          <OverlayStatusBadge
-            state={runtimeState}
-            label={t(`settings.vrOverlay.runtimeStates.${runtimeStateKey}`)}
-          />
-        </div>
-        <div className="vr-overlay-runtime-facts">
-          <span>{t("settings.vrOverlay.runtimeInstalled")}: <strong>{t(status?.runtime_installed ? "common.available" : "common.unavailable")}</strong></span>
-          <span>{t("settings.vrOverlay.hmdPresent")}: <strong>{t(status?.hmd_present ? "common.available" : "common.unavailable")}</strong></span>
-          {(status?.reconnect_attempt ?? 0) > 0 && <span>{t("settings.vrOverlay.reconnectAttempt", { count: status?.reconnect_attempt })}</span>}
-        </div>
+          <div className="vr-overlay-runtime-facts">
+            <span>{t("settings.vrOverlay.runtimeInstalled")}: <strong>{t(status?.runtime_installed ? "common.available" : "common.unavailable")}</strong></span>
+            <span>{t("settings.vrOverlay.hmdPresent")}: <strong>{t(status?.hmd_present ? "common.available" : "common.unavailable")}</strong></span>
+            {(status?.reconnect_attempt ?? 0) > 0 && <span>{t("settings.vrOverlay.reconnectAttempt", { count: status?.reconnect_attempt })}</span>}
+          </div>
+        </>}
         <div className="vr-overlay-runtime-actions">
           <div className="settings-toggle-list">
             <PreferenceToggle
@@ -240,48 +242,50 @@ export function VrOverlaySettingsSection({
               onChange={(enabled) => applySettings((current) => patchVrOverlay(current, { enabled }))}
             />
           </div>
-          <button
+          {draft.vr_overlay.enabled && <button
             className="secondary-button"
             type="button"
             disabled={nativeBusy !== null || status?.state === "unsupported"}
             onClick={() => void runNativeAction("retry", retryVrOverlay)}
           >
             <RefreshCw size={15} />{t("common.retry")}
-          </button>
+          </button>}
         </div>
-        <Select
-          label={t("settings.vrOverlay.translationDisplay")}
-          value={draft.vr_overlay.translation_display}
-          options={[
-            { value: "preferred_only", label: t("settings.vrOverlay.translationDisplays.preferredOnly") },
-            { value: "all_languages", label: t("settings.vrOverlay.translationDisplays.allLanguages") },
-          ]}
-          disabled={overlayDisabled}
-          onChange={(value) => applySettings((current) => patchVrOverlay(current, {
-            translation_display: value as VrOverlayTranslationDisplay,
-          }))}
-        />
-        {(statusError || status?.last_error_detail) && (
-          <p className="vr-overlay-native-error" role="alert">
-            <TriangleAlert size={15} />{statusError || status?.last_error_detail}
-          </p>
-        )}
+        {draft.vr_overlay.enabled && <>
+          <Select
+            label={t("settings.vrOverlay.translationDisplay")}
+            value={draft.vr_overlay.translation_display}
+            options={[
+              { value: "preferred_only", label: t("settings.vrOverlay.translationDisplays.preferredOnly") },
+              { value: "all_languages", label: t("settings.vrOverlay.translationDisplays.allLanguages") },
+            ]}
+            disabled={overlayDisabled}
+            onChange={(value) => applySettings((current) => patchVrOverlay(current, {
+              translation_display: value as VrOverlayTranslationDisplay,
+            }))}
+          />
+          {(statusError || status?.last_error_detail) && (
+            <p className="vr-overlay-native-error" role="alert">
+              <TriangleAlert size={15} />{statusError || status?.last_error_detail}
+            </p>
+          )}
+        </>}
       </div>
 
-      <div className="vr-overlay-card-list">
+      {draft.vr_overlay.enabled && <div className="vr-overlay-card-list">
         <section className="vr-overlay-card" aria-labelledby="vr-overlay-headset-title">
           <div className="vr-overlay-card-heading">
             <div>
-              <Glasses size={18} />
+              <RectangleGoggles size={18} />
               <span>
                 <strong id="vr-overlay-headset-title">{t("settings.vrOverlay.headset.title")}</strong>
                 <small>{t("settings.vrOverlay.headset.description")}</small>
               </span>
             </div>
-            <OverlayStatusBadge
+            {draft.vr_overlay.headset.enabled && <OverlayStatusBadge
               state={headsetState}
               label={t(`settings.vrOverlay.resourceStates.${headsetStateKey}`)}
-            />
+            />}
           </div>
 
           <div className="settings-toggle-list vr-overlay-card-toggles">
@@ -293,61 +297,63 @@ export function VrOverlaySettingsSection({
             />
           </div>
 
-          <div className="vr-overlay-field-grid">
-            <MeterRange label={t("settings.vrOverlay.linesPerLanguage")} value={draft.vr_overlay.headset.lines_per_language} min={1} max={4} step={1} unit="" disabled={headsetDisabled} onCommit={(value) => updateHeadset("lines_per_language", value)} />
-            <MeterRange label={t("settings.vrOverlay.displaySeconds")} value={draft.vr_overlay.headset.display_seconds} min={1} max={30} step={0.5} digits={1} unit=" s" disabled={headsetDisabled} onCommit={(value) => applySettings((current) => setVrOverlayHeadsetDisplaySeconds(current, value))} />
-            <MeterRange label={t("settings.vrOverlay.fadeSeconds")} value={draft.vr_overlay.headset.fade_seconds} min={0} max={Math.min(5, draft.vr_overlay.headset.display_seconds)} step={0.1} digits={1} unit=" s" disabled={headsetDisabled} onCommit={(value) => updateHeadset("fade_seconds", value)} />
-          </div>
-
-          <fieldset className="vr-overlay-toggle-group" disabled={headsetDisabled}>
-            <legend>{t("settings.vrOverlay.sources")}</legend>
-            <PreferenceToggle title={t("settings.vrOverlay.sourceSpeaker")} checked={draft.vr_overlay.headset.include_speaker} disabled={headsetDisabled} onChange={(value) => updateHeadset("include_speaker", value)} />
-            <PreferenceToggle title={t("settings.vrOverlay.sourceMicrophone")} checked={draft.vr_overlay.headset.include_microphone} disabled={headsetDisabled} onChange={(value) => updateHeadset("include_microphone", value)} />
-            <PreferenceToggle title={t("settings.vrOverlay.sourceChatbox")} checked={draft.vr_overlay.headset.include_chatbox} disabled={headsetDisabled} onChange={(value) => updateHeadset("include_chatbox", value)} />
-          </fieldset>
-
-          <fieldset className="vr-overlay-toggle-group" disabled={headsetDisabled}>
-            <legend>{t("settings.vrOverlay.liveUpdates")}</legend>
-            <PreferenceToggle title={t("settings.vrOverlay.showRecognitionPartials")} checked={draft.vr_overlay.headset.show_partials} disabled={headsetDisabled} onChange={(value) => updateHeadset("show_partials", value)} />
-            <PreferenceToggle title={t("settings.vrOverlay.showTranslationPartials")} checked={draft.vr_overlay.headset.show_translation_partials} disabled={headsetDisabled} onChange={(value) => updateHeadset("show_translation_partials", value)} />
-          </fieldset>
-
-          <div className="vr-overlay-range-group">
-            <h3>{t("settings.vrOverlay.position")}</h3>
-            <div className="vr-overlay-range-grid">
-              <MeterRange label={t("settings.vrOverlay.horizontal")} value={draft.vr_overlay.headset.offset_x_m} {...VR_OVERLAY_POSITION_RANGES.headset.offset_x_m} digits={2} unit=" m" disabled={headsetDisabled} onCommit={(value) => updateHeadset("offset_x_m", value)} />
-              <MeterRange label={t("settings.vrOverlay.vertical")} value={draft.vr_overlay.headset.offset_y_m} {...VR_OVERLAY_POSITION_RANGES.headset.offset_y_m} digits={2} unit=" m" disabled={headsetDisabled} onCommit={(value) => updateHeadset("offset_y_m", value)} />
-              <MeterRange label={t("settings.vrOverlay.distance")} value={draft.vr_overlay.headset.distance_m} {...VR_OVERLAY_POSITION_RANGES.headset.distance_m} digits={2} unit=" m" disabled={headsetDisabled} onCommit={(value) => updateHeadset("distance_m", value)} />
+          {draft.vr_overlay.headset.enabled && <>
+            <div className="vr-overlay-field-grid">
+              <MeterRange label={t("settings.vrOverlay.linesPerLanguage")} value={draft.vr_overlay.headset.lines_per_language} min={1} max={4} step={1} unit="" disabled={headsetDisabled} onCommit={(value) => updateHeadset("lines_per_language", value)} />
+              <MeterRange label={t("settings.vrOverlay.displaySeconds")} value={draft.vr_overlay.headset.display_seconds} min={1} max={30} step={0.5} digits={1} unit=" s" disabled={headsetDisabled} onCommit={(value) => applySettings((current) => setVrOverlayHeadsetDisplaySeconds(current, value))} />
+              <MeterRange label={t("settings.vrOverlay.fadeSeconds")} value={draft.vr_overlay.headset.fade_seconds} min={0} max={Math.min(5, draft.vr_overlay.headset.display_seconds)} step={0.1} digits={1} unit=" s" disabled={headsetDisabled} onCommit={(value) => updateHeadset("fade_seconds", value)} />
             </div>
-          </div>
 
-          <div className="vr-overlay-range-group">
-            <h3>{t("settings.vrOverlay.rotation")}</h3>
-            <div className="vr-overlay-range-grid">
-              <MeterRange label={t("settings.vrOverlay.pitch")} value={draft.vr_overlay.headset.pitch_deg} {...VR_OVERLAY_POSITION_RANGES.headset.pitch_deg} unit="°" disabled={headsetDisabled} onCommit={(value) => updateHeadset("pitch_deg", value)} />
-              <MeterRange label={t("settings.vrOverlay.yaw")} value={draft.vr_overlay.headset.yaw_deg} {...VR_OVERLAY_POSITION_RANGES.headset.yaw_deg} unit="°" disabled={headsetDisabled} onCommit={(value) => updateHeadset("yaw_deg", value)} />
-              <MeterRange label={t("settings.vrOverlay.roll")} value={draft.vr_overlay.headset.roll_deg} {...VR_OVERLAY_POSITION_RANGES.headset.roll_deg} unit="°" disabled={headsetDisabled} onCommit={(value) => updateHeadset("roll_deg", value)} />
+            <fieldset className="vr-overlay-toggle-group" disabled={headsetDisabled}>
+              <legend>{t("settings.vrOverlay.sources")}</legend>
+              <PreferenceToggle title={t("settings.vrOverlay.sourceSpeaker")} checked={draft.vr_overlay.headset.include_speaker} disabled={headsetDisabled} onChange={(value) => updateHeadset("include_speaker", value)} />
+              <PreferenceToggle title={t("settings.vrOverlay.sourceMicrophone")} checked={draft.vr_overlay.headset.include_microphone} disabled={headsetDisabled} onChange={(value) => updateHeadset("include_microphone", value)} />
+              <PreferenceToggle title={t("settings.vrOverlay.sourceChatbox")} checked={draft.vr_overlay.headset.include_chatbox} disabled={headsetDisabled} onChange={(value) => updateHeadset("include_chatbox", value)} />
+            </fieldset>
+
+            <fieldset className="vr-overlay-toggle-group" disabled={headsetDisabled}>
+              <legend>{t("settings.vrOverlay.liveUpdates")}</legend>
+              <PreferenceToggle title={t("settings.vrOverlay.showRecognitionPartials")} checked={draft.vr_overlay.headset.show_partials} disabled={headsetDisabled} onChange={(value) => updateHeadset("show_partials", value)} />
+              <PreferenceToggle title={t("settings.vrOverlay.showTranslationPartials")} checked={draft.vr_overlay.headset.show_translation_partials} disabled={headsetDisabled} onChange={(value) => updateHeadset("show_translation_partials", value)} />
+            </fieldset>
+
+            <div className="vr-overlay-range-group">
+              <h3>{t("settings.vrOverlay.position")}</h3>
+              <div className="vr-overlay-range-grid">
+                <MeterRange label={t("settings.vrOverlay.horizontal")} value={draft.vr_overlay.headset.offset_x_m} {...VR_OVERLAY_POSITION_RANGES.headset.offset_x_m} digits={2} unit=" m" disabled={headsetDisabled} onCommit={(value) => updateHeadset("offset_x_m", value)} />
+                <MeterRange label={t("settings.vrOverlay.vertical")} value={draft.vr_overlay.headset.offset_y_m} {...VR_OVERLAY_POSITION_RANGES.headset.offset_y_m} digits={2} unit=" m" disabled={headsetDisabled} onCommit={(value) => updateHeadset("offset_y_m", value)} />
+                <MeterRange label={t("settings.vrOverlay.distance")} value={draft.vr_overlay.headset.distance_m} {...VR_OVERLAY_POSITION_RANGES.headset.distance_m} digits={2} unit=" m" disabled={headsetDisabled} onCommit={(value) => updateHeadset("distance_m", value)} />
+              </div>
             </div>
-          </div>
 
-          <div className="vr-overlay-range-group">
-            <h3>{t("settings.vrOverlay.appearance")}</h3>
-            <div className="vr-overlay-range-grid">
-              <MeterRange label={t("settings.vrOverlay.width")} value={draft.vr_overlay.headset.width_m} min={0.25} max={3} step={0.05} digits={2} unit=" m" disabled={headsetDisabled} onCommit={(value) => updateHeadset("width_m", value)} />
-              <MeterRange label={t("settings.vrOverlay.opacity")} value={draft.vr_overlay.headset.opacity} min={0.1} max={1} step={0.05} unit="%" disabled={headsetDisabled} displayMultiplier={100} onCommit={(value) => updateHeadset("opacity", value)} />
-              <MeterRange label={t("settings.vrOverlay.backgroundOpacity")} value={draft.vr_overlay.headset.background_opacity} min={0} max={1} step={0.05} unit="%" disabled={headsetDisabled} displayMultiplier={100} onCommit={(value) => updateHeadset("background_opacity", value)} />
-              <MeterRange label={t("settings.vrOverlay.fontSize")} value={draft.vr_overlay.headset.font_size_px} min={24} max={96} step={1} unit=" px" disabled={headsetDisabled} onCommit={(value) => updateHeadset("font_size_px", value)} />
+            <div className="vr-overlay-range-group">
+              <h3>{t("settings.vrOverlay.rotation")}</h3>
+              <div className="vr-overlay-range-grid">
+                <MeterRange label={t("settings.vrOverlay.pitch")} value={draft.vr_overlay.headset.pitch_deg} {...VR_OVERLAY_POSITION_RANGES.headset.pitch_deg} unit="°" disabled={headsetDisabled} onCommit={(value) => updateHeadset("pitch_deg", value)} />
+                <MeterRange label={t("settings.vrOverlay.yaw")} value={draft.vr_overlay.headset.yaw_deg} {...VR_OVERLAY_POSITION_RANGES.headset.yaw_deg} unit="°" disabled={headsetDisabled} onCommit={(value) => updateHeadset("yaw_deg", value)} />
+                <MeterRange label={t("settings.vrOverlay.roll")} value={draft.vr_overlay.headset.roll_deg} {...VR_OVERLAY_POSITION_RANGES.headset.roll_deg} unit="°" disabled={headsetDisabled} onCommit={(value) => updateHeadset("roll_deg", value)} />
+              </div>
             </div>
-          </div>
 
-          <div className="vr-overlay-card-actions">
-            <button className="secondary-button" type="button" disabled={headsetDisabled || nativeBusy !== null || saveState === "saving"} aria-pressed={headsetStatus?.sample_visible ?? false} onClick={() => toggleSample("headset", headsetStatus?.sample_visible ?? false)}>
-              {headsetStatus?.sample_visible ? t("settings.vrOverlay.hideSample") : t("settings.vrOverlay.showSample")}
-            </button>
-            <button className="secondary-button" type="button" disabled={headsetDisabled} onClick={() => applySettings(resetVrOverlayHeadset)}>
-              <RotateCcw size={15} />{t("settings.vrOverlay.restoreDefaults")}
-            </button>
-          </div>
+            <div className="vr-overlay-range-group">
+              <h3>{t("settings.vrOverlay.appearance")}</h3>
+              <div className="vr-overlay-range-grid">
+                <MeterRange label={t("settings.vrOverlay.width")} value={draft.vr_overlay.headset.width_m} min={0.25} max={3} step={0.05} digits={2} unit=" m" disabled={headsetDisabled} onCommit={(value) => updateHeadset("width_m", value)} />
+                <MeterRange label={t("settings.vrOverlay.opacity")} value={draft.vr_overlay.headset.opacity} min={0.1} max={1} step={0.05} unit="%" disabled={headsetDisabled} displayMultiplier={100} onCommit={(value) => updateHeadset("opacity", value)} />
+                <MeterRange label={t("settings.vrOverlay.backgroundOpacity")} value={draft.vr_overlay.headset.background_opacity} min={0} max={1} step={0.05} unit="%" disabled={headsetDisabled} displayMultiplier={100} onCommit={(value) => updateHeadset("background_opacity", value)} />
+                <MeterRange label={t("settings.vrOverlay.fontSize")} value={draft.vr_overlay.headset.font_size_px} min={24} max={96} step={1} unit=" px" disabled={headsetDisabled} onCommit={(value) => updateHeadset("font_size_px", value)} />
+              </div>
+            </div>
+
+            <div className="vr-overlay-card-actions">
+              <button className="secondary-button" type="button" disabled={headsetDisabled || nativeBusy !== null || saveState === "saving"} aria-pressed={headsetStatus?.sample_visible ?? false} onClick={() => toggleSample("headset", headsetStatus?.sample_visible ?? false)}>
+                {headsetStatus?.sample_visible ? t("settings.vrOverlay.hideSample") : t("settings.vrOverlay.showSample")}
+              </button>
+              <button className="secondary-button" type="button" disabled={headsetDisabled} onClick={() => applySettings(resetVrOverlayHeadset)}>
+                <RotateCcw size={15} />{t("settings.vrOverlay.restoreDefaults")}
+              </button>
+            </div>
+          </>}
         </section>
 
         <section className="vr-overlay-card" aria-labelledby="vr-overlay-wrist-title">
@@ -359,10 +365,10 @@ export function VrOverlaySettingsSection({
                 <small>{t("settings.vrOverlay.wrist.description")}</small>
               </span>
             </div>
-            <OverlayStatusBadge
+            {draft.vr_overlay.wrist.enabled && <OverlayStatusBadge
               state={wristState}
               label={t(`settings.vrOverlay.resourceStates.${wristStateKey}`)}
-            />
+            />}
           </div>
 
           <div className="settings-toggle-list vr-overlay-card-toggles">
@@ -374,90 +380,92 @@ export function VrOverlaySettingsSection({
             />
           </div>
 
-          <div className="vr-overlay-field-grid">
-            <Select
-              label={t("settings.vrOverlay.hand")}
-              value={draft.vr_overlay.wrist.hand}
-              options={[
-                { value: "left", label: t("settings.vrOverlay.hands.left") },
-                { value: "right", label: t("settings.vrOverlay.hands.right") },
-                { value: "dominant", label: t("settings.vrOverlay.hands.dominant") },
-              ]}
-              disabled={wristDisabled}
-              onChange={(value) => updateWrist("hand", value as VrOverlayWristSettings["hand"])}
-            />
-            <Select
-              label={t("settings.vrOverlay.dominantHand")}
-              value={draft.vr_overlay.wrist.dominant_hand}
-              options={[
-                { value: "left", label: t("settings.vrOverlay.hands.left") },
-                { value: "right", label: t("settings.vrOverlay.hands.right") },
-              ]}
-              disabled={wristDisabled || draft.vr_overlay.wrist.hand !== "dominant"}
-              onChange={(value) => updateWrist("dominant_hand", value as VrOverlayWristSettings["dominant_hand"])}
-            />
-            <MeterRange label={t("settings.vrOverlay.maxEntries")} value={draft.vr_overlay.wrist.max_entries} min={3} max={10} step={1} unit="" disabled={wristDisabled} onCommit={(value) => updateWrist("max_entries", value)} />
-            <MeterRange label={t("settings.vrOverlay.idleHideSeconds")} value={draft.vr_overlay.wrist.idle_hide_seconds} min={0} max={120} step={5} unit=" s" disabled={wristDisabled} onCommit={(value) => updateWrist("idle_hide_seconds", value)} />
-          </div>
-
-          <fieldset className="vr-overlay-toggle-group" disabled={wristDisabled}>
-            <legend>{t("settings.vrOverlay.sources")}</legend>
-            <PreferenceToggle title={t("settings.vrOverlay.sourceSpeaker")} checked={draft.vr_overlay.wrist.include_speaker} disabled={wristDisabled} onChange={(value) => updateWrist("include_speaker", value)} />
-            <PreferenceToggle title={t("settings.vrOverlay.sourceMicrophone")} checked={draft.vr_overlay.wrist.include_microphone} disabled={wristDisabled} onChange={(value) => updateWrist("include_microphone", value)} />
-            <PreferenceToggle title={t("settings.vrOverlay.sourceChatbox")} checked={draft.vr_overlay.wrist.include_chatbox} disabled={wristDisabled} onChange={(value) => updateWrist("include_chatbox", value)} />
-          </fieldset>
-
-          <fieldset className="vr-overlay-toggle-group" disabled={wristDisabled}>
-            <legend>{t("settings.vrOverlay.liveUpdates")}</legend>
-            <PreferenceToggle title={t("settings.vrOverlay.showRecognitionPartials")} checked={draft.vr_overlay.wrist.show_partials} disabled={wristDisabled} onChange={(value) => updateWrist("show_partials", value)} />
-            <PreferenceToggle title={t("settings.vrOverlay.showTranslationPartials")} checked={draft.vr_overlay.wrist.show_translation_partials} disabled={wristDisabled} onChange={(value) => updateWrist("show_translation_partials", value)} />
-          </fieldset>
-
-          <div className="vr-overlay-range-group">
-            <h3>{t("settings.vrOverlay.position")}</h3>
-            <div className="vr-overlay-range-grid">
-              <MeterRange label={t("settings.vrOverlay.horizontal")} value={draft.vr_overlay.wrist.offset_x_m} {...VR_OVERLAY_POSITION_RANGES.wrist.offset_x_m} digits={2} unit=" m" disabled={wristDisabled} onCommit={(value) => updateWrist("offset_x_m", value)} />
-              <MeterRange label={t("settings.vrOverlay.vertical")} value={draft.vr_overlay.wrist.offset_y_m} {...VR_OVERLAY_POSITION_RANGES.wrist.offset_y_m} digits={2} unit=" m" disabled={wristDisabled} onCommit={(value) => updateWrist("offset_y_m", value)} />
-              <MeterRange label={t("settings.vrOverlay.depth")} value={draft.vr_overlay.wrist.offset_z_m} {...VR_OVERLAY_POSITION_RANGES.wrist.offset_z_m} digits={2} unit=" m" disabled={wristDisabled} onCommit={(value) => updateWrist("offset_z_m", value)} />
+          {draft.vr_overlay.wrist.enabled && <>
+            <div className="vr-overlay-field-grid">
+              <Select
+                label={t("settings.vrOverlay.hand")}
+                value={draft.vr_overlay.wrist.hand}
+                options={[
+                  { value: "left", label: t("settings.vrOverlay.hands.left") },
+                  { value: "right", label: t("settings.vrOverlay.hands.right") },
+                  { value: "dominant", label: t("settings.vrOverlay.hands.dominant") },
+                ]}
+                disabled={wristDisabled}
+                onChange={(value) => updateWrist("hand", value as VrOverlayWristSettings["hand"])}
+              />
+              <Select
+                label={t("settings.vrOverlay.dominantHand")}
+                value={draft.vr_overlay.wrist.dominant_hand}
+                options={[
+                  { value: "left", label: t("settings.vrOverlay.hands.left") },
+                  { value: "right", label: t("settings.vrOverlay.hands.right") },
+                ]}
+                disabled={wristDisabled || draft.vr_overlay.wrist.hand !== "dominant"}
+                onChange={(value) => updateWrist("dominant_hand", value as VrOverlayWristSettings["dominant_hand"])}
+              />
+              <MeterRange label={t("settings.vrOverlay.maxEntries")} value={draft.vr_overlay.wrist.max_entries} min={3} max={10} step={1} unit="" disabled={wristDisabled} onCommit={(value) => updateWrist("max_entries", value)} />
+              <MeterRange label={t("settings.vrOverlay.idleHideSeconds")} value={draft.vr_overlay.wrist.idle_hide_seconds} min={0} max={120} step={5} unit=" s" disabled={wristDisabled} onCommit={(value) => updateWrist("idle_hide_seconds", value)} />
             </div>
-          </div>
 
-          <div className="vr-overlay-range-group">
-            <h3>{t("settings.vrOverlay.rotation")}</h3>
-            <div className="vr-overlay-range-grid">
-              <MeterRange label={t("settings.vrOverlay.pitch")} value={draft.vr_overlay.wrist.pitch_deg} {...VR_OVERLAY_POSITION_RANGES.wrist.pitch_deg} unit="°" disabled={wristDisabled} onCommit={(value) => updateWrist("pitch_deg", value)} />
-              <MeterRange label={t("settings.vrOverlay.yaw")} value={draft.vr_overlay.wrist.yaw_deg} {...VR_OVERLAY_POSITION_RANGES.wrist.yaw_deg} unit="°" disabled={wristDisabled} onCommit={(value) => updateWrist("yaw_deg", value)} />
-              <MeterRange label={t("settings.vrOverlay.roll")} value={draft.vr_overlay.wrist.roll_deg} {...VR_OVERLAY_POSITION_RANGES.wrist.roll_deg} unit="°" disabled={wristDisabled} onCommit={(value) => updateWrist("roll_deg", value)} />
+            <fieldset className="vr-overlay-toggle-group" disabled={wristDisabled}>
+              <legend>{t("settings.vrOverlay.sources")}</legend>
+              <PreferenceToggle title={t("settings.vrOverlay.sourceSpeaker")} checked={draft.vr_overlay.wrist.include_speaker} disabled={wristDisabled} onChange={(value) => updateWrist("include_speaker", value)} />
+              <PreferenceToggle title={t("settings.vrOverlay.sourceMicrophone")} checked={draft.vr_overlay.wrist.include_microphone} disabled={wristDisabled} onChange={(value) => updateWrist("include_microphone", value)} />
+              <PreferenceToggle title={t("settings.vrOverlay.sourceChatbox")} checked={draft.vr_overlay.wrist.include_chatbox} disabled={wristDisabled} onChange={(value) => updateWrist("include_chatbox", value)} />
+            </fieldset>
+
+            <fieldset className="vr-overlay-toggle-group" disabled={wristDisabled}>
+              <legend>{t("settings.vrOverlay.liveUpdates")}</legend>
+              <PreferenceToggle title={t("settings.vrOverlay.showRecognitionPartials")} checked={draft.vr_overlay.wrist.show_partials} disabled={wristDisabled} onChange={(value) => updateWrist("show_partials", value)} />
+              <PreferenceToggle title={t("settings.vrOverlay.showTranslationPartials")} checked={draft.vr_overlay.wrist.show_translation_partials} disabled={wristDisabled} onChange={(value) => updateWrist("show_translation_partials", value)} />
+            </fieldset>
+
+            <div className="vr-overlay-range-group">
+              <h3>{t("settings.vrOverlay.position")}</h3>
+              <div className="vr-overlay-range-grid">
+                <MeterRange label={t("settings.vrOverlay.horizontal")} value={draft.vr_overlay.wrist.offset_x_m} {...VR_OVERLAY_POSITION_RANGES.wrist.offset_x_m} digits={2} unit=" m" disabled={wristDisabled} onCommit={(value) => updateWrist("offset_x_m", value)} />
+                <MeterRange label={t("settings.vrOverlay.vertical")} value={draft.vr_overlay.wrist.offset_y_m} {...VR_OVERLAY_POSITION_RANGES.wrist.offset_y_m} digits={2} unit=" m" disabled={wristDisabled} onCommit={(value) => updateWrist("offset_y_m", value)} />
+                <MeterRange label={t("settings.vrOverlay.depth")} value={draft.vr_overlay.wrist.offset_z_m} {...VR_OVERLAY_POSITION_RANGES.wrist.offset_z_m} digits={2} unit=" m" disabled={wristDisabled} onCommit={(value) => updateWrist("offset_z_m", value)} />
+              </div>
             </div>
-          </div>
 
-          <div className="vr-overlay-range-group">
-            <h3>{t("settings.vrOverlay.appearance")}</h3>
-            <div className="vr-overlay-range-grid">
-              <MeterRange label={t("settings.vrOverlay.width")} value={draft.vr_overlay.wrist.width_m} min={0.1} max={1} step={0.01} digits={2} unit=" m" disabled={wristDisabled} onCommit={(value) => updateWrist("width_m", value)} />
-              <MeterRange label={t("settings.vrOverlay.opacity")} value={draft.vr_overlay.wrist.opacity} min={0.1} max={1} step={0.05} unit="%" disabled={wristDisabled} displayMultiplier={100} onCommit={(value) => updateWrist("opacity", value)} />
-              <MeterRange label={t("settings.vrOverlay.backgroundOpacity")} value={draft.vr_overlay.wrist.background_opacity} min={0} max={1} step={0.05} unit="%" disabled={wristDisabled} displayMultiplier={100} onCommit={(value) => updateWrist("background_opacity", value)} />
-              <MeterRange label={t("settings.vrOverlay.fontSize")} value={draft.vr_overlay.wrist.font_size_px} min={18} max={72} step={1} unit=" px" disabled={wristDisabled} onCommit={(value) => updateWrist("font_size_px", value)} />
+            <div className="vr-overlay-range-group">
+              <h3>{t("settings.vrOverlay.rotation")}</h3>
+              <div className="vr-overlay-range-grid">
+                <MeterRange label={t("settings.vrOverlay.pitch")} value={draft.vr_overlay.wrist.pitch_deg} {...VR_OVERLAY_POSITION_RANGES.wrist.pitch_deg} unit="°" disabled={wristDisabled} onCommit={(value) => updateWrist("pitch_deg", value)} />
+                <MeterRange label={t("settings.vrOverlay.yaw")} value={draft.vr_overlay.wrist.yaw_deg} {...VR_OVERLAY_POSITION_RANGES.wrist.yaw_deg} unit="°" disabled={wristDisabled} onCommit={(value) => updateWrist("yaw_deg", value)} />
+                <MeterRange label={t("settings.vrOverlay.roll")} value={draft.vr_overlay.wrist.roll_deg} {...VR_OVERLAY_POSITION_RANGES.wrist.roll_deg} unit="°" disabled={wristDisabled} onCommit={(value) => updateWrist("roll_deg", value)} />
+              </div>
             </div>
-          </div>
 
-          <div className="vr-overlay-device-summary">
-            <span>{t("settings.vrOverlay.boundRole")}</span>
-            <strong>{wristStatus?.bound_role ? t(`settings.vrOverlay.hands.${wristStatus.bound_role}`) : t("common.unavailable")}</strong>
-            <span>{t("settings.vrOverlay.trackedDevice")}</span>
-            <strong>{t(wristStatus?.tracked_device_available ? "common.available" : "common.unavailable")}</strong>
-          </div>
+            <div className="vr-overlay-range-group">
+              <h3>{t("settings.vrOverlay.appearance")}</h3>
+              <div className="vr-overlay-range-grid">
+                <MeterRange label={t("settings.vrOverlay.width")} value={draft.vr_overlay.wrist.width_m} min={0.1} max={1} step={0.01} digits={2} unit=" m" disabled={wristDisabled} onCommit={(value) => updateWrist("width_m", value)} />
+                <MeterRange label={t("settings.vrOverlay.opacity")} value={draft.vr_overlay.wrist.opacity} min={0.1} max={1} step={0.05} unit="%" disabled={wristDisabled} displayMultiplier={100} onCommit={(value) => updateWrist("opacity", value)} />
+                <MeterRange label={t("settings.vrOverlay.backgroundOpacity")} value={draft.vr_overlay.wrist.background_opacity} min={0} max={1} step={0.05} unit="%" disabled={wristDisabled} displayMultiplier={100} onCommit={(value) => updateWrist("background_opacity", value)} />
+                <MeterRange label={t("settings.vrOverlay.fontSize")} value={draft.vr_overlay.wrist.font_size_px} min={18} max={72} step={1} unit=" px" disabled={wristDisabled} onCommit={(value) => updateWrist("font_size_px", value)} />
+              </div>
+            </div>
 
-          <div className="vr-overlay-card-actions">
-            <button className="secondary-button" type="button" disabled={wristDisabled || nativeBusy !== null || saveState === "saving"} aria-pressed={wristStatus?.sample_visible ?? false} onClick={() => toggleSample("wrist", wristStatus?.sample_visible ?? false)}>
-              {wristStatus?.sample_visible ? t("settings.vrOverlay.hideSample") : t("settings.vrOverlay.showSample")}
-            </button>
-            <button className="secondary-button" type="button" disabled={wristDisabled} onClick={() => applySettings(resetVrOverlayWrist)}>
-              <RotateCcw size={15} />{t("settings.vrOverlay.restoreDefaults")}
-            </button>
-          </div>
+            <div className="vr-overlay-device-summary">
+              <span>{t("settings.vrOverlay.boundRole")}</span>
+              <strong>{wristStatus?.bound_role ? t(`settings.vrOverlay.hands.${wristStatus.bound_role}`) : t("common.unavailable")}</strong>
+              <span>{t("settings.vrOverlay.trackedDevice")}</span>
+              <strong>{t(wristStatus?.tracked_device_available ? "common.available" : "common.unavailable")}</strong>
+            </div>
+
+            <div className="vr-overlay-card-actions">
+              <button className="secondary-button" type="button" disabled={wristDisabled || nativeBusy !== null || saveState === "saving"} aria-pressed={wristStatus?.sample_visible ?? false} onClick={() => toggleSample("wrist", wristStatus?.sample_visible ?? false)}>
+                {wristStatus?.sample_visible ? t("settings.vrOverlay.hideSample") : t("settings.vrOverlay.showSample")}
+              </button>
+              <button className="secondary-button" type="button" disabled={wristDisabled} onClick={() => applySettings(resetVrOverlayWrist)}>
+                <RotateCcw size={15} />{t("settings.vrOverlay.restoreDefaults")}
+              </button>
+            </div>
+          </>}
         </section>
-      </div>
+      </div>}
     </div>
   );
 }

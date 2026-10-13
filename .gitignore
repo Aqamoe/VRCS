@@ -43,6 +43,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Headless browser test profiles
+apps/desktop/tests/.*-browser-*/
+
 # Rust and Tauri generated output
 target/
 /.build/

@@ -7,7 +7,7 @@ import { build } from "esbuild";
 
 const { chromium } = createRequire(import.meta.url)("playwright");
 
-for (const field of ["model", "profile_id"]) {
+for (const field of ["model", "profile_id", "thinking_enabled"]) {
   test(`vision ${field} changes release the old test before its body settles`, { timeout: 30000 }, async () => {
     const resolveDir = join(dirname(fileURLToPath(import.meta.url)), "..");
     const bundle = await build({
@@ -41,7 +41,7 @@ for (const field of ["model", "profile_id"]) {
             enabled_capabilities: ['image_understanding'],
           }));
           function Harness() {
-            const [config, setConfig] = useState({ ...DEFAULT_VISION_SETTINGS, profile_id: 'first-profile', model: 'first-model' });
+            const [config, setConfig] = useState({ ...DEFAULT_VISION_SETTINGS, enabled: true, profile_id: 'first-profile', model: 'first-model' });
             window.patchConfig = patch => setConfig(current => ({ ...current, ...patch }));
             return <VisionSettingsCard config={config} profiles={profiles} vrAvailable={true} disabled={false}
               onChange={window.patchConfig} onSelectProfile={profile_id => window.patchConfig({ profile_id })} />;
@@ -61,7 +61,8 @@ for (const field of ["model", "profile_id"]) {
       page.on("pageerror", error => errors.push(error.message));
       await page.setContent('<div id="root"></div>');
       await page.addScriptTag({ type: "module", content: bundle.outputFiles[0].text });
-      await page.locator("summary").filter({ hasText: "settings.vision.imageTest" }).click();
+      const imageTest = page.locator("details").filter({ has: page.locator("summary").filter({ hasText: "settings.vision.imageTest" }) });
+      await imageTest.locator("summary").click();
       const start = page.getByRole("button", { name: "settings.vision.testButton", exact: true });
       const testing = page.getByRole("button", { name: "settings.vision.testing", exact: true });
       await start.click();
@@ -69,7 +70,7 @@ for (const field of ["model", "profile_id"]) {
       assert.equal(await testing.isDisabled(), true);
 
       await page.evaluate(field => window.patchConfig({
-        [field]: field === "model" ? "second-model" : "second-profile",
+        [field]: field === "thinking_enabled" ? true : field === "model" ? "second-model" : "second-profile",
       }), field);
       await start.waitFor();
       assert.equal(await page.evaluate(() => window.pending[0].signal.aborted), true);
@@ -82,12 +83,12 @@ for (const field of ["model", "profile_id"]) {
       // Flush promise continuations and React's scheduled render before checking old finally.
       await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)));
       assert.equal(await testing.isDisabled(), true, "old finally must not reset the new test");
-      assert.equal(await page.getByRole("status").count(), 0);
-      assert.equal(await page.getByRole("alert").count(), 0);
+      assert.equal(await imageTest.getByRole("status").count(), 0);
+      assert.equal(await imageTest.getByRole("alert").count(), 0);
       assert.equal(await page.evaluate(() => window.pending[1].signal.aborted), false);
 
       await page.evaluate(() => window.pending[1].complete("New answer"));
-      await page.getByRole("status").filter({ hasText: "New answer" }).waitFor();
+      await imageTest.getByRole("status").filter({ hasText: "New answer" }).waitFor();
       assert.equal(await start.isEnabled(), true);
       await start.click();
       await page.waitForFunction(() => window.pending.length === 3 && window.pending[2].reading);

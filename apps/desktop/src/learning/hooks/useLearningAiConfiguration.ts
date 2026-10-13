@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 import { providersApi } from "../../providers/api";
 import { localizedError } from "../../app/app-utils";
 import { explanationLanguageForUiLocale } from "../learning";
-import type { ApiProfileView } from "../../providers/types";
+import type { ApiModelDetails, ApiProfileView } from "../../providers/types";
+import { normalizeReasoningControlForModel } from "../../translation/translation-thinking";
+import type { ReasoningSetting } from "../../translation/translation-thinking";
 import {
   learningPreferencesSnapshot,
   normalizeLearningLevel,
@@ -21,6 +23,7 @@ export function useLearningAiConfiguration(active: boolean) {
   const [profiles, setProfiles] = useState<ApiProfileView[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [models, setModels] = useState<string[]>([]);
+  const [modelDetails, setModelDetails] = useState<Record<string, ApiModelDetails>>({});
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState("");
   const serialized = useSyncExternalStore(subscribeLearningPreferences, learningPreferencesSnapshot);
@@ -52,7 +55,7 @@ export function useLearningAiConfiguration(active: boolean) {
       setProfiles(available);
       setPreferences((current) => {
         if (available.some((profile) => profile.id === current.profileId)) return current;
-        return { ...current, profileId: available[0]?.id ?? "", model: "" };
+        return { ...current, profileId: available[0]?.id ?? "", model: "", reasoningControl: null };
       });
     } catch (reason) {
       if (requestId === profileRequestRef.current) {
@@ -71,26 +74,33 @@ export function useLearningAiConfiguration(active: boolean) {
   useEffect(() => {
     if (!active || !selectedProfile) {
       setModels([]);
+      setModelDetails({});
       setModelsError("");
       setModelsLoading(false);
       return;
     }
     if (!selectedProfile.capabilities.supports_model_listing) {
       setModels([]);
+      setModelDetails({});
       setModelsError("");
       setModelsLoading(false);
       return;
     }
     const requestId = ++modelRequestRef.current;
+    setModelDetails({});
     setModelsLoading(true);
     setModelsError("");
     void providersApi.apiProfileModels(selectedProfile.id)
       .then((response) => {
-        if (requestId === modelRequestRef.current) setModels(response.models);
+        if (requestId === modelRequestRef.current) {
+          setModels(response.models);
+          setModelDetails(response.model_details ?? {});
+        }
       })
       .catch((reason) => {
         if (requestId === modelRequestRef.current) {
           setModels([]);
+          setModelDetails({});
           setModelsError(localizedError(reason, t, "errors.learning.models"));
         }
       })
@@ -111,6 +121,7 @@ export function useLearningAiConfiguration(active: boolean) {
     profiles,
     profilesLoading,
     models,
+    modelDetails,
     modelsLoading,
     modelsError,
     selectedProfile,
@@ -120,8 +131,24 @@ export function useLearningAiConfiguration(active: boolean) {
       ...current,
       profileId,
       model: "",
+      reasoningControl: null,
     })),
-    setModel: (model: string) => setPreferences((current) => ({ ...current, model })),
+    setModel: (model: string) => setPreferences((current) => ({
+      ...current,
+      model,
+      reasoningControl: normalizeReasoningControlForModel(
+        selectedProfile?.provider, model, current.reasoningControl, modelDetails[model],
+      ),
+    })),
+    setReasoningControl: (patch: {
+      thinking_enabled?: boolean;
+      reasoning_control?: ReasoningSetting | null;
+    }) => setPreferences((current) => ({
+      ...current,
+      thinkingEnabled: patch.thinking_enabled ?? current.thinkingEnabled,
+      reasoningControl: patch.reasoning_control === undefined
+        ? current.reasoningControl : patch.reasoning_control,
+    })),
     setExplanationLanguage: (explanationLanguage: string) => setPreferences((current) => ({
       ...current,
       explanationLanguage,

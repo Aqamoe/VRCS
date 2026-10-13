@@ -132,6 +132,32 @@ export interface ApiProfileView extends ApiProfile {
 
 export interface ApiModelCatalog {
   models: string[];
+  model_details?: Record<string, ApiModelDetails>;
+}
+
+export interface ApiModelDetails {
+  input_modalities?: string[] | null;
+  output_modalities?: string[] | null;
+  context_tokens?: number | null;
+  max_output_tokens?: number | null;
+  temperature?: boolean | null;
+  structured_output?: boolean | null;
+  tool_call?: boolean | null;
+  status?: string | null;
+  canonical_model_id?: string | null;
+  field_sources?: Record<string, string>;
+  updated_at?: number | null;
+  stale?: boolean;
+  reasoning?: {
+    can_disable?: boolean | null;
+    supports_max_tokens?: boolean | null;
+    supports_dynamic_budget?: boolean | null;
+    mandatory?: boolean | null;
+    supported_efforts?: string[] | null;
+    default_effort?: string | null;
+    supported?: boolean | null;
+    controls?: Array<{ type: "toggle" } | { type: "effort"; values: string[] } | { type: "budget_tokens"; min?: number | null; max?: number | null }>;
+  } | null;
 }
 
 export interface ConnectionDiagnosticCheck {

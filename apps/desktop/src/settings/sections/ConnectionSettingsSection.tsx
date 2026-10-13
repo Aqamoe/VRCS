@@ -116,17 +116,24 @@ export function ConnectionSettingsSection({
       </div>
       <div className="connections-settings-list">
         {features.osc_chatbox && <section className="connections-settings-group osc-section" aria-labelledby="connections-osc-title">
-          <div className="section-heading">
+          <div className="section-heading connections-feature-heading">
             <div>
               <RadioTower size={18} />
               <h3 id="connections-osc-title">{t("settings.osc.title")}</h3>
             </div>
-            {draft.osc.enabled && (
-              <button className="secondary-button" type="button" disabled={testing || saveState === "saving"} onClick={() => void test()}>
-                <Send size={15} />
-                {testing ? t("settings.osc.testing") : t("settings.osc.test")}
-              </button>
-            )}
+            <div className="connections-heading-actions">
+              {draft.osc.enabled && (
+                <button className="secondary-button" type="button" disabled={testing || saveState === "saving"} onClick={() => void test()}>
+                  <Send size={15} />
+                  {testing ? t("settings.osc.testing") : t("settings.osc.test")}
+                </button>
+              )}
+              <PreferenceToggle title={t("settings.osc.enable")} hideLabel checked={draft.osc.enabled}
+                disabled={false} onChange={(enabled) => applySettings((current) => ({
+                  ...current,
+                  osc: { ...current.osc, enabled },
+                }))} />
+            </div>
           </div>
 
           {draft.osc.enabled && (
@@ -140,69 +147,60 @@ export function ConnectionSettingsSection({
             </div>
           )}
 
-          <div className={`osc-panel ${draft.osc.enabled ? "enabled" : ""}`}>
-            <div className="settings-toggle-list settings-feature-toggle">
-              <PreferenceToggle
-                title={t("settings.osc.enable")}
-                checked={draft.osc.enabled}
-                disabled={false}
-                onChange={(enabled) => applySettings((current) => ({
-                  ...current,
-                  osc: { ...current.osc, enabled },
-                }))}
-              />
-              <div className="osc-strategy-setting">
-                <strong>{t("settings.osc.translationStrategy")}</strong>
-                <Select
-                  label={t("settings.osc.translationStrategy")}
-                  hideLabel
-                  value={draft.osc.translation_strategy}
+          {draft.osc.enabled && (
+            <div className="osc-panel enabled">
+              <div className="settings-toggle-list settings-feature-toggle">
+                <div className="osc-strategy-setting">
+                  <strong>{t("settings.osc.translationStrategy")}</strong>
+                  <Select
+                    label={t("settings.osc.translationStrategy")}
+                    hideLabel
+                    value={draft.osc.translation_strategy}
+                    disabled={false}
+                    options={[
+                      { value: "preferred_only", label: t("settings.osc.translationStrategies.preferredOnly") },
+                      { value: "round_robin", label: t("settings.osc.translationStrategies.roundRobin") },
+                      { value: "all_languages", label: t("settings.osc.translationStrategies.allLanguages") },
+                    ]}
+                    onChange={(translation_strategy) => applySettings((current) => ({
+                      ...current,
+                      osc: {
+                        ...current.osc,
+                        translation_strategy: translation_strategy as Settings["osc"]["translation_strategy"],
+                      },
+                    }))}
+                  />
+                </div>
+                <PreferenceToggle
+                  title={t("settings.osc.preserveOriginal")}
+                  description={t("settings.osc.preserveOriginalDescription")}
+                  checked={draft.osc.preserve_original_text}
                   disabled={false}
-                  options={[
-                    { value: "preferred_only", label: t("settings.osc.translationStrategies.preferredOnly") },
-                    { value: "round_robin", label: t("settings.osc.translationStrategies.roundRobin") },
-                    { value: "all_languages", label: t("settings.osc.translationStrategies.allLanguages") },
-                  ]}
-                  onChange={(translation_strategy) => applySettings((current) => ({
+                  onChange={(preserve_original_text) => applySettings((current) => ({
                     ...current,
-                    osc: {
-                      ...current.osc,
-                      translation_strategy: translation_strategy as Settings["osc"]["translation_strategy"],
-                    },
+                    osc: { ...current.osc, preserve_original_text },
+                  }))}
+                />
+                <PreferenceToggle
+                  title={t("settings.osc.muteSync")}
+                  checked={draft.osc.mute_sync_enabled}
+                  disabled={false}
+                  onChange={(mute_sync_enabled) => applySettings((current) => ({
+                    ...current,
+                    osc: { ...current.osc, mute_sync_enabled },
+                  }))}
+                />
+                <PreferenceToggle
+                  title={t("settings.osc.muteToast")}
+                  checked={draft.osc.mute_status_toast_enabled}
+                  disabled={false}
+                  onChange={(mute_status_toast_enabled) => applySettings((current) => ({
+                    ...current,
+                    osc: { ...current.osc, mute_status_toast_enabled },
                   }))}
                 />
               </div>
-              <PreferenceToggle
-                title={t("settings.osc.preserveOriginal")}
-                description={t("settings.osc.preserveOriginalDescription")}
-                checked={draft.osc.preserve_original_text}
-                disabled={false}
-                onChange={(preserve_original_text) => applySettings((current) => ({
-                  ...current,
-                  osc: { ...current.osc, preserve_original_text },
-                }))}
-              />
-              <PreferenceToggle
-                title={t("settings.osc.muteSync")}
-                checked={draft.osc.mute_sync_enabled}
-                disabled={false}
-                onChange={(mute_sync_enabled) => applySettings((current) => ({
-                  ...current,
-                  osc: { ...current.osc, mute_sync_enabled },
-                }))}
-              />
-              <PreferenceToggle
-                title={t("settings.osc.muteToast")}
-                checked={draft.osc.mute_status_toast_enabled}
-                disabled={false}
-                onChange={(mute_status_toast_enabled) => applySettings((current) => ({
-                  ...current,
-                  osc: { ...current.osc, mute_status_toast_enabled },
-                }))}
-              />
-            </div>
 
-            {draft.osc.enabled && (
               <div className="osc-endpoint-row">
                 <div className="osc-endpoint-field">
                   <span>{t("settings.osc.address")}</span>
@@ -228,8 +226,8 @@ export function ConnectionSettingsSection({
                   {portError && <small id="osc-port-help" className="error">{portError}</small>}
                 </label>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </section>}
         {features.anki && <AnkiSettingsSection
           draft={draft}

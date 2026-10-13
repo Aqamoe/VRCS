@@ -70,6 +70,8 @@ export interface VisionSettings {
   desktop_shortcut: string;
   profile_id: string | null;
   model: string;
+  thinking_enabled: boolean;
+  reasoning_control?: import("../translation/translation-thinking").ReasoningSetting | null;
   answer_language: string;
   system_prompt: string;
   max_capture_seconds: number;
@@ -95,6 +97,7 @@ export interface TranslationTargetSettings {
   model: string;
   model_by_profile?: Record<string, string>;
   thinking_enabled: boolean;
+  reasoning_control?: import("../translation/translation-thinking").ReasoningSetting | null;
 }
 
 export type OscTranslationStrategy = "preferred_only" | "round_robin" | "all_languages";

@@ -91,7 +91,7 @@ export function useAppWorkspace({
   });
   const vrchatMuteToast = useVrchatMuteToast({
     settingsReady: settings.value !== null,
-    enabled: Boolean(settings.value?.features.osc_chatbox && settings.value.osc.mute_status_toast_enabled),
+    enabled: Boolean(settings.value?.features.osc_chatbox && settings.value.osc.enabled && settings.value.osc.mute_status_toast_enabled),
     status: runtime.vrchatMuteStatus,
   });
   const { interfaceScale, setInterfaceScale } = useInterfaceScale(runtime.reportError);

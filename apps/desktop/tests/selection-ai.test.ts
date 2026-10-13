@@ -13,6 +13,8 @@ const preferences: LearningPreferences = {
   model: " model-one ",
   explanationLanguage: "zh-CN",
   explanationLevel: "intermediate",
+  thinkingEnabled: false,
+  reasoningControl: null,
 };
 
 const target = {
@@ -46,5 +48,18 @@ test("builds a selection query from the shared selection target", () => {
     model: "model-one",
     explanation_language: "zh-CN",
     level: "intermediate",
+    thinking_enabled: false,
+    reasoning_control: null,
   });
+});
+
+test("forwards the saved reasoning setting to Ask AI", () => {
+  const reasoningControl = { type: "effort", value: "high" } as const;
+  const input = selectionQueryInput(target, "Explain", {
+    ...preferences,
+    thinkingEnabled: true,
+    reasoningControl,
+  });
+  assert.equal(input.thinking_enabled, true);
+  assert.deepEqual(input.reasoning_control, reasoningControl);
 });

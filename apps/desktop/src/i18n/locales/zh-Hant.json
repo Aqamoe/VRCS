@@ -90,7 +90,7 @@
       "smartTruncate": "智慧截短後傳送",
       "send": "傳送到 VRChat",
       "sending": "正在傳送…",
-      "oscDisabled": "請先在設定中啟用 OSC Chatbox 輸出。",
+      "oscDisabled": "請先在設定中啟用 OSC。",
       "errors": { "translate": "無法翻譯此則訊息。", "send": "無法傳送 Chatbox 訊息。" }
     },
     "capture": {
@@ -524,6 +524,30 @@
       }
     },
     "settings": {
+      "reasoning": {
+        "strength": "思考強度",
+        "applicationDefault": "應用程式預設",
+        "description": "較高強度可能增加等待時間和 token 用量。應用程式預設沿用原有請求策略。",
+        "mandatory": "此模型始終啟用思考。",
+        "unknown": "尚未確認此模型的思考調整能力。",
+        "budget": "Token 預算",
+        "budgetTokens": "思考 token 預算",
+        "budgetRange": "支援預算：{{min}}–{{max}} token。",
+        "automatic": "模型自動",
+        "unavailable": "儲存的思考設定暫不可用，請選擇其他值或應用程式預設。",
+        "reset": "已為此模型還原應用程式預設思考強度。",
+        "remainingTokens": "輸出上限內剩餘答案額度：{{count}} token。",
+        "invalidBudget": "請輸入支援範圍內的整數預算。",
+        "efforts": {
+          "minimal": "最低",
+          "low": "低",
+          "medium": "中",
+          "high": "高",
+          "xhigh": "超高",
+          "max": "最高",
+          "default": "模型預設"
+        }
+      },
       "shortcut": {
         "record": "修改",
         "cancel": "取消",
@@ -552,6 +576,7 @@
         "noProfiles": "沒有可用設定檔。請在 API 設定中新增或編輯設定檔，並啟用圖像理解。",
         "unavailableProfile": "所選設定檔無法使用",
         "model": "支援圖片的模型",
+        "thinkingMode": "思考模式",
         "selectModel": "選擇模型",
         "noModels": "沒有可用模型。請檢查 API 設定檔後重新整理清單。",
         "savedModelUnavailable": "已儲存的模型不在目前清單中。可保留原設定，或選擇可用模型。",
@@ -658,6 +683,8 @@
           "timeout": "處理逾時",
           "viewChanged": "視圖已變更，請重新掃描",
           "unavailable": "文字辨識無法使用",
+          "disabled": "OCR 已關閉",
+          "enableOcr": "請在設定中啟用 OCR 後再辨識文字",
           "authentication": "身分驗證失敗",
           "credentialsMissing": "缺少文字辨識服務憑證",
           "rateLimit": "已達服務請求頻率限制",
@@ -1159,6 +1186,8 @@
             "llm_tls_failed": "TLS 驗證失敗，請檢查 HTTPS 位址和憑證。",
             "llm_network_failed": "無法連線服務，請檢查網路和 Base URL。",
             "llm_authentication_failed": "驗證失敗，請檢查 API 金鑰或驗證方式。",
+            "llm_payment_required": "AI 服務餘額不足或已達到消費上限，請檢查帳戶餘額和限額。",
+            "llm_permission_denied": "AI 服務拒絕了此請求，請檢查模型存取權限、帳戶權限和內容政策。",
             "llm_path_not_found": "API 路徑不存在，請確認 Base URL 包含正確的 /v1 路徑。",
             "llm_models_unsupported": "模型清單不可用；可手動輸入模型名稱後繼續測試。",
             "llm_model_required": "請先手動輸入模型名稱。",
@@ -1399,8 +1428,8 @@
       "osc": {
         "title": "OSC",
 
-        "enable": "啟用 Chatbox 輸出",
-        "enableDescription": "只傳送你麥克風字幕的最終版本，絕不傳送其他人的聲音或部分結果。",
+        "enable": "啟用 OSC",
+        "enableDescription": "統一控制聊天框輸出、VRChat 靜音同步和靜音狀態提示。",
         "translationStrategy": "OSC 多語言傳送",
         "translationStrategies": { "preferredOnly": "僅偏好語言", "roundRobin": "輪流傳送", "allLanguages": "同時顯示所有語言" },
         "preserveOriginal": "輸出中保留原文",
@@ -1423,7 +1452,7 @@
         "testFailed": "無法傳送測試訊息，請檢查設定和連線埠。",
         "statusHint": "UDP 不提供送達確認；請使用 VRChat 的 OSC Debug 確認是否收到。",
         "status": {
-          "disabled": "聊天框輸出已關閉",
+          "disabled": "OSC 已關閉",
           "ready": "OSC 傳送器就緒",
           "muted": "因 VRChat 靜音而暫停傳送",
           "unknown": "未讀取到 VRChat 靜音狀態，傳送已暫停",
@@ -1571,7 +1600,7 @@
         "over_limit": "此訊息有 {{count}} 個字元，上限為 {{limit}} 個字元。", "history_store_failed": "訊息已處理，但無法儲存其歷史記錄。", "conversation_store_failed": "訊息已傳送，但無法加入目前對話。"
       },
       "osc": {
-        "disabled": "OSC Chatbox 輸出已停用。", "blocked_vrchat_muted": "VRChat 目前處於靜音狀態，因此未傳送訊息。", "blocked_mute_unknown": "VRCS 正在確認 VRChat 的靜音狀態，請稍後再試。",
+        "disabled": "OSC 已停用。", "blocked_vrchat_muted": "VRChat 目前處於靜音狀態，因此未傳送訊息。", "blocked_mute_unknown": "VRCS 正在確認 VRChat 的靜音狀態，請稍後再試。",
         "queue_full": "OSC 傳送佇列已滿，請稍後再試。", "send_timeout": "OSC 傳送逾時。", "send_cancelled": "OSC 設定已變更，因此取消傳送。", "send_failed": "無法傳送至本機 VRChat OSC 連接埠。"
       },
       "apiProfiles": {
@@ -1636,7 +1665,12 @@
         "draft_missing": "請先建立並儲存卡片草稿，再匯出至 Anki。"
       },
       "llm": {
+        "reasoning_unsupported": "所選模型不支援此思考設定。",
+        "reasoning_budget_invalid": "思考預算無效或未為答案保留輸出額度。",
+        "reasoning_capability_unavailable": "無法確認此思考設定是否受支援，請重新整理模型或選擇應用程式預設。",
         "authentication_failed": "LLM 服務拒絕了 API 認證資料。",
+        "payment_required": "AI 服務餘額不足或已達到消費上限，請檢查帳戶餘額和限額。",
+        "permission_denied": "AI 服務拒絕了此請求，請檢查模型存取權限、帳戶權限和內容政策。",
         "rate_limited": "LLM 請求過於頻繁，請稍後重試。",
         "provider_unavailable": "LLM 服務暫時無法使用。",
         "timeout": "LLM 請求逾時。",

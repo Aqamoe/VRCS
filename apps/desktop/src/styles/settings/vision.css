@@ -1,5 +1,5 @@
 .vision-settings-group .vr-overlay-card-heading strong { font-size: var(--settings-text-label); }
-.vision-settings-details { min-width: 0; padding-top: 14px; border-top: 1px solid var(--border); }
+.vision-settings-details { min-width: 0; padding-top: 12px; border-top: 1px solid var(--border); }
 .vision-settings-details > summary {
   display: flex;
   align-items: center;
@@ -16,7 +16,7 @@
 .vision-settings-details > summary:focus-visible { outline: 3px solid var(--primary); outline-offset: 4px; border-radius: var(--radius-sm); }
 .vision-settings-details > summary > svg { flex: 0 0 auto; color: var(--text-secondary); transition: transform 150ms ease-out; }
 .vision-settings-details[open] > summary > svg { transform: rotate(180deg); }
-.vision-settings-details > :not(summary) { margin-top: 14px; }
+.vision-settings-details > :not(summary) { margin-top: 12px; }
 .vision-settings-note {
   margin: 0;
   color: var(--text-secondary);

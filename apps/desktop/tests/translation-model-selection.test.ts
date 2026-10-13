@@ -10,6 +10,19 @@ import {
 import type { ApiProfileView } from "../src/providers/types.ts";
 import type { TranslationTargetSettings } from "../src/settings/types.ts";
 
+test("OpenRouter prefers non-reasoning translations and preserves saved selections", () => {
+  const models = ["openai/gpt-5-mini", "google/gemini-2.5-flash", "openai/gpt-4o-mini"];
+  assert.equal(selectTranslationModel("openrouter", models, ""), "openai/gpt-4o-mini");
+  assert.equal(selectTranslationModel("openrouter", models, "openai/gpt-5-mini"), "openai/gpt-5-mini");
+});
+
+test("explicit text modalities override name heuristics and exclude audio-only inputs", () => {
+  assert.equal(selectTranslationModel("openai", ["whisper", "image-chat"], "", {
+    whisper: { input_modalities: ["audio"], output_modalities: ["text"] },
+    "image-chat": { input_modalities: ["text", "image"], output_modalities: ["text"] },
+  }), "image-chat");
+});
+
 function profile(provider: string, supportsModelListing = true): ApiProfileView {
   return {
     id: provider,

@@ -1,14 +1,26 @@
 .dictionary-file-input { display: none; }
 
 .system-settings-list,
-.learning-settings-list,
-.connections-settings-list { display: grid; gap: 0; }
+.learning-settings-list { display: grid; gap: 0; }
+.connections-settings-list { display: grid; gap: var(--settings-group-gap); }
+.connections-settings-group {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: var(--settings-card-padding);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.connections-settings-group > .section-heading.connections-feature-heading { align-items: center; flex-direction: row; margin-bottom: 0; }
+.connections-settings-group > .connections-feature-heading > div:first-child { flex: 1; }
+.connections-settings-group > .connections-feature-heading > .connections-heading-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
+.connections-settings-group .connections-feature-heading .settings-toggle-row { display: flex; min-height: 0; flex: 0 0 auto; align-items: center; padding: 0; }
+.connections-settings-group .connections-feature-heading h3 { font-size: var(--settings-text-group-title); }
 .system-settings-group + .system-settings-group,
-.learning-settings-group + .learning-settings-group,
-.connections-settings-group + .connections-settings-group { padding-top: var(--settings-group-gap); }
+.learning-settings-group + .learning-settings-group { padding-top: var(--settings-group-gap); }
 .system-settings-group > .section-heading,
-.learning-settings-group > .section-heading,
-.connections-settings-group > .section-heading { margin-bottom: 14px; }
+.learning-settings-group > .section-heading { margin-bottom: 14px; }
 .system-features-group { interpolate-size: allow-keywords; }
 .system-features-group > summary.section-heading { min-height: var(--settings-control-height); margin-bottom: 0; list-style: none; cursor: pointer; }
 .system-features-group > summary::-webkit-details-marker { display: none; }
@@ -26,7 +38,7 @@
 .anki-section > .settings-feature-toggle,
 .dictionary-section > .settings-feature-toggle { margin-top: 0; }
 .learning-ai-settings-description { margin: -4px 0 14px; color: var(--text-secondary); font-size: var(--settings-text-body); line-height: var(--settings-leading-reading); }
-.learning-ai-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.learning-ai-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px 16px; }
 .learning-ai-settings-grid .field { min-width: 0; }
 .learning-ai-settings-message { margin: 0; color: var(--text-quiet); font-size: var(--settings-text-caption); line-height: var(--settings-leading-copy); }
 .learning-ai-settings-message.error { color: var(--error); }
@@ -183,3 +195,24 @@
   border-top: 1px solid var(--border);
   background: var(--surface-subtle);
 }
+
+.connections-settings-group .anki-panel,
+.connections-settings-group .osc-panel,
+.connections-settings-group .external-api-panel {
+  gap: 12px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.connections-settings-group .anki-connection,
+.connections-settings-group .osc-connection,
+.connections-settings-group .external-api-runtime-status { margin-bottom: 0; }
+.connections-settings-group .anki-endpoint-row,
+.connections-settings-group .osc-endpoint-row,
+.connections-settings-group .external-api-address-row,
+.connections-settings-group .external-api-token-section { padding: 0; }
+.connections-settings-group .osc-panel .settings-toggle-row,
+.connections-settings-group .external-api-panel > .settings-toggle-row { padding: 8px 0; }
+.connections-settings-group .osc-strategy-setting { padding: 5px 0; }
+.connections-settings-group .anki-mapping-grid { padding: 12px 0 0; background: transparent; }

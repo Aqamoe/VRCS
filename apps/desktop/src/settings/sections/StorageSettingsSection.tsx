@@ -1,3 +1,4 @@
+import { confirmAction } from "../../app/confirm-action";
 import { useCallback, useEffect, useState } from "react";
 import { Database, HardDrive, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -90,7 +91,7 @@ export function StorageSettingsSection({
   };
 
   const clearHistory = async () => {
-    if (!window.confirm(t("settings.storage.clearConfirm"))) return;
+    if (!await confirmAction(t("settings.storage.clearConfirm"))) return;
     setBusy("clear");
     setMessage("");
     try {

@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 
 import { providersApi } from "../../providers/api";
 import { localizedError } from "../../app/app-utils";
-import type { ApiProfileView } from "../../providers/types";
+import type { ApiProfileView, ApiModelCatalog } from "../../providers/types";
+
+const EMPTY_CATALOG: ApiModelCatalog = { models: [], model_details: {} };
 
 export function useTranslationProfileModels(
   profile: ApiProfileView | undefined,
@@ -11,43 +13,46 @@ export function useTranslationProfileModels(
   loadModels = providersApi.apiProfileModels,
 ) {
   const { t } = useTranslation();
-  const [models, setModels] = useState<string[]>([]);
+  const scope = enabled && profile ? JSON.stringify(profile) : "";
+  const [catalog, setCatalog] = useState({ scope: "", value: EMPTY_CATALOG });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const request = useRef(0);
 
   const load = useCallback(async (profileId: string) => {
-    const response = await loadModels(profileId);
-    return response.models;
+    return loadModels(profileId);
   }, [loadModels]);
 
   const refresh = useCallback(async () => {
+    const currentRequest = ++request.current;
     if (!profile || !enabled) {
-      setModels([]);
+      setCatalog({ scope, value: EMPTY_CATALOG });
       setError("");
       setLoading(false);
       return;
     }
-    const currentRequest = ++request.current;
     setLoading(true);
     setError("");
     try {
-      const nextModels = await load(profile.id);
-      if (currentRequest === request.current) setModels(nextModels);
+      const value = await loadModels(profile.id);
+      if (currentRequest === request.current) {
+        setCatalog({ scope, value });
+      }
     } catch (reason) {
       if (currentRequest === request.current) {
-        setModels([]);
+        setCatalog({ scope, value: EMPTY_CATALOG });
         setError(localizedError(reason, t, "errors.apiProfiles.models"));
       }
     } finally {
       if (currentRequest === request.current) setLoading(false);
     }
-  }, [enabled, load, profile?.id, t]);
+  }, [enabled, loadModels, scope, t]);
 
   useEffect(() => {
     void refresh();
     return () => { request.current += 1; };
   }, [refresh]);
 
-  return { models, loading, error, refresh, load };
+  const value = catalog.scope === scope ? catalog.value : EMPTY_CATALOG;
+  return { models: value.models, modelDetails: value.model_details ?? {}, loading, error, refresh, load };
 }

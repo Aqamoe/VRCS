@@ -233,8 +233,9 @@ test("common and desktop controls work without VR, show registration errors, and
     const vr = page.getByRole("switch", { name: "Enable VR visual question answering", exact: true });
     await master.waitFor();
     assert.equal(await master.isEnabled(), true);
-    assert.equal(await vr.isDisabled(), true);
+    assert.equal(await vr.count(), 0);
     await master.click();
+    assert.equal(await vr.isDisabled(), true);
     assert.equal(await desktop.isEnabled(), true);
     await desktop.click();
     assert.equal(await page.evaluate(() => window.config.vr_enabled), true, "desktop edits preserve the VR preference");
@@ -251,7 +252,7 @@ test("common and desktop controls work without VR, show registration errors, and
     assert.equal((await commands(page, "desktop_vision_open")).length, 1);
     assert.equal((await commands(page, "desktop_vision_capture")).length, 0);
     await master.click();
-    assert.equal(await desktop.isDisabled(), true);
+    assert.equal(await desktop.count(), 0);
     assert.equal(await page.evaluate(() => window.config.desktop_enabled), true, "master changes do not overwrite mode preferences");
     await page.evaluate(() => window.mount('dock'));
     await page.getByRole("button", { name: "Visual question answering", exact: true }).click();

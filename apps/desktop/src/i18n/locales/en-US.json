@@ -90,7 +90,7 @@
       "smartTruncate": "Send with smart truncation",
       "send": "Send to VRChat",
       "sending": "Sending…",
-      "oscDisabled": "Enable OSC Chatbox output in Settings before sending.",
+      "oscDisabled": "Enable OSC in Settings before sending.",
       "errors": { "translate": "We couldn't translate this message.", "send": "We couldn't send the Chatbox message." }
     },
     "capture": {
@@ -524,6 +524,30 @@
       }
     },
     "settings": {
+      "reasoning": {
+        "strength": "Thinking strength",
+        "applicationDefault": "Application default",
+        "description": "Higher strength can increase waiting time and token usage. Application default keeps the existing request policy.",
+        "mandatory": "This model always uses thinking.",
+        "unknown": "Thinking controls have not been confirmed for this model.",
+        "budget": "Token budget",
+        "budgetTokens": "Thinking token budget",
+        "budgetRange": "Supported budget: {{min}}–{{max}} tokens.",
+        "automatic": "Model automatic",
+        "unavailable": "The saved thinking control is unavailable. Choose another value or application default.",
+        "reset": "Thinking strength was reset to application default for this model.",
+        "remainingTokens": "Tokens left for the answer within the output limit: {{count}}.",
+        "invalidBudget": "Enter a whole number within the supported budget range.",
+        "efforts": {
+          "minimal": "Minimal",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High",
+          "xhigh": "Extra high",
+          "max": "Maximum",
+          "default": "Model default"
+        }
+      },
       "shortcut": {
         "record": "Change",
         "cancel": "Cancel",
@@ -552,6 +576,7 @@
         "noProfiles": "No eligible profiles. Add or edit a profile in API settings and enable image understanding.",
         "unavailableProfile": "Selected profile is unavailable",
         "model": "Image-capable model",
+        "thinkingMode": "Thinking mode",
         "selectModel": "Select a model",
         "noModels": "No models are available. Check the API profile and refresh the list.",
         "savedModelUnavailable": "The saved model is not in the current list. You can keep it or select an available model.",
@@ -658,6 +683,8 @@
           "timeout": "Processing timed out",
           "viewChanged": "View changed; scan again",
           "unavailable": "OCR unavailable",
+          "disabled": "OCR is disabled",
+          "enableOcr": "Enable OCR in Settings to scan text",
           "authentication": "Authentication failed",
           "credentialsMissing": "OCR credentials are missing",
           "rateLimit": "Service rate limit reached",
@@ -1159,6 +1186,8 @@
             "llm_tls_failed": "TLS validation failed. Check the HTTPS address and certificate.",
             "llm_network_failed": "The service could not be reached. Check the network and Base URL.",
             "llm_authentication_failed": "Authentication failed. Check the API Key or authentication mode.",
+            "llm_payment_required": "The AI service requires available credit. Check your balance and spending limit.",
+            "llm_permission_denied": "The AI service denied this request. Check model access, permissions, and content policy.",
             "llm_path_not_found": "The endpoint path does not exist. Check that the Base URL includes the correct /v1 path.",
             "llm_models_unsupported": "The model list is unavailable. Enter a model name manually and test again.",
             "llm_model_required": "Enter a model name first.",
@@ -1399,8 +1428,8 @@
       "osc": {
         "title": "OSC",
 
-        "enable": "Enable chatbox output",
-        "enableDescription": "Send only your final microphone subtitles, never other voices or partial results.",
+        "enable": "Enable OSC",
+        "enableDescription": "Control OSC chatbox output, VRChat mute sync, and mute status notifications.",
         "translationStrategy": "OSC multilingual output",
         "translationStrategies": { "preferredOnly": "Preferred language only", "roundRobin": "Round robin", "allLanguages": "Show all languages together" },
         "preserveOriginal": "Keep original text in output",
@@ -1423,7 +1452,7 @@
         "testFailed": "The test message could not be sent. Check the setting and port.",
         "statusHint": "UDP has no delivery acknowledgement. Use OSC Debug in VRChat to confirm receipt.",
         "status": {
-          "disabled": "Chatbox output is off",
+          "disabled": "OSC is off",
           "ready": "OSC sender is ready",
           "muted": "Sending paused because VRChat is muted",
           "unknown": "VRChat mute state is unavailable, sending paused",
@@ -1571,7 +1600,7 @@
         "over_limit": "This message has {{count}} characters. The limit is {{limit}}.", "history_store_failed": "The message was handled, but its history could not be saved.", "conversation_store_failed": "The message was sent, but it could not be added to the current conversation."
       },
       "osc": {
-        "disabled": "OSC Chatbox output is disabled.", "blocked_vrchat_muted": "VRChat is muted, so the message was not sent.", "blocked_mute_unknown": "VRCS is checking the VRChat mute state. Try again shortly.",
+        "disabled": "OSC is disabled.", "blocked_vrchat_muted": "VRChat is muted, so the message was not sent.", "blocked_mute_unknown": "VRCS is checking the VRChat mute state. Try again shortly.",
         "queue_full": "The OSC send queue is full. Try again shortly.", "send_timeout": "The OSC send timed out.", "send_cancelled": "The OSC settings changed, so the send was cancelled.", "send_failed": "We couldn't send to the local VRChat OSC port."
       },
       "apiProfiles": {
@@ -1636,7 +1665,12 @@
         "draft_missing": "Create and save a card draft before exporting."
       },
       "llm": {
+        "reasoning_unsupported": "The selected model does not support this thinking control.",
+        "reasoning_budget_invalid": "The thinking budget is invalid or leaves no tokens for the answer.",
+        "reasoning_capability_unavailable": "Thinking control support could not be confirmed. Refresh models or choose application default.",
         "authentication_failed": "The LLM service rejected the API credentials.",
+        "payment_required": "The AI service requires available credit. Check your balance and spending limit.",
+        "permission_denied": "The AI service denied this request. Check model access, permissions, and content policy.",
         "rate_limited": "Too many LLM requests. Try again later.",
         "provider_unavailable": "The LLM service is temporarily unavailable.",
         "timeout": "The LLM request timed out.",

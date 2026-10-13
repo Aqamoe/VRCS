@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { DropdownField, EditableDropdownField } from "../../shared/ui/DropdownField";
 import { useLearningAiConfiguration } from "../../learning/hooks/useLearningAiConfiguration";
 import { localeCatalog } from "../../i18n/catalog";
+import { ReasoningControlField } from "../ReasoningControlField";
 
 export function LearningAiSettingsSection() {
   const { t } = useTranslation();
@@ -55,6 +56,15 @@ export function LearningAiSettingsSection() {
           />
           {ai.modelsError && <small className="learning-ai-settings-message error">{ai.modelsError}</small>}
         </div>
+        <ReasoningControlField
+          provider={ai.selectedProfile?.provider}
+          model={ai.preferences.model}
+          details={ai.modelDetails[ai.preferences.model]}
+          thinkingEnabled={ai.preferences.thinkingEnabled}
+          value={ai.preferences.reasoningControl}
+          disabled={!ai.preferences.profileId}
+          onChange={ai.setReasoningControl}
+        />
         <div className="field">
           <span>{t("learning.ai.explanationLanguage")}</span>
           <DropdownField

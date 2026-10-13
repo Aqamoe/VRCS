@@ -1,3 +1,4 @@
+import { confirmAction } from "../../app/confirm-action";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -160,8 +161,8 @@ function LearningItemDetail({
             className="learning-danger-button"
             type="button"
             disabled={busy}
-            onClick={() => {
-              if (window.confirm(t("learning.actions.deleteConfirm"))) void workspace.deleteItem(item.id);
+            onClick={async () => {
+              if (await confirmAction(t("learning.actions.deleteConfirm"))) void workspace.deleteItem(item.id);
             }}
           ><Trash2 size={14} />{t("learning.actions.delete")}</button>
         </div>

@@ -1,3 +1,4 @@
+import { confirmAction } from "../../app/confirm-action";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -212,12 +213,12 @@ export function GlossaryEditor({
     persistSources(next);
   };
 
-  const removeSource = (source: GlossarySource) => {
+  const removeSource = async (source: GlossarySource) => {
     const status = statusById.get(source.id);
     const name = source.type === "local"
       ? source.name
       : source.display_name || status?.name || source.url;
-    if (!window.confirm(t("settings.glossary.confirmDeleteGlossary", { name }))) return;
+    if (!await confirmAction(t("settings.glossary.confirmDeleteGlossary", { name }))) return;
     persistSources(sources.filter((item) => item.id !== source.id));
   };
 

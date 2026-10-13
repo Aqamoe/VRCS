@@ -33,6 +33,8 @@ export function useLearningWorkspace(active: boolean, ready = active) {
       model: ai.preferences.model.trim(),
       explanation_language: ai.preferences.explanationLanguage,
       level: ai.preferences.explanationLevel,
+      thinking_enabled: ai.preferences.thinkingEnabled,
+      reasoning_control: ai.preferences.reasoningControl,
     });
   }, [ai.preferences, inbox.analyze]);
 

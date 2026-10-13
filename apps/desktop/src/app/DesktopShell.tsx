@@ -330,7 +330,7 @@ export function DesktopShell({
       <BottomDock
         learningAvailable={features?.learning ?? false}
         chatboxAvailable={features?.osc_chatbox ?? false}
-        onVision={features?.visual_question_answering ? openVision : undefined}
+        onVision={features?.visual_question_answering && settings.value?.vision.enabled && settings.value.vision.desktop_enabled ? openVision : undefined}
         visionDisabled={!runtime.ready}
         page={page}
         running={runtime.health?.capture_requested ?? false}

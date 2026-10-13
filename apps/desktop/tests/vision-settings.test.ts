@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_VISION_SETTINGS, patchVision, selectVisionProfile, supportsVision, VISION_LIMITS } from "../src/settings/vision-settings.ts";
+import { DEFAULT_VISION_SETTINGS, patchVision, selectVisionProfile, supportsVision, visionModels, VISION_LIMITS } from "../src/settings/vision-settings.ts";
 import { DEFAULT_OCR_SETTINGS, DEFAULT_OCR_WRIST_SETTINGS } from "../src/settings/vr-overlay-settings.ts";
 import { DEFAULT_FEATURE_SETTINGS } from "../src/settings/feature-availability.ts";
 import { applyVrDashboardAction } from "../src/vr-dashboard/settings-actions.ts";
@@ -13,6 +13,12 @@ const settings = {
   ocr: { ...DEFAULT_OCR_SETTINGS },
   vision: { ...DEFAULT_VISION_SETTINGS },
 } as unknown as Settings;
+
+test("OpenRouter vision choices exclude known text-only models without hiding unknown models", () => {
+  const catalog = { models: ["text", "vision", "unknown"], model_details: { text: { input_modalities: ["text"] }, vision: { input_modalities: ["text", "image"] } } };
+  assert.deepEqual(visionModels("openrouter", catalog), ["vision", "unknown"]);
+  assert.deepEqual(visionModels("openai_compatible", catalog), catalog.models);
+});
 
 function profile(provider: string, capability: ApiCapability = "image_understanding"): ApiProfile {
   return { id: "images", name: "Images", provider, enabled_capabilities: [capability] };
@@ -43,7 +49,7 @@ test("vision defaults are explicit, flat and opt-in", () => {
 
 test("vision profiles with explicit image capability are selectable across supported providers", () => {
   for (const provider of [
-    "deepseek", "groq", "alibaba_cloud", "openai", "gemini",
+    "deepseek", "groq", "alibaba_cloud", "qwen_ai", "openai", "gemini",
     "openai_compatible", "openrouter", "lm_studio", "ollama",
   ]) {
     assert.equal(supportsVision(profile(provider)), true, provider);
@@ -61,17 +67,37 @@ test("vision selection uses image capability rather than a provider whitelist", 
   }
 });
 
+test("vision catalogs filter known text-only models across providers and retain unknown models", () => {
+  const catalog = {
+    models: ["text", "vision", "unknown"],
+    model_details: {
+      text: { input_modalities: ["text"] },
+      vision: { input_modalities: ["text", "image"] },
+    },
+  };
+  for (const provider of ["openai", "gemini", "openrouter", "qwen_ai"]) {
+    assert.deepEqual(visionModels(provider, catalog), ["vision", "unknown"]);
+  }
+});
+
 test("vision edits preserve OCR and profile changes do not reuse an unverified model", () => {
   const edited = patchVision(settings, { answer_language: "ja", model: "image-model" });
   assert.equal(edited.ocr, settings.ocr);
   assert.equal(settings.vision.model, "");
   const enabled = patchVision(edited, { enabled: true, profile_id: "old" });
   const selected = selectVisionProfile(enabled, "images");
+  const withReasoning = patchVision(enabled, { reasoning_control: { type: "effort", value: "high" } });
+  assert.equal(selectVisionProfile(withReasoning, "images").vision.reasoning_control, null);
   assert.equal(selected.vision.profile_id, "images");
   assert.equal(selected.vision.model, "");
-  assert.equal(selected.vision.enabled, false);
+  assert.equal(selected.vision.enabled, true);
   assert.equal(selected.vision.answer_language, "ja");
   assert.equal(selectVisionProfile(selected, "images"), selected);
+  const cleared = selectVisionProfile(selected, null);
+  assert.equal(cleared.vision.profile_id, null);
+  assert.equal(cleared.vision.model, "");
+  assert.equal(cleared.vision.enabled, true);
+  assert.equal(cleared.ocr, settings.ocr);
 });
 
 test("common and desktop edits preserve mode preferences without VR or OCR", () => {

@@ -136,105 +136,105 @@ export function ExternalApiSettingsCard({ config, saveState, onChange }: {
 
   return (
     <section className="connections-settings-group external-api-settings" aria-labelledby="connections-external-api-title">
-      <div className="section-heading">
+      <div className="section-heading connections-feature-heading">
         <div>
           <RadioTower size={18} />
           <h3 id="connections-external-api-title">{t("settings.system.externalApi.title")}</h3>
         </div>
+        <PreferenceToggle title={t("settings.system.externalApi.enabled")} hideLabel checked={config.enabled}
+          disabled={false} onChange={(enabled) => onChange({ enabled })} />
       </div>
-      <p className={`external-api-runtime-status ${runtimeState}`} role="status" aria-live="polite">
-        <span className="external-api-status-dot" aria-hidden="true" />
-        <span>{runtimeMessage}</span>
-      </p>
-      <div className="external-api-panel">
-        <PreferenceToggle
-          title={t("settings.system.externalApi.enabled")}
-          checked={config.enabled}
-          disabled={false}
-          onChange={(enabled) => onChange({ enabled })}
-        />
-        <div className="external-api-address-row">
-          <div className="external-api-address-grid">
-            <label className="field">
-              <span>{t("settings.system.externalApi.host")}</span>
-              <input
-                key={config.host}
-                defaultValue={config.host}
-                onBlur={(event) => {
-                  const host = event.currentTarget.value.trim();
-                  if (!host || host === config.host) return;
-                  const loopback = host === "127.0.0.1" || host === "::1";
-                  onChange({ host, require_token: loopback ? config.require_token : true });
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>{t("settings.system.externalApi.port")}</span>
-              <input
-                key={config.port}
-                type="number"
-                min={1}
-                max={65535}
-                defaultValue={config.port}
-                onBlur={(event) => {
-                  const port = Number.parseInt(event.currentTarget.value, 10);
-                  if (port >= 1 && port <= 65535 && port !== config.port) onChange({ port });
-                }}
-              />
-            </label>
+      {config.enabled && (
+        <p className={`external-api-runtime-status ${runtimeState}`} role="status" aria-live="polite">
+          <span className="external-api-status-dot" aria-hidden="true" />
+          <span>{runtimeMessage}</span>
+        </p>
+      )}
+      {config.enabled && (
+        <div className="external-api-panel">
+          <div className="external-api-address-row">
+            <div className="external-api-address-grid">
+              <label className="field">
+                <span>{t("settings.system.externalApi.host")}</span>
+                <input
+                  key={config.host}
+                  defaultValue={config.host}
+                  onBlur={(event) => {
+                    const host = event.currentTarget.value.trim();
+                    if (!host || host === config.host) return;
+                    const loopback = host === "127.0.0.1" || host === "::1";
+                    onChange({ host, require_token: loopback ? config.require_token : true });
+                  }}
+                />
+              </label>
+              <label className="field">
+                <span>{t("settings.system.externalApi.port")}</span>
+                <input
+                  key={config.port}
+                  type="number"
+                  min={1}
+                  max={65535}
+                  defaultValue={config.port}
+                  onBlur={(event) => {
+                    const port = Number.parseInt(event.currentTarget.value, 10);
+                    if (port >= 1 && port <= 65535 && port !== config.port) onChange({ port });
+                  }}
+                />
+              </label>
+            </div>
           </div>
-        </div>
-        <PreferenceToggle
-          title={t("settings.system.externalApi.requireToken")}
-          checked={config.require_token}
-          disabled={!["127.0.0.1", "::1"].includes(config.host)}
-          onChange={(require_token) => onChange({ require_token })}
-        />
-        <div className="external-api-token-section">
-          <div className="external-api-token-row">
-            <span className="external-api-token-copy">
-              <span className="external-api-token-title"><KeyRound size={15} aria-hidden="true" /><strong>{t("settings.system.externalApi.token")}</strong></span>
-              <small className={`external-api-token-status ${tokenState}`}>{tokenStatusMessage}</small>
-            </span>
-            <div className="external-api-token-actions">
-              {tokenStatus?.stored_configured && (
-                <button className="secondary-button external-api-delete-button" type="button" disabled={tokenBusy || tokenStatus.environment_override} onClick={() => void deleteToken()}>
-                  <Trash2 size={14} aria-hidden="true" />
-                  {t("settings.system.externalApi.deleteToken")}
+          <PreferenceToggle
+            title={t("settings.system.externalApi.requireToken")}
+            checked={config.require_token}
+            disabled={!["127.0.0.1", "::1"].includes(config.host)}
+            onChange={(require_token) => onChange({ require_token })}
+          />
+          <div className="external-api-token-section">
+            <div className="external-api-token-row">
+              <span className="external-api-token-copy">
+                <span className="external-api-token-title"><KeyRound size={15} aria-hidden="true" /><strong>{t("settings.system.externalApi.token")}</strong></span>
+                <small className={`external-api-token-status ${tokenState}`}>{tokenStatusMessage}</small>
+              </span>
+              <div className="external-api-token-actions">
+                {tokenStatus?.stored_configured && (
+                  <button className="secondary-button external-api-delete-button" type="button" disabled={tokenBusy || tokenStatus.environment_override} onClick={() => void deleteToken()}>
+                    <Trash2 size={14} aria-hidden="true" />
+                    {t("settings.system.externalApi.deleteToken")}
+                  </button>
+                )}
+                <button className="secondary-button" type="button" disabled={tokenBusy || tokenStatus?.environment_override} onClick={generateToken}>
+                  <RefreshCw size={14} aria-hidden="true" />
+                  {t("settings.system.externalApi.generateToken")}
                 </button>
-              )}
-              <button className="secondary-button" type="button" disabled={tokenBusy || tokenStatus?.environment_override} onClick={generateToken}>
-                <RefreshCw size={14} aria-hidden="true" />
-                {t("settings.system.externalApi.generateToken")}
+              </div>
+            </div>
+            <div className="external-api-token-input">
+              <input
+                type="password"
+                value={tokenInput}
+                placeholder={t("settings.system.externalApi.tokenInput")}
+                aria-label={t("settings.system.externalApi.tokenInput")}
+                disabled={tokenBusy || tokenStatus?.environment_override}
+                onChange={(event) => setTokenInput(event.currentTarget.value)}
+              />
+              <button className="secondary-button" type="button" disabled={tokenBusy || tokenStatus?.environment_override || !tokenInput.trim()} onClick={() => void storeToken(tokenInput, false)}>
+                <Save size={14} aria-hidden="true" />
+                {t("settings.system.externalApi.saveToken")}
               </button>
             </div>
+            {generatedToken && (
+              <div className="external-api-generated-token">
+                <code>{generatedToken}</code>
+                <button className="secondary-button" type="button" onClick={() => void navigator.clipboard.writeText(generatedToken)}>
+                  <Copy size={14} aria-hidden="true" />
+                  {t("settings.system.externalApi.copyToken")}
+                </button>
+              </div>
+            )}
+            {tokenMessage && <p className="external-api-feedback" role="status" aria-live="polite">{tokenMessage}</p>}
           </div>
-          <div className="external-api-token-input">
-            <input
-              type="password"
-              value={tokenInput}
-              placeholder={t("settings.system.externalApi.tokenInput")}
-              aria-label={t("settings.system.externalApi.tokenInput")}
-              disabled={tokenBusy || tokenStatus?.environment_override}
-              onChange={(event) => setTokenInput(event.currentTarget.value)}
-            />
-            <button className="secondary-button" type="button" disabled={tokenBusy || tokenStatus?.environment_override || !tokenInput.trim()} onClick={() => void storeToken(tokenInput, false)}>
-              <Save size={14} aria-hidden="true" />
-              {t("settings.system.externalApi.saveToken")}
-            </button>
-          </div>
-          {generatedToken && (
-            <div className="external-api-generated-token">
-              <code>{generatedToken}</code>
-              <button className="secondary-button" type="button" onClick={() => void navigator.clipboard.writeText(generatedToken)}>
-                <Copy size={14} aria-hidden="true" />
-                {t("settings.system.externalApi.copyToken")}
-              </button>
-            </div>
-          )}
-          {tokenMessage && <p className="external-api-feedback" role="status" aria-live="polite">{tokenMessage}</p>}
         </div>
-      </div>
+      )}
     </section>
   );
 }

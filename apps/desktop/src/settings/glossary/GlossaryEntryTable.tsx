@@ -1,3 +1,4 @@
+import { confirmAction } from "../../app/confirm-action";
 import { ArrowDown, ArrowUp, FileUp, Plus, Search, Trash2 } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
@@ -119,9 +120,9 @@ export function GlossaryEntryTable({
   const updateEntry = (rowId: string, patch: Partial<GlossaryEntry>) => onChange(entries.map((entry) => (
     entry.rowId === rowId ? { ...entry, ...patch } : entry
   )));
-  const removeRows = (rowIds: ReadonlySet<string>) => {
+  const removeRows = async (rowIds: ReadonlySet<string>) => {
     if (!rowIds.size) return;
-    if (!window.confirm(t("settings.glossary.table.confirmDeleteEntries", { count: rowIds.size }))) return;
+    if (!await confirmAction(t("settings.glossary.table.confirmDeleteEntries", { count: rowIds.size }))) return;
     onChange(entries.filter((entry) => !rowIds.has(entry.rowId)));
     setSelectedRowIds(new Set());
   };

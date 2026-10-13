@@ -7,12 +7,13 @@ import { supportsLlmModels, supportsTranslation } from "../../providers/api-prof
 import { EditableDropdownField } from "../../shared/ui/DropdownField";
 import { LanguagePicker } from "../../shared/ui/LanguagePicker";
 import { TRANSLATION_LANGUAGE_CODES } from "../../translation/translation-languages";
-import { switchTranslationProfile, updateTranslationModel } from "../../translation/translation-model-selection";
-import { thinkingControlForModel } from "../../translation/translation-thinking";
+import { switchTranslationProfile, translationModels, updateTranslationModel } from "../../translation/translation-model-selection";
+import { normalizeReasoningControlForModel } from "../../translation/translation-thinking";
 import type { ApiProfileView } from "../../providers/types";
 import type { TranslationTargetSettings } from "../types";
 import { useTranslationProfileModels } from "../hooks/useTranslationProfileModels";
-import { PreferenceToggle, Select } from "../SettingsControls";
+import { Select } from "../SettingsControls";
+import { ReasoningControlField } from "../ReasoningControlField";
 import { targetLanguageCodes } from "./language-settings";
 
 function profileLabel(profile: ApiProfileView): string {
@@ -139,9 +140,9 @@ function TranslationRouteRow({
   const [switching, setSwitching] = useState(false);
   const profile = profiles.find((item) => item.id === target.profile_id);
   const usesModels = Boolean(!native && profile && supportsLlmModels(profile));
-  const { models, loading, error, refresh, load } = useTranslationProfileModels(profile, usesModels);
+  const { models, modelDetails, loading, error, refresh, load } = useTranslationProfileModels(profile, usesModels);
   const languageCodes = targetLanguageCodes(target, usedLanguages, profiles, liveService);
-  const thinkingControl = thinkingControlForModel(profile?.provider, target.model);
+  const [reasoningReset, setReasoningReset] = useState(false);
   const selectProfile = async (profileId: string) => {
     const nextProfile = profiles.find((item) => item.id === profileId);
     if (!nextProfile) return;
@@ -150,8 +151,11 @@ function TranslationRouteRow({
       const remembered = Object.hasOwn(target.model_by_profile ?? {}, profileId);
       const available = !remembered && supportsLlmModels(nextProfile) && nextProfile.provider !== "openai_compatible"
         ? await load(nextProfile.id)
-        : [];
-      onChange(switchTranslationProfile(target, nextProfile, available));
+        : { models: [], model_details: {} };
+      const next = switchTranslationProfile(target, nextProfile, available.models, available.model_details);
+      const reasoning_control = normalizeReasoningControlForModel(nextProfile.provider, next.model, target.reasoning_control, available.model_details?.[next.model]);
+      setReasoningReset(Boolean(target.reasoning_control && !reasoning_control));
+      onChange({ ...next, reasoning_control });
     } finally {
       setSwitching(false);
     }
@@ -186,11 +190,15 @@ function TranslationRouteRow({
               commitOnBlur
               label={t("settings.translation.model")}
               value={target.model}
-              options={models.map((model) => ({ value: model, label: model }))}
+              options={translationModels(models, modelDetails).map((model) => ({ value: model, label: model }))}
               disabled={disabled || switching}
               optionsDisabled={loading || !models.length}
               placeholder={t("settings.translation.manualModel")}
-              onChange={(model) => onChange(updateTranslationModel(target, model))}
+              onChange={(model) => {
+                const reasoning_control = normalizeReasoningControlForModel(profile?.provider, model, target.reasoning_control, modelDetails[model]);
+                setReasoningReset(Boolean(target.reasoning_control && !reasoning_control));
+                onChange({ ...updateTranslationModel(target, model), reasoning_control });
+              }}
             />
             <button
               className="translation-route-icon-button"
@@ -204,14 +212,10 @@ function TranslationRouteRow({
           </div>
         )}
         {error && <small className="api-model-catalog-error">{error}</small>}
-        {!native && thinkingControl === "disable_supported" && (
-          <PreferenceToggle
-            title={t("settings.translation.thinkingMode")}
-            checked={target.thinking_enabled}
-            disabled={disabled}
-            onChange={(thinking_enabled) => onChange({ ...target, thinking_enabled })}
-          />
-        )}
+        {!native && usesModels && <ReasoningControlField provider={profile?.provider} model={target.model}
+          details={modelDetails[target.model]} thinkingEnabled={target.thinking_enabled} value={target.reasoning_control}
+          disabled={disabled} onChange={(patch) => { setReasoningReset(false); onChange({ ...target, ...patch }); }} />}
+        {reasoningReset && <small>{t("settings.reasoning.reset")}</small>}
       </div>
       <div className="translation-route-actions">
         <button type="button" aria-label={t("settings.translation.moveUp")} disabled={disabled || index === 0} onClick={onMoveUp}><ArrowUp size={14} /></button>

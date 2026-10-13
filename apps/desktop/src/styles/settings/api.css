@@ -43,6 +43,9 @@
   color: var(--primary-ink);
   background: var(--canvas);
 }
+.api-profile-icon strong { color: inherit; font-size: var(--settings-text-caption); font-weight: var(--settings-weight-heading); }
+/* Brand marks keep their official colors, so the plate stays light in dark theme. */
+:root[data-theme="dark"] .api-profile-icon { color: #1d2834; background: #e4e9f0; }
 .api-profile-identity > span:last-child { display: grid; min-width: 0; gap: 3px; }
 .api-profile-identity strong { color: var(--text); font-size: var(--settings-text-label); font-weight: var(--settings-weight-heading); line-height: var(--settings-leading-label); }
 .api-profile-identity small { overflow-wrap: anywhere; color: var(--text-quiet); font-size: var(--settings-text-caption); line-height: var(--settings-leading-copy); }
@@ -261,6 +264,7 @@
   background: var(--surface);
 }
 
+.api-profile-local-control > .settings-switch-button { height: calc(var(--settings-control-height) - 2px); }
 .api-profile-local-field.disabled { opacity: 0.62; }
 .api-profile-headers-field { display: grid; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
 .api-profile-headers-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

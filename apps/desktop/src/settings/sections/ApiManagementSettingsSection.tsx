@@ -1,4 +1,5 @@
-import { Check, Cloud, KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { confirmAction } from "../../app/confirm-action";
+import { Check, Cloud, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -14,6 +15,7 @@ import {
   type ApiProfileEditorDraft,
 } from "../../providers/api-profile-draft";
 import { profileEnabledCapabilities, providerDefinition, providerDetail } from "../../providers/provider-catalog";
+import { providerIcon } from "../../providers/provider-icon";
 import { recognitionServicesForProfile, selectRecognitionProfile } from "../../providers/recognition-services";
 import { translationDiagnosticModel } from "../../translation/translation-model-selection";
 import type {
@@ -112,7 +114,7 @@ export function ApiManagementSettingsSection({
         : affectsTranslation
           ? t("settings.apiManagement.deleteImpacts.translation")
           : "";
-    if (!window.confirm(t("settings.apiManagement.confirmDelete", {
+    if (!await confirmAction(t("settings.apiManagement.confirmDelete", {
       name: profile.name,
       impact,
     }))) return;
@@ -135,10 +137,6 @@ export function ApiManagementSettingsSection({
           <Plus size={18} aria-hidden="true" />
           {t("settings.apiManagement.addProfile")}
         </button>
-      </div>
-      <div className="api-security-note">
-        <ShieldCheck size={18} aria-hidden="true" />
-        <p>{t("settings.apiManagement.securityNotice")}</p>
       </div>
 
       <div className="api-profile-list" aria-busy={profiles.loading || undefined}>
@@ -181,13 +179,24 @@ export function ApiManagementSettingsSection({
             )
             : undefined;
           const detail = providerDetail(profile, definition);
+          const Logo = providerIcon(profile);
+          const initial = (definition?.display_name ?? profile.provider_display_name ?? profile.provider)
+            .trim()
+            .charAt(0)
+            .toUpperCase();
           const capabilityLabels = profileEnabledCapabilities(profile).map(
             (capability) => t(`settings.apiManagement.capabilities.${capability}`),
           ).join(", ");
           return (
             <section className={`api-profile-row ${transcriptionActive || translationActive ? "active" : ""}`} aria-label={profile.name} key={profile.id}>
                 <div className="api-profile-identity">
-                  <span className="api-profile-icon"><Cloud size={16} aria-hidden="true" /></span>
+                  <span className="api-profile-icon">
+                    {Logo ? (
+                      <Logo size={18} aria-hidden="true" />
+                    ) : (
+                      <strong aria-hidden="true">{initial}</strong>
+                    )}
+                  </span>
                   <span>
                     <strong>{profile.name}</strong>
                     <small>{definition?.display_name ?? profile.provider_display_name ?? profile.provider} · {capabilityLabels}{profileSupportLevel ? ` · ${t(`settings.apiManagement.supportLevels.${profileSupportLevel}`)}` : ""}{detail ? ` · ${detail}` : ""}</small>

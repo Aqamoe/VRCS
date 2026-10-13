@@ -1,4 +1,4 @@
-import type { ApiProfile } from "../providers/types";
+import type { ApiProfile, ApiModelCatalog } from "../providers/types";
 import type { Settings, VisionSettings } from "./types";
 import { DEFAULT_OCR_WRIST_SETTINGS } from "./vr-overlay-settings.ts";
 
@@ -9,6 +9,7 @@ export const DEFAULT_VISION_SETTINGS: VisionSettings = {
   desktop_shortcut: "Ctrl+Alt+V",
   profile_id: null,
   model: "",
+  thinking_enabled: false,
   answer_language: "zh-Hans",
   system_prompt: "Answer the user's question about the image concisely. Use the requested answer language. If the image does not provide enough information, say so. Do not invent details.",
   max_capture_seconds: 30,
@@ -36,11 +37,20 @@ export function supportsVision(profile: ApiProfile): boolean {
   return profile.enabled_capabilities.includes("image_understanding");
 }
 
+export function visionModels(provider: string | undefined, catalog: ApiModelCatalog): string[] {
+  if (provider === "openai_compatible") return catalog.models;
+  return catalog.models.filter((model) => {
+    const details = catalog.model_details?.[model];
+    return (!details?.input_modalities?.length || details.input_modalities.includes("image"))
+      && (!details?.output_modalities?.length || details.output_modalities.includes("text"));
+  });
+}
+
 export function patchVision(settings: Settings, patch: Partial<VisionSettings>): Settings {
   return { ...settings, vision: { ...settings.vision, ...patch } };
 }
 
 export function selectVisionProfile(settings: Settings, profileId: string | null): Settings {
   if (settings.vision.profile_id === profileId) return settings;
-  return patchVision(settings, { profile_id: profileId, model: "", enabled: false });
+  return patchVision(settings, { profile_id: profileId, model: "", reasoning_control: null });
 }

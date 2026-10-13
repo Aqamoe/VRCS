@@ -92,8 +92,7 @@
 
 @media (max-width: 480px) {
   .settings-section > .section-heading > div { flex-basis: 100%; }
-  .translation-model-input-row { grid-template-columns: 1fr; }
-  .translation-model-input-row .secondary-button { justify-self: start; }
+
   .api-profile-header-row { grid-template-columns: minmax(0, 1fr) 40px; }
   .api-profile-header-row input:first-child,
   .api-profile-header-row input:nth-child(2) { grid-column: 1; }

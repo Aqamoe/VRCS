@@ -1,4 +1,5 @@
 import type { DictionaryEntry } from "../dictionary/types";
+import type { ReasoningSetting } from "../translation/translation-thinking";
 
 export type LearningItemKind = "word" | "sentence" | "excerpt";
 export type LearningItemStatus = "collected" | "analyzed" | "card_draft" | "exported" | "archived";
@@ -94,6 +95,8 @@ export interface LearningAnalysisInput {
   model: string;
   explanation_language: string;
   level: LearningLevel;
+  thinking_enabled?: boolean;
+  reasoning_control?: ReasoningSetting | null;
 }
 
 export interface SelectionQueryInput {
@@ -106,6 +109,8 @@ export interface SelectionQueryInput {
   model: string;
   explanation_language: string;
   level: LearningLevel;
+  thinking_enabled?: boolean;
+  reasoning_control?: ReasoningSetting | null;
 }
 
 export interface SelectionQueryResponse {

@@ -217,7 +217,7 @@ export function VrcxIntegrationSettingsCard({ config, saveState, onChange }: {
 
   return (
     <section className="connections-settings-group external-api-settings vrcx-settings" aria-labelledby="connections-vrcx-title">
-      <div className="section-heading">
+      <div className="section-heading connections-feature-heading">
         <div>
           <RadioTower size={18} />
           <h3 id="connections-vrcx-title">
@@ -233,100 +233,121 @@ export function VrcxIntegrationSettingsCard({ config, saveState, onChange }: {
             </a>
           </h3>
         </div>
-        {config.enabled && (
-          <button className="secondary-button" type="button" disabled={testing || tokenBusy || saveState === "saving"} onClick={() => void testConnection()}>
-            <RefreshCw className={testing ? "spin" : undefined} size={14} aria-hidden="true" />
-            {testing ? t("settings.vrcx.testing") : t("settings.vrcx.test")}
-          </button>
-        )}
-      </div>
-
-      <div className={`external-api-runtime-status ${runtimeClass}`} role="status" aria-live="polite">
-        <span className="external-api-status-dot" aria-hidden="true" />
-        <span className="vrcx-runtime-copy">
-          <strong>{t(`settings.vrcx.runtime.${runtimeState}`)}</strong>
-          {runtimeDetail && <small>{runtimeDetail}</small>}
-        </span>
-      </div>
-
-      <div className="external-api-panel">
-        <PreferenceToggle
-          title={t("settings.vrcx.enabled")}
-          checked={config.enabled}
-          disabled={false}
-          onChange={(enabled) => onChange({ enabled })}
-        />
-        <div className="external-api-address-row">
-          <div className="external-api-address-grid vrcx-port-grid">
-            <label className="field">
-              <span>{t("settings.vrcx.port")}</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={portText}
-                aria-invalid={Boolean(portError)}
-                aria-describedby={portError ? "vrcx-port-help" : undefined}
-                onChange={(event) => setPortText(event.currentTarget.value.replace(/\D/g, "").slice(0, 5))}
-                onBlur={commitPort}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    event.currentTarget.blur();
-                  }
-                }}
-              />
-              <small id="vrcx-port-help" className={portError ? "error" : undefined}>{portError || t("settings.vrcx.portHint")}</small>
-            </label>
-          </div>
-        </div>
-        <PreferenceToggle
-          title={t("settings.vrcx.includeInLlmContext")}
-          checked={config.include_in_llm_context}
-          disabled={false}
-          onChange={(include_in_llm_context) => onChange({ include_in_llm_context })}
-        />
-        <PreferenceToggle
-          title={t("settings.vrcx.includeInAsrContext")}
-          checked={config.include_in_asr_context}
-          disabled={false}
-          onChange={(include_in_asr_context) => onChange({ include_in_asr_context })}
-        />
-
-        <div className="external-api-token-section">
-          <div className="external-api-token-row">
-            <span className="external-api-token-copy">
-              <span className="external-api-token-title"><KeyRound size={15} aria-hidden="true" /><strong>{t("settings.vrcx.token")}</strong></span>
-              <small className={`external-api-token-status ${tokenState}`}>{tokenStatusMessage}</small>
-            </span>
-            {tokenStatus?.stored_configured && (
-              <div className="external-api-token-actions">
-                <button className="secondary-button external-api-delete-button" type="button" disabled={tokenBusy || tokenStatus.environment_override} onClick={() => void deleteToken()}>
-                  <Trash2 size={14} aria-hidden="true" />
-                  {t("settings.vrcx.deleteToken")}
-                </button>
-              </div>
-            )}
-          </div>
-          <p className="external-api-feedback">{t("settings.vrcx.tokenManagedHint")}</p>
-          <div className="external-api-token-input">
-            <input
-              type="password"
-              value={tokenInput}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={t("settings.vrcx.tokenInput")}
-              aria-label={t("settings.vrcx.tokenInput")}
-              disabled={tokenBusy || tokenStatus?.environment_override}
-              onChange={(event) => setTokenInput(event.currentTarget.value)}
-            />
-            <button className="secondary-button" type="button" disabled={tokenBusy || tokenStatus?.environment_override || !tokenInput.trim()} onClick={() => void saveToken()}>
-              <Save size={14} aria-hidden="true" />
-              {t("settings.vrcx.saveToken")}
+        <div className="connections-heading-actions">
+          {config.enabled && (
+            <button className="secondary-button" type="button" disabled={testing || tokenBusy || saveState === "saving"} onClick={() => void testConnection()}>
+              <RefreshCw className={testing ? "spin" : undefined} size={14} aria-hidden="true" />
+              {testing ? t("settings.vrcx.testing") : t("settings.vrcx.test")}
             </button>
-          </div>
-          {tokenMessage && <p className="external-api-feedback" role="status" aria-live="polite">{tokenMessage}</p>}
+          )}
+          <PreferenceToggle title={t("settings.vrcx.enabled")} hideLabel checked={config.enabled}
+            disabled={false} onChange={(enabled) => onChange({ enabled })} />
         </div>
       </div>
+
+      {config.enabled && (
+        <div className={`external-api-runtime-status ${runtimeClass}`} role="status" aria-live="polite">
+          <span className="external-api-status-dot" aria-hidden="true" />
+          <span className="vrcx-runtime-copy">
+            <strong>{t(`settings.vrcx.runtime.${runtimeState}`)}</strong>
+            {runtimeDetail && <small>{runtimeDetail}</small>}
+          </span>
+        </div>
+      )}
+
+      {config.enabled && (
+        <div className="external-api-panel">
+          <div className="external-api-address-row">
+            <div className="external-api-address-grid vrcx-port-grid">
+              <label className="field">
+                <span>{t("settings.vrcx.port")}</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={portText}
+                  aria-invalid={Boolean(portError)}
+                  aria-describedby={portError ? "vrcx-port-help" : undefined}
+                  onChange={(event) => setPortText(event.currentTarget.value.replace(/\D/g, "").slice(0, 5))}
+                  onBlur={commitPort}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
+                <small id="vrcx-port-help" className={portError ? "error" : undefined}>{portError || t("settings.vrcx.portHint")}</small>
+              </label>
+            </div>
+          </div>
+          <PreferenceToggle
+            title={t("settings.vrcx.includeInLlmContext")}
+            checked={config.include_in_llm_context}
+            disabled={false}
+            onChange={(include_in_llm_context) => onChange({ include_in_llm_context })}
+          />
+          <PreferenceToggle
+            title={t("settings.vrcx.includeInAsrContext")}
+            checked={config.include_in_asr_context}
+            disabled={false}
+            onChange={(include_in_asr_context) => onChange({ include_in_asr_context })}
+          />
+
+          <div className="external-api-token-section">
+            <div className="external-api-token-row">
+              <span className="external-api-token-copy">
+                <span className="external-api-token-title">
+                  <KeyRound size={15} aria-hidden="true" />
+                  <strong>{t("settings.vrcx.token")}</strong>
+                  {tokenState === "configured" && (
+                    <small className="external-api-token-status configured">{tokenStatusMessage}</small>
+                  )}
+                </span>
+                {tokenState !== "configured" && (
+                  <small className={`external-api-token-status ${tokenState}`}>{tokenStatusMessage}</small>
+                )}
+              </span>
+            </div>
+            <div className="external-api-token-input">
+              <input
+                type="password"
+                value={tokenInput}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={t("settings.vrcx.tokenInput")}
+                aria-label={t("settings.vrcx.tokenInput")}
+                disabled={tokenBusy || tokenStatus?.environment_override}
+                onChange={(event) => setTokenInput(event.currentTarget.value)}
+              />
+              <div className="external-api-token-actions">
+                <button
+                  className="api-row-icon-button"
+                  type="button"
+                  aria-label={t("settings.vrcx.saveToken")}
+                  title={t("settings.vrcx.saveToken")}
+                  disabled={tokenBusy || tokenStatus?.environment_override || !tokenInput.trim()}
+                  onClick={() => void saveToken()}
+                >
+                  <Save size={14} aria-hidden="true" />
+                </button>
+                {tokenStatus?.stored_configured && (
+                  <button
+                    className="api-row-icon-button external-api-delete-button"
+                    type="button"
+                    aria-label={t("settings.vrcx.deleteToken")}
+                    title={t("settings.vrcx.deleteToken")}
+                    disabled={tokenBusy || tokenStatus.environment_override}
+                    onClick={() => void deleteToken()}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            </div>
+            {tokenMessage && <p className="external-api-feedback" role="status" aria-live="polite">{tokenMessage}</p>}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

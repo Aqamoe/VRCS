@@ -21,5 +21,7 @@ export function selectionQueryInput(
     model: preferences.model.trim(),
     explanation_language: preferences.explanationLanguage,
     level: preferences.explanationLevel,
+    thinking_enabled: preferences.thinkingEnabled,
+    reasoning_control: preferences.reasoningControl,
   };
 }

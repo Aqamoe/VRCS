@@ -53,17 +53,21 @@ export function AnkiSettingsSection({
   const updateAnki = onUpdate;
   return (
     <section className="connections-settings-group anki-section" aria-labelledby="connections-anki-title">
-      <div className="section-heading">
+      <div className="section-heading connections-feature-heading">
         <div>
           <PlusCircle size={18} />
           <h3 id="connections-anki-title">{t("settings.anki.title")}</h3>
         </div>
-        {draft.anki.enabled && (
-          <button className="secondary-button" type="button" disabled={ankiBusy} onClick={() => void loadAnkiStatus()}>
-            <RefreshCw className={ankiBusy ? "spin" : ""} size={15} />
-            {ankiBusy ? t("common.checking") : t("common.checkAgain")}
-          </button>
-        )}
+        <div className="connections-heading-actions">
+          {draft.anki.enabled && (
+            <button className="secondary-button" type="button" disabled={ankiBusy} onClick={() => void loadAnkiStatus()}>
+              <RefreshCw className={ankiBusy ? "spin" : ""} size={15} />
+              {ankiBusy ? t("common.checking") : t("common.checkAgain")}
+            </button>
+          )}
+          <PreferenceToggle title={t("settings.anki.enable")} hideLabel checked={draft.anki.enabled}
+            disabled={false} onChange={(enabled) => updateAnki("enabled", enabled)} />
+        </div>
       </div>
 
       {draft.anki.enabled && (
@@ -87,79 +91,68 @@ export function AnkiSettingsSection({
         </div>
       )}
 
-      <div className={`anki-panel ${draft.anki.enabled ? "enabled" : ""}`}>
-        <div className="settings-toggle-list settings-feature-toggle">
-          <PreferenceToggle
-            title={t("settings.anki.enable")}
-            checked={draft.anki.enabled}
-            disabled={false}
-            onChange={(enabled) => updateAnki("enabled", enabled)}
-          />
+      {draft.anki.enabled && (
+        <div className="anki-panel enabled">
+          <div className="anki-endpoint-row">
+            <div className="anki-endpoint-field">
+              <span>{t("settings.anki.address")}</span>
+              <code className="anki-address-value">127.0.0.1</code>
+            </div>
+            <label className="anki-port-field">
+              <span>{t("settings.anki.port")}</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={ankiPortText}
+                aria-invalid={Boolean(ankiPortError)}
+                aria-describedby={ankiPortError ? "anki-port-help" : undefined}
+                onChange={(event) => setAnkiPortText(event.target.value.replace(/\D/g, "").slice(0, 5))}
+                onBlur={commitAnkiPort}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                }}
+              />
+              {ankiPortError && <small id="anki-port-help" className="error">{ankiPortError}</small>}
+            </label>
+          </div>
+
+          <div className="form-grid anki-mapping-grid">
+            <DeckTreeSelect
+              label={t("settings.anki.deck")}
+              helper={ankiStatus?.connected ? undefined : t("settings.anki.deckOffline")}
+              value={draft.anki.deck}
+              decks={ankiDeckNames}
+              disabled={!ankiStatus?.connected || ankiBusy}
+              onChange={(value) => updateAnki("deck", value)}
+            />
+            <Select
+              label={t("settings.anki.noteType")}
+              helper={ankiStatus?.connected ? undefined : t("settings.anki.noteTypeOffline")}
+              value={draft.anki.model}
+              options={ankiModelOptions}
+              disabled={!ankiStatus?.connected || ankiBusy}
+              onChange={(value) => updateAnki("model", value)}
+            />
+            <Select
+              label={t("settings.anki.frontField")}
+              value={draft.anki.front_field}
+              options={ankiFieldOptions}
+              disabled={!ankiStatus?.connected || !ankiStatus.fields.length || ankiBusy}
+              onChange={(value) => updateAnki("front_field", value)}
+            />
+            <Select
+              label={t("settings.anki.backField")}
+              value={draft.anki.back_field}
+              options={ankiBackFieldOptions}
+              disabled={!ankiStatus?.connected || !ankiStatus.fields.length || ankiBusy}
+              onChange={(value) => updateAnki("back_field", value)}
+            />
+          </div>
         </div>
-
-        {draft.anki.enabled && (
-          <>
-            <div className="anki-endpoint-row">
-              <div className="anki-endpoint-field">
-                <span>{t("settings.anki.address")}</span>
-                <code className="anki-address-value">127.0.0.1</code>
-              </div>
-              <label className="anki-port-field">
-                <span>{t("settings.anki.port")}</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={ankiPortText}
-                  aria-invalid={Boolean(ankiPortError)}
-                  aria-describedby={ankiPortError ? "anki-port-help" : undefined}
-                  onChange={(event) => setAnkiPortText(event.target.value.replace(/\D/g, "").slice(0, 5))}
-                  onBlur={commitAnkiPort}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    }
-                  }}
-                />
-                {ankiPortError && <small id="anki-port-help" className="error">{ankiPortError}</small>}
-              </label>
-            </div>
-
-            <div className="form-grid anki-mapping-grid">
-              <DeckTreeSelect
-                label={t("settings.anki.deck")}
-                helper={ankiStatus?.connected ? undefined : t("settings.anki.deckOffline")}
-                value={draft.anki.deck}
-                decks={ankiDeckNames}
-                disabled={!ankiStatus?.connected || ankiBusy}
-                onChange={(value) => updateAnki("deck", value)}
-              />
-              <Select
-                label={t("settings.anki.noteType")}
-                helper={ankiStatus?.connected ? undefined : t("settings.anki.noteTypeOffline")}
-                value={draft.anki.model}
-                options={ankiModelOptions}
-                disabled={!ankiStatus?.connected || ankiBusy}
-                onChange={(value) => updateAnki("model", value)}
-              />
-              <Select
-                label={t("settings.anki.frontField")}
-                value={draft.anki.front_field}
-                options={ankiFieldOptions}
-                disabled={!ankiStatus?.connected || !ankiStatus.fields.length || ankiBusy}
-                onChange={(value) => updateAnki("front_field", value)}
-              />
-              <Select
-                label={t("settings.anki.backField")}
-                value={draft.anki.back_field}
-                options={ankiBackFieldOptions}
-                disabled={!ankiStatus?.connected || !ankiStatus.fields.length || ankiBusy}
-                onChange={(value) => updateAnki("back_field", value)}
-              />
-            </div>
-          </>
-        )}
-      </div>
+      )}
     </section>
   );
 }

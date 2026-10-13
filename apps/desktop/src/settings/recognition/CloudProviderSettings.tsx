@@ -144,7 +144,7 @@ export function CloudProviderSettings({
           </label>
         )}
         {service?.model_listing && (
-          <small className={modelsError ? "api-model-catalog-error" : "cloud-api-hint"}>
+          <small className={`cloud-api-hint${modelsError ? " api-model-catalog-error" : ""}`}>
             {modelsLoading && <RefreshCw className="spin" size={12} />} {modelsLoading
               ? t("settings.apiManagement.loadingModels")
               : modelsError || t("settings.apiManagement.modelsAvailable", { count: models.length })}

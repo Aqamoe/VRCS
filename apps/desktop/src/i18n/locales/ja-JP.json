@@ -90,7 +90,7 @@
       "smartTruncate": "適切に短縮して送信",
       "send": "VRChat に送信",
       "sending": "送信中…",
-      "oscDisabled": "送信する前に設定で OSC Chatbox 出力を有効にしてください。",
+      "oscDisabled": "送信する前に設定で OSC を有効にしてください。",
       "errors": { "translate": "このメッセージを翻訳できませんでした。", "send": "Chatbox メッセージを送信できませんでした。" }
     },
     "capture": {
@@ -524,6 +524,30 @@
       }
     },
     "settings": {
+      "reasoning": {
+        "strength": "思考の強度",
+        "applicationDefault": "アプリの既定値",
+        "description": "強度を上げると待ち時間とトークン使用量が増える場合があります。アプリの既定値は従来のリクエスト設定を維持します。",
+        "mandatory": "このモデルは常に思考を使用します。",
+        "unknown": "このモデルの思考設定はまだ確認されていません。",
+        "budget": "トークン予算",
+        "budgetTokens": "思考トークン予算",
+        "budgetRange": "対応する予算：{{min}}～{{max}} トークン。",
+        "automatic": "モデルに任せる",
+        "unavailable": "保存された思考設定は利用できません。他の値かアプリの既定値を選んでください。",
+        "reset": "このモデルの思考強度をアプリの既定値に戻しました。",
+        "remainingTokens": "出力上限内で回答に使用できる残りトークン：{{count}}。",
+        "invalidBudget": "対応する範囲内の整数を入力してください。",
+        "efforts": {
+          "minimal": "最小",
+          "low": "低",
+          "medium": "中",
+          "high": "高",
+          "xhigh": "非常に高い",
+          "max": "最大",
+          "default": "モデルの既定値"
+        }
+      },
       "shortcut": {
         "record": "変更",
         "cancel": "キャンセル",
@@ -552,6 +576,7 @@
         "noProfiles": "利用できるプロファイルがありません。API 設定でプロファイルを追加または編集し、画像理解を有効にしてください。",
         "unavailableProfile": "選択したプロファイルは利用できません",
         "model": "画像対応モデル",
+        "thinkingMode": "思考モード",
         "selectModel": "モデルを選択",
         "noModels": "利用できるモデルがありません。API プロファイルを確認して一覧を更新してください。",
         "savedModelUnavailable": "保存済みモデルは現在の一覧にありません。設定を維持するか、利用できるモデルを選択してください。",
@@ -658,6 +683,8 @@
           "timeout": "処理がタイムアウトしました",
           "viewChanged": "視点が変わりました。再スキャンしてください",
           "unavailable": "OCR を利用できません",
+          "disabled": "OCR は無効です",
+          "enableOcr": "文字を読み取るには設定で OCR を有効にしてください",
           "authentication": "認証に失敗しました",
           "credentialsMissing": "OCR の認証情報が設定されていません",
           "rateLimit": "サービスのリクエスト上限に達しました",
@@ -1159,6 +1186,8 @@
             "llm_tls_failed": "TLS 検証に失敗しました。HTTPS アドレスと証明書を確認してください。",
             "llm_network_failed": "サービスに接続できません。ネットワークと Base URL を確認してください。",
             "llm_authentication_failed": "認証に失敗しました。API Key または認証方式を確認してください。",
+            "llm_payment_required": "AI サービスの残高または利用上限を確認してください。",
+            "llm_permission_denied": "AI サービスがリクエストを拒否しました。モデルの利用権限、アカウント権限、コンテンツポリシーを確認してください。",
             "llm_path_not_found": "API パスがありません。Base URL の /v1 パスを確認してください。",
             "llm_models_unsupported": "モデル一覧を取得できません。モデル名を手動入力して再テストできます。",
             "llm_model_required": "先にモデル名を入力してください。",
@@ -1399,8 +1428,8 @@
       "osc": {
         "title": "OSC",
 
-        "enable": "チャットボックス出力を有効にする",
-        "enableDescription": "自分のマイクの確定字幕だけを送信し、他の音声や途中結果は送りません。",
+        "enable": "OSC を有効にする",
+        "enableDescription": "チャットボックス出力、VRChat のミュート同期、ミュート状態の通知をまとめて制御します。",
         "translationStrategy": "OSC多言語出力",
         "translationStrategies": { "preferredOnly": "優先言語のみ", "roundRobin": "順番に送信", "allLanguages": "複数言語を同時に表示" },
         "preserveOriginal": "出力に原文を残す",
@@ -1423,7 +1452,7 @@
         "testFailed": "テストメッセージを送信できませんでした。設定とポートを確認してください。",
         "statusHint": "UDP には受信確認がありません。VRChat の OSC Debug で確認できます。",
         "status": {
-          "disabled": "チャットボックス出力はオフです",
+          "disabled": "OSC はオフです",
           "ready": "OSC 送信準備完了",
           "muted": "VRChat がミュート中のため送信を一時停止",
           "unknown": "VRChat のミュート状態を確認できないため送信を一時停止",
@@ -1571,7 +1600,7 @@
         "over_limit": "メッセージは {{count}} 文字です。上限は {{limit}} 文字です。", "history_store_failed": "メッセージは処理されましたが、履歴を保存できませんでした。", "conversation_store_failed": "メッセージは送信されましたが、現在の会話に追加できませんでした。"
       },
       "osc": {
-        "disabled": "OSC Chatbox 出力が無効です。", "blocked_vrchat_muted": "VRChat がミュート中のため、メッセージは送信されませんでした。", "blocked_mute_unknown": "VRChat のミュート状態を確認中です。しばらくしてから再試行してください。",
+        "disabled": "OSC が無効です。", "blocked_vrchat_muted": "VRChat がミュート中のため、メッセージは送信されませんでした。", "blocked_mute_unknown": "VRChat のミュート状態を確認中です。しばらくしてから再試行してください。",
         "queue_full": "OSC 送信キューがいっぱいです。しばらくしてから再試行してください。", "send_timeout": "OSC 送信がタイムアウトしました。", "send_cancelled": "OSC 設定が変更されたため、送信を中止しました。", "send_failed": "ローカルの VRChat OSC ポートに送信できませんでした。"
       },
       "apiProfiles": {
@@ -1636,7 +1665,12 @@
         "draft_missing": "エクスポートする前にカード下書きを作成して保存してください。"
       },
       "llm": {
+        "reasoning_unsupported": "選択したモデルはこの思考設定に対応していません。",
+        "reasoning_budget_invalid": "思考予算が無効か、回答用のトークンが残っていません。",
+        "reasoning_capability_unavailable": "思考設定への対応を確認できません。モデルを更新するか、アプリの既定値を選んでください。",
         "authentication_failed": "LLM サービスが API 認証情報を拒否しました。",
+        "payment_required": "AI サービスの残高または利用上限を確認してください。",
+        "permission_denied": "AI サービスがリクエストを拒否しました。モデルの利用権限、アカウント権限、コンテンツポリシーを確認してください。",
         "rate_limited": "LLM リクエストが多すぎます。後でもう一度お試しください。",
         "provider_unavailable": "LLM サービスは一時的に利用できません。",
         "timeout": "LLM リクエストがタイムアウトしました。",

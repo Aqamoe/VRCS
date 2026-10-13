@@ -4,8 +4,8 @@
 .vision-settings-group {
   display: grid;
   min-width: 0;
-  gap: 18px;
-  padding-top: 18px;
+  gap: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 .ocr-settings-group .vr-overlay-card-heading strong { font-size: var(--settings-text-label); }

@@ -15,19 +15,20 @@ import { useDismissibleLayer } from "../shared/hooks/use-dismissible-layer";
 import { DropdownField } from "../shared/ui/DropdownField";
 import type { DropdownOption } from "../shared/ui/DropdownField";
 
-export function PreferenceToggle({ title, description, checked, disabled, onChange }: {
+export function PreferenceToggle({ title, description, hideLabel = false, checked, disabled, onChange }: {
   title: string;
   description?: string;
+  hideLabel?: boolean;
   checked: boolean;
   disabled: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
     <div className={`settings-toggle-row ${disabled ? "disabled" : ""}`}>
-      <span className="settings-toggle-copy">
+      {!hideLabel && <span className="settings-toggle-copy">
         <strong>{title}</strong>
         {description && <small>{description}</small>}
-      </span>
+      </span>}
       <button
         className="settings-switch-button"
         type="button"

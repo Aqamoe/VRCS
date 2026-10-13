@@ -21,7 +21,37 @@ test("preserves saved language choices, AI configuration, and legacy detail leve
     assert.deepEqual(readLearningPreferences(JSON.stringify({
       ...saved,
       explanationLevel: "standard",
-    })), { ...saved, explanationLevel: "intermediate" });
+    })), { ...saved, explanationLevel: "intermediate", thinkingEnabled: false, reasoningControl: null });
+  }
+});
+
+test("defaults old preferences to disabled thinking and preserves saved reasoning controls", () => {
+  const legacy = readLearningPreferences('{"profileId":"profile-one","model":"model-one"}');
+  assert.equal(legacy.thinkingEnabled, false);
+  assert.equal(legacy.reasoningControl, null);
+  for (const reasoningControl of [
+    { type: "effort", value: "high" },
+    { type: "budget_tokens", value: 4096 },
+    { type: "budget_tokens", value: -1 },
+  ]) {
+    const saved = readLearningPreferences(JSON.stringify({ thinkingEnabled: true, reasoningControl }));
+    assert.equal(saved.thinkingEnabled, true);
+    assert.deepEqual(saved.reasoningControl, reasoningControl);
+  }
+});
+
+test("ignores malformed saved thinking controls", () => {
+  for (const reasoningControl of [
+    { type: "effort", value: "" },
+    { type: "effort", value: " high " },
+    { type: "budget_tokens", value: -2 },
+    { type: "budget_tokens", value: 2.5 },
+    { type: "budget_tokens", value: 4_294_967_296 },
+    { type: "other", value: "high" },
+  ]) {
+    const saved = readLearningPreferences(JSON.stringify({ thinkingEnabled: "true", reasoningControl }));
+    assert.equal(saved.thinkingEnabled, false);
+    assert.equal(saved.reasoningControl, null);
   }
 });
 

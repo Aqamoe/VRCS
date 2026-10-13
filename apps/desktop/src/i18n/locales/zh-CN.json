@@ -90,7 +90,7 @@
       "smartTruncate": "智能截断后发送",
       "send": "发送到 VRChat",
       "sending": "正在发送…",
-      "oscDisabled": "请先在设置中启用 OSC Chatbox 输出。",
+      "oscDisabled": "请先在设置中启用 OSC。",
       "errors": { "translate": "无法翻译这条消息。", "send": "无法发送 Chatbox 消息。" }
     },
     "capture": {
@@ -524,6 +524,30 @@
       }
     },
     "settings": {
+      "reasoning": {
+        "strength": "思考强度",
+        "applicationDefault": "应用默认",
+        "description": "较高强度可能增加等待时间和 token 消耗。应用默认沿用原有请求策略。",
+        "mandatory": "该模型始终启用思考。",
+        "unknown": "暂未确认此模型的思考调整能力。",
+        "budget": "Token 预算",
+        "budgetTokens": "思考 token 预算",
+        "budgetRange": "支持预算：{{min}}–{{max}} token。",
+        "automatic": "模型自动",
+        "unavailable": "保存的思考设置暂不可用，请选择其他值或应用默认。",
+        "reset": "已为此模型恢复应用默认思考强度。",
+        "remainingTokens": "输出上限内剩余答案额度：{{count}} token。",
+        "invalidBudget": "请输入支持范围内的整数预算。",
+        "efforts": {
+          "minimal": "最低",
+          "low": "低",
+          "medium": "中",
+          "high": "高",
+          "xhigh": "超高",
+          "max": "最高",
+          "default": "模型默认"
+        }
+      },
       "shortcut": {
         "record": "修改",
         "cancel": "取消",
@@ -552,6 +576,7 @@
         "noProfiles": "没有可用档案。请在 API 设置中添加或编辑档案，并启用图像理解。",
         "unavailableProfile": "所选档案不可用",
         "model": "支持图片的模型",
+        "thinkingMode": "思考模式",
         "selectModel": "选择模型",
         "noModels": "没有可用模型。请检查 API 档案后刷新列表。",
         "savedModelUnavailable": "已保存的模型不在当前列表中。可保留原设置，或选择可用模型。",
@@ -658,6 +683,8 @@
           "timeout": "处理超时",
           "viewChanged": "视图已变化，请重新扫描",
           "unavailable": "文字识别不可用",
+          "disabled": "OCR 已关闭",
+          "enableOcr": "请在设置中启用 OCR 后再识别文字",
           "authentication": "身份验证失败",
           "credentialsMissing": "缺少文字识别服务凭据",
           "rateLimit": "已达到服务请求频率限制",
@@ -1113,7 +1140,7 @@
         "transcriptionDefault": "该供应商默认",
         "translationActive": "翻译使用中",
         "setActive": "设为当前",
-        "setDefault": "设为供应商默认",
+        "setDefault": "设为默认",
         "emptyTitle": "还没有 API 配置",
         "emptyDescription": "添加一个命名配置后，可以为同一供应商继续添加其他账号。",
         "workspaceMissing": "未配置 Workspace",
@@ -1159,6 +1186,8 @@
             "llm_tls_failed": "TLS 校验失败，请检查 HTTPS 地址和证书。",
             "llm_network_failed": "无法连接服务，请检查网络和 Base URL。",
             "llm_authentication_failed": "鉴权失败，请检查 API Key 或鉴权方式。",
+            "llm_payment_required": "AI 服务余额不足或已达到消费上限，请检查账户余额和限额。",
+            "llm_permission_denied": "AI 服务拒绝了此请求，请检查模型访问权限、账户权限和内容策略。",
             "llm_path_not_found": "接口路径不存在，请确认 Base URL 包含正确的 /v1 路径。",
             "llm_models_unsupported": "模型列表不可用；可手动填写模型名后继续测试。",
             "llm_model_required": "请先手动填写模型名。",
@@ -1372,7 +1401,7 @@
         "testFailed": "VRCX-0 连接测试失败。",
         "token": "VRCX-0 Token",
         "tokenChecking": "正在读取 Token 状态。",
-        "tokenConfigured": "已安全保存。",
+        "tokenConfigured": "已安全保存",
         "tokenMissing": "尚未配置 Token。",
         "tokenEnvironment": "Token 由环境变量管理。",
         "tokenManagedHint": "Token 由 VRCX-0 创建和管理，VRCS 不会生成 Token。",
@@ -1399,8 +1428,8 @@
       "osc": {
         "title": "OSC",
 
-        "enable": "启用聊天框输出",
-        "enableDescription": "仅发送自己的麦克风最终字幕，不发送其他声音或临时结果。",
+        "enable": "启用 OSC",
+        "enableDescription": "统一控制聊天框输出、VRChat 静音同步和静音状态提示。",
         "translationStrategy": "OSC 多语言发送",
         "translationStrategies": { "preferredOnly": "仅首选语言", "roundRobin": "轮换发送", "allLanguages": "同时显示多种语言" },
         "preserveOriginal": "输出中保留原文",
@@ -1423,7 +1452,7 @@
         "testFailed": "无法发送测试消息，请检查设置和端口。",
         "statusHint": "UDP 不提供送达确认，可在 VRChat 的 OSC Debug 中检查。",
         "status": {
-          "disabled": "聊天框输出已关闭",
+          "disabled": "OSC 已关闭",
           "ready": "OSC 发送器就绪",
           "muted": "因 VRChat 静音而暂停发送",
           "unknown": "未读取到 VRChat 静音状态，发送已暂停",
@@ -1571,7 +1600,7 @@
         "over_limit": "消息共 {{count}} 个字符，超过 {{limit}} 字符限制。", "history_store_failed": "消息已处理，但无法保存发送记录。", "conversation_store_failed": "消息已发送，但无法写入当前对话。"
       },
       "osc": {
-        "disabled": "OSC Chatbox 输出尚未启用。", "blocked_vrchat_muted": "VRChat 当前处于静音状态，消息未发送。", "blocked_mute_unknown": "正在确认 VRChat 静音状态，请稍后再试。",
+        "disabled": "OSC 尚未启用。", "blocked_vrchat_muted": "VRChat 当前处于静音状态，消息未发送。", "blocked_mute_unknown": "正在确认 VRChat 静音状态，请稍后再试。",
         "queue_full": "OSC 发送队列已满，请稍后再试。", "send_timeout": "OSC 发送等待超时。", "send_cancelled": "OSC 设置发生变化，发送已取消。", "send_failed": "无法发送到本机 VRChat OSC 端口。"
       },
       "apiProfiles": {
@@ -1636,7 +1665,12 @@
         "draft_missing": "请先生成并保存卡片草稿，再导出到 Anki。"
       },
       "llm": {
+        "reasoning_unsupported": "所选模型不支持此思考设置。",
+        "reasoning_budget_invalid": "思考预算无效或未为答案保留输出额度。",
+        "reasoning_capability_unavailable": "无法确认此思考设置是否受支持，请刷新模型或选择应用默认。",
         "authentication_failed": "LLM 服务拒绝了 API 凭据。",
+        "payment_required": "AI 服务余额不足或已达到消费上限，请检查账户余额和限额。",
+        "permission_denied": "AI 服务拒绝了此请求，请检查模型访问权限、账户权限和内容策略。",
         "rate_limited": "LLM 请求过于频繁，请稍后重试。",
         "provider_unavailable": "LLM 服务暂时不可用。",
         "timeout": "LLM 请求超时。",
