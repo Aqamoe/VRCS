@@ -206,31 +206,51 @@ impl LaserEvent {
     }
 }
 
-#[derive(Default)]
-pub struct RayPointer {
-    previous: Option<(u32, bool)>,
+/// Keep focus stable when the native laser makes action data inactive.
+pub fn native_focus(pointing: bool, focused: bool, trigger_released: bool) -> bool {
+    pointing && (focused || trigger_released)
 }
 
-impl RayPointer {
-    pub fn sample(&mut self, sample: Option<(u32, [f32; 2], bool)>) -> Vec<LaserEvent> {
-        let Some((device, point, down)) = sample else {
-            self.previous = None;
-            return vec![LaserEvent::Leave];
-        };
-        let mut events = vec![LaserEvent::Move { device, point }];
-        // Entering the panel with a held trigger must not start a click.
-        if let Some((previous_device, previous_down)) = self.previous {
-            if previous_device == device && previous_down != down {
-                events.push(if down {
-                    LaserEvent::Down { device, point }
-                } else {
-                    LaserEvent::Up { device, point }
-                });
-            }
-        }
-        self.previous = Some((device, down));
-        events
+pub fn laser_event(event: &openvr_sys::VREvent_t, wrist_device: u32) -> Option<LaserEvent> {
+    let kind = event.eventType as i32;
+    if matches!(
+        kind,
+        openvr_sys::EVREventType_VREvent_FocusLeave
+            | openvr_sys::EVREventType_VREvent_OverlayHidden
+            | openvr_sys::EVREventType_VREvent_OverlayShown
+    ) {
+        return Some(LaserEvent::Leave);
     }
+    if !matches!(
+        kind,
+        openvr_sys::EVREventType_VREvent_MouseMove
+            | openvr_sys::EVREventType_VREvent_MouseButtonDown
+            | openvr_sys::EVREventType_VREvent_MouseButtonUp
+    ) {
+        return None;
+    }
+    let mouse = unsafe { event.data.mouse };
+    if kind != openvr_sys::EVREventType_VREvent_MouseMove
+        && mouse.button & openvr_sys::EVRMouseButton_VRMouseButton_Left as u32 == 0
+    {
+        return None;
+    }
+    let device = event.trackedDeviceIndex;
+    let size = super::ocr_wrist_renderer::SIZE as f32;
+    // SteamVR mouse coordinates start at the bottom left; button bounds start at the top left.
+    let point = [mouse.x / size, 1. - mouse.y / size];
+    if device == wrist_device
+        || point
+            .iter()
+            .any(|value| !value.is_finite() || !(0. ..=1.).contains(value))
+    {
+        return Some(LaserEvent::Leave);
+    }
+    Some(match kind {
+        openvr_sys::EVREventType_VREvent_MouseButtonDown => LaserEvent::Down { device, point },
+        openvr_sys::EVREventType_VREvent_MouseButtonUp => LaserEvent::Up { device, point },
+        _ => LaserEvent::Move { device, point },
+    })
 }
 
 pub struct Pointer {
@@ -500,38 +520,74 @@ mod tests {
     }
 
     #[test]
-    fn sampled_pointer_clicks_on_release_and_ignores_a_trigger_held_on_entry() {
-        let mut ray = RayPointer::default();
-        let mut pointer = Pointer::default();
-        let mut actions = Vec::new();
-        for down in [true, true, false, false, true, true, false, false] {
-            for event in ray.sample(Some((2, [0.5, 0.5], down))) {
-                if let Some(action) = pointer.event(event, Some(Action::Close)) {
-                    actions.push(action);
-                }
-            }
-        }
-        assert_eq!(actions, [Action::Close]);
+    fn native_focus_waits_for_release_and_survives_inactive_actions() {
+        assert!(!native_focus(true, false, false));
+        assert!(native_focus(true, false, true));
+        assert!(native_focus(true, true, false));
+        assert!(!native_focus(false, true, false));
+        assert!(!native_focus(false, false, true));
     }
-
     #[test]
-    fn sampled_pointer_cancels_a_click_on_leave_or_controller_change() {
-        for next_device in [2, 3] {
-            let mut ray = RayPointer::default();
-            let mut pointer = Pointer::default();
-            for down in [false, true] {
-                for event in ray.sample(Some((2, [0.5, 0.5], down))) {
-                    assert!(pointer.event(event, Some(Action::Close)).is_none());
-                }
-            }
-            if next_device == 2 {
-                for event in ray.sample(None) {
-                    assert!(pointer.event(event, Some(Action::Close)).is_none());
-                }
-            }
-            for event in ray.sample(Some((next_device, [0.5, 0.5], false))) {
-                assert!(pointer.event(event, Some(Action::Close)).is_none());
-            }
-        }
+    fn native_mouse_coordinates_match_rendered_buttons_and_exclude_the_bound_hand() {
+        let mouse = |kind: i32, device, button, x, y| {
+            let mut event = openvr_sys::VREvent_t {
+                eventType: kind as u32,
+                trackedDeviceIndex: device,
+                ..Default::default()
+            };
+            event.data.mouse = openvr_sys::VREvent_Mouse_t {
+                x,
+                y,
+                button,
+                cursorIndex: 0,
+            };
+            event
+        };
+        let down = mouse(
+            openvr_sys::EVREventType_VREvent_MouseButtonDown,
+            2,
+            1,
+            900.,
+            64.,
+        );
+        assert_eq!(
+            laser_event(&down, 1),
+            Some(LaserEvent::Down {
+                device: 2,
+                point: [900. / 1024., 960. / 1024.]
+            })
+        );
+        assert_eq!(laser_event(&down, 2), Some(LaserEvent::Leave));
+        assert_eq!(
+            laser_event(
+                &mouse(
+                    openvr_sys::EVREventType_VREvent_MouseButtonDown,
+                    2,
+                    2,
+                    900.,
+                    64.
+                ),
+                1
+            ),
+            None
+        );
+        assert_eq!(
+            laser_event(
+                &mouse(
+                    openvr_sys::EVREventType_VREvent_MouseMove,
+                    2,
+                    0,
+                    f32::NAN,
+                    64.
+                ),
+                1
+            ),
+            Some(LaserEvent::Leave)
+        );
+        let leave = openvr_sys::VREvent_t {
+            eventType: openvr_sys::EVREventType_VREvent_FocusLeave as u32,
+            ..Default::default()
+        };
+        assert_eq!(laser_event(&leave, 1), Some(LaserEvent::Leave));
     }
 }

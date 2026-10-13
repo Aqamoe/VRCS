@@ -437,13 +437,6 @@ impl OcrRuntime {
     }
 
     fn update(&mut self, backend: &mut OpenVrBackend, config: &VrOcrConfig) -> Result<(), String> {
-        let (events, focused) = backend.poll_ocr_wrist_events()?;
-        let reading_focus = if self.vision.visible() {
-            self.vision.pointer(&events, focused);
-            focused || events.iter().any(|event| event.point().is_some())
-        } else {
-            self.update_wrist_pointer(&events, focused)
-        };
         if self.manifest.is_none() {
             self.manifest = Some(install_manifest(
                 self.directory
@@ -451,8 +444,15 @@ impl OcrRuntime {
                     .ok_or("SteamVR input directory unavailable")?,
             )?);
         }
+        backend.update_ocr_input(self.manifest.as_deref().ok_or("OCR manifest unavailable")?)?;
+        let (events, focused) = backend.poll_ocr_wrist_events()?;
+        let reading_focus = if self.vision.visible() {
+            self.vision.pointer(&events, focused);
+            focused || events.iter().any(|event| event.point().is_some())
+        } else {
+            self.update_wrist_pointer(&events, focused)
+        };
         let input = backend.ocr_input(
-            self.manifest.as_deref().ok_or("OCR manifest unavailable")?,
             config.hand_gesture_enabled || self.vision.enabled(),
             reading_focus,
             self.vision.enabled(),

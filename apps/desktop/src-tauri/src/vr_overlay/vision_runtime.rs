@@ -348,7 +348,7 @@ impl VisionRuntime {
         };
         // Use an independent default, never the subtitle or OCR wrist configuration.
         let wrist = config.wrist.clone().unwrap_or_default();
-        // Enable local pointer clicks only after recording ends; never take SteamVR focus.
+        // Keep SteamVR laser focus disabled while the recording trigger is needed.
         if !backend
             .ensure_ocr_wrist(&wrist, self.session.is_none())?
             .available
