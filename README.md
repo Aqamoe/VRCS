@@ -47,15 +47,11 @@ Open **Settings › System › Features** to turn off optional features. The fea
 - VR visual question answering: select a region, then hold the left trigger to start temporary microphone capture and ask a question.
 - Import Yomitan dictionaries, look up subtitle text or Ask AI, collect learning material, and review definitions, sentence patterns, and conversations. Edit vocabulary, sentence-pattern, or cloze card drafts and create cards through AnkiConnect.
 
-Qwen AI supports text translation, real-time speech recognition, live translation, and visual question answering through its own API endpoint. For visual questions, enable Image understanding in the API profile and select an image-capable model, such as `qwen3.8-flash`, `qwen3.8-max`, or `qwen3-vl-plus`. Existing profiles require you to enable this capability in API Management. Qwen AI uses a separate API key from Alibaba Cloud Model Studio.
-
 ## Privacy
 
 VRCS does not store raw audio. Subtitle history, learning items, dictionaries, and settings are stored locally by default. Local Qwen ASR and local OCR process audio and images on the device; cloud recognition sends speech segments or selected images to the chosen provider.
 
 Translation, learning analysis, and Ask AI send relevant text, explicitly selected context, and submitted questions to the configured service. Whether text from local recognition is sent to the cloud depends on the selected translation and AI services.
-
-For built-in OpenAI, Gemini, Groq, DeepSeek, OpenRouter, and Alibaba Cloud profiles, VRCS checks the public [models.dev](https://models.dev/) catalog in the background, at most once a day after a successful check. This request sends no API keys, subtitles, images, or questions. Bundled data and a local cache provide model information offline. Local services and custom API profiles do not trigger this check.
 
 ## Development
 
