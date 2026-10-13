@@ -47,24 +47,41 @@ pub(super) async fn fetch_catalog(
     profile: &ApiProfile,
     api_key: &str,
 ) -> Result<ModelCatalog, LlmError> {
-    let response = openai_compatible::apply_profile_request(
-        http.get(openai_compatible::models_url(profile)?),
-        profile,
-        api_key,
-    )?
-    .send()
-    .await
-    .map_err(http::network_error)?;
+    fetch_catalog_for_output(http, profile, api_key, "text").await
+}
+
+pub(crate) async fn fetch_transcription_catalog(
+    http: &reqwest::Client,
+    profile: &ApiProfile,
+    api_key: &str,
+) -> Result<ModelCatalog, LlmError> {
+    fetch_catalog_for_output(http, profile, api_key, "transcription").await
+}
+
+async fn fetch_catalog_for_output(
+    http: &reqwest::Client,
+    profile: &ApiProfile,
+    api_key: &str,
+    output: &str,
+) -> Result<ModelCatalog, LlmError> {
+    let mut request = http.get(openai_compatible::models_url(profile)?);
+    if output != "text" {
+        request = request.query(&[("output_modalities", output)]);
+    }
+    let response = openai_compatible::apply_profile_request(request, profile, api_key)?
+        .send()
+        .await
+        .map_err(http::network_error)?;
     let status = response.status();
     if !status.is_success() {
         return Err(http::response_status_error(response, status).await);
     }
     let value = response.json().await.map_err(http::invalid_response)?;
-    let catalog = parse_catalog(&value);
+    let catalog = parse_catalog_for_output(&value, output);
     if catalog.models.is_empty() {
         return Err(LlmError {
             code: "llm.invalid_response",
-            detail: "OpenRouter did not return any models with text output".into(),
+            detail: format!("OpenRouter did not return any models with {output} output"),
             retryable: false,
             retry_after: None,
         });
@@ -72,7 +89,12 @@ pub(super) async fn fetch_catalog(
     Ok(catalog)
 }
 
+#[cfg(test)]
 pub(super) fn parse_catalog(value: &Value) -> ModelCatalog {
+    parse_catalog_for_output(value, "text")
+}
+
+fn parse_catalog_for_output(value: &Value, output: &str) -> ModelCatalog {
     let mut details = BTreeMap::new();
     for entry in value
         .get("data")
@@ -83,7 +105,7 @@ pub(super) fn parse_catalog(value: &Value) -> ModelCatalog {
         if !entry
             .pointer("/architecture/output_modalities")
             .and_then(Value::as_array)
-            .is_some_and(|modalities| modalities.iter().any(|modality| modality == "text"))
+            .is_some_and(|modalities| modalities.iter().any(|modality| modality == output))
         {
             continue;
         }
@@ -222,6 +244,69 @@ pub fn needs_reasoning_budget(details: Option<&ModelDetails>, enabled: bool, mod
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn openrouter_transcription_catalog_requests_and_filters_stt_models() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut buffer = [0; 4096];
+                let length = stream.read(&mut buffer).await.unwrap();
+                assert!(length > 0);
+                request.extend_from_slice(&buffer[..length]);
+                if request.windows(4).any(|value| value == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let body = json!({"data": [
+                {"id": "new-provider/new-asr", "architecture": {"input_modalities": ["audio"], "output_modalities": ["transcription"]}},
+                {"id": "openai/whisper-1", "architecture": {"input_modalities": ["audio"], "output_modalities": ["transcription"]}},
+                {"id": "audio-chat", "architecture": {"input_modalities": ["audio"], "output_modalities": ["text"]}},
+                {"id": "audio-output", "architecture": {"output_modalities": ["audio"]}},
+                {"id": "unknown"},
+                {"id": "new-provider/new-asr", "architecture": {"output_modalities": ["transcription"]}}
+            ]}).to_string();
+            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+            String::from_utf8(request).unwrap()
+        });
+        let profile = ApiProfile {
+            provider: crate::providers::OPENAI_COMPATIBLE_PROVIDER.into(),
+            base_url: Some(format!("http://{address}/api/v1")),
+            headers: vec![crate::config::HttpHeaderConfig {
+                name: "X-Test".into(),
+                value: "catalog".into(),
+            }],
+            ..ApiProfile::default()
+        };
+        let catalog = fetch_transcription_catalog(&reqwest::Client::new(), &profile, "test-key")
+            .await
+            .unwrap();
+        assert_eq!(catalog.models, ["new-provider/new-asr", "openai/whisper-1"]);
+        assert_eq!(catalog.model_details.len(), 2);
+        assert_eq!(
+            catalog.model_details["openai/whisper-1"].input_modalities,
+            ["audio"]
+        );
+        let request = server.await.unwrap();
+        assert!(request.starts_with("GET /api/v1/models?output_modalities=transcription HTTP/1.1"));
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer test-key"));
+        assert!(request.contains("x-test: catalog"));
+    }
+
+    #[test]
+    fn openrouter_transcription_models_do_not_enter_the_text_catalog() {
+        let catalog = parse_catalog(&json!({"data": [
+            {"id": "stt", "architecture": {"output_modalities": ["transcription"]}},
+            {"id": "text", "architecture": {"output_modalities": ["text"]}}
+        ]}));
+        assert_eq!(catalog.models, ["text"]);
+    }
 
     #[test]
     fn provider_limits_and_output_modalities_are_preserved() {

@@ -551,6 +551,17 @@ async fn service_models(
     profile: &ApiProfile,
     service: &ProviderServiceDefinition,
 ) -> ApiResult<Json<Value>> {
+    if service.id == providers::SERVICE_OPENROUTER_TRANSCRIPTION {
+        let api_key = profile_api_key(profile)?;
+        let catalog = crate::llm::openrouter::fetch_transcription_catalog(
+            &state.integrations.http,
+            profile,
+            &api_key,
+        )
+        .await
+        .map_err(|error| api_error(StatusCode::BAD_GATEWAY, error.code, error.detail))?;
+        return Ok(Json(json!(catalog)));
+    }
     if service.supports_model_listing {
         let api_key = profile_api_key(profile)?;
         let mut catalog = crate::llm::LlmClient::new(state.integrations.http.clone())

@@ -752,6 +752,37 @@ fn groq_transcription_requires_a_speech_enabled_groq_profile() {
 }
 
 #[test]
+fn openrouter_transcription_validates_defaults_and_speech_capability() {
+    let mut config = AppConfig::default();
+    config.asr.backend = "openrouter_transcription".into();
+    config.asr.active_profile_id = Some("openrouter".into());
+    config.asr.api_profiles.push(ApiProfile {
+        id: "openrouter".into(),
+        name: "OpenRouter".into(),
+        provider: crate::providers::OPENROUTER_PROVIDER.into(),
+        enabled_capabilities: vec![CAPABILITY_SPEECH_TO_TEXT.into()],
+        ..ApiProfile::default()
+    });
+    assert!(config.validate_settings().is_ok());
+    assert_eq!(
+        config.asr.service_settings["openrouter_transcription"].model,
+        "openai/whisper-large-v3-turbo"
+    );
+    config
+        .asr
+        .service_settings
+        .get_mut("openrouter_transcription")
+        .unwrap()
+        .model = "new-provider/new-asr".into();
+    assert!(config.validate_settings().is_ok());
+    config.asr.api_profiles[0].enabled_capabilities = text_capabilities();
+    assert!(config
+        .validate_settings()
+        .unwrap_err()
+        .contains("has not enabled speech recognition"));
+}
+
+#[test]
 fn local_qwen_transcription_uses_its_own_profile_and_default_model() {
     let mut config = AppConfig::default();
     config.asr.backend = crate::providers::SERVICE_QWEN_LOCAL_TRANSCRIPTION.into();

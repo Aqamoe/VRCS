@@ -141,13 +141,6 @@ export function RecognitionStep({
           )}
           {selectedProfile && selectedService && !apiEditor && (
             <>
-              {selectedService.recognition_transport === "segmented_upload" && (
-                <div className="cloud-transport-hint" role="note">
-                  <strong>{t("settings.recognition.segmentedUpload.title")}</strong>
-                  <small>{t("settings.recognition.segmentedUpload.description")}</small>
-                  {!selectedService.partial_results && <small>{t("settings.recognition.segmentedUpload.noPartial")}</small>}
-                </div>
-              )}
               <div className={`onboarding-connection ${connectionReady ? "ready" : ""}`}>
                 <span className="recognition-runtime-dot" />
                 <div><strong>{selectedService.display_name}</strong><small>{connectionReady ? t("onboarding.recognition.connectionReady") : t("onboarding.recognition.testRequired")}</small></div>

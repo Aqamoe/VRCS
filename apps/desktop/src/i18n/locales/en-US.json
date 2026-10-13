@@ -1240,11 +1240,6 @@
           "realtime_stream": "Real-time stream",
           "segmented_upload": "Segmented upload"
         },
-        "segmentedUpload": {
-          "title": "Returns after each utterance",
-          "description": "Audio is uploaded after speech ends instead of being streamed continuously.",
-          "noPartial": "Partial results are not available for this service."
-        },
         "selectedApiHint": "Using the “{{name}}” API connection. Manage its details and key under API access.",
         "selectedLocalQwenHint": "Using the local Qwen ASR connection “{{name}}”. Change its address under API access. VRCS sends audio to that service; the service controls any further processing.",
         "cloudDescription": "Audio is sent only while speech is detected.",

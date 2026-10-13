@@ -1240,11 +1240,6 @@
           "realtime_stream": "即時串流傳輸",
           "segmented_upload": "分段上傳"
         },
-        "segmentedUpload": {
-          "title": "每段語音結束後傳回結果",
-          "description": "音訊會在偵測到語句結束後上傳，而不是持續串流傳輸。",
-          "noPartial": "此服務不提供部分結果。"
-        },
         "selectedApiHint": "目前使用 API 連線「{{name}}」；請在「API 存取」中管理連線詳細資料與金鑰。",
         "selectedLocalQwenHint": "目前使用本機 Qwen ASR 連線「{{name}}」；可在「API 存取」中修改服務位址。VRCS 會將音訊傳送至該服務，後續處理由服務決定。",
         "cloudDescription": "只有偵測到語音時才會傳送音訊。",

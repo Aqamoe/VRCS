@@ -34,7 +34,7 @@ Open **Settings › System › Features** to turn off optional features. The fea
 ## Features
 
 - Real-time subtitles from system or VRChat process audio alongside microphone input, with separate controls for the two audio streams, compact window mode, and local session history.
-- Local Qwen3 ASR on CPU or Vulkan, plus cloud recognition with Qwen3 ASR, Fun-ASR, OpenAI Realtime, Gemini, and Groq. Silero VAD and optional Smart Turn control speech segmentation.
+- Local Qwen3 ASR on CPU or Vulkan, plus cloud recognition with Qwen3 ASR, Fun-ASR, OpenAI Realtime, Gemini, Groq, and OpenRouter. Silero VAD and optional Smart Turn control speech segmentation.
 - Manual or automatic translation with DeepL, Microsoft Translator, OpenAI, Gemini, Alibaba Cloud LLM, and OpenAI-compatible services. Configure up to three target languages per audio stream, each with its own service and model.
 - Qwen Live Translate, Gemini Live Translate (Preview), and OpenAI Realtime Translation produce live source text and translations for each stream's first target language. Qwen also distinguishes speakers.
 - Custom prompts, local glossaries, online glossary subscriptions, recent subtitle context, and optional world and member information from [VRCX-0](https://vrcx-0.dev/). Save language presets to switch recognition language, translation targets, and Chatbox sending strategies.

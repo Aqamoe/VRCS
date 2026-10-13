@@ -1240,11 +1240,6 @@
           "realtime_stream": "实时流式传输",
           "segmented_upload": "分段上传"
         },
-        "segmentedUpload": {
-          "title": "语句结束后返回结果",
-          "description": "音频会在检测到语句结束后上传，而不是持续流式传输。",
-          "noPartial": "此服务不提供 Partial 中间结果。"
-        },
         "selectedApiHint": "当前使用 API 配置“{{name}}”；连接详情和密钥请在“API 管理”中维护。",
         "selectedLocalQwenHint": "当前使用本机 Qwen ASR 连接“{{name}}”；服务地址可在“API 管理”中修改。VRCS 将音频发送给该服务，后续处理由服务决定。",
         "cloudDescription": "仅在本地检测到语音时上传音频。",

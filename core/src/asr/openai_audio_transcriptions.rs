@@ -441,6 +441,18 @@ mod tests {
         );
     }
 
+    #[test]
+    fn openrouter_transcription_url_uses_the_dedicated_stt_endpoint() {
+        let profile = ApiProfile {
+            provider: providers::OPENROUTER_PROVIDER.into(),
+            ..ApiProfile::default()
+        };
+        assert_eq!(
+            transcriptions_url(&profile).unwrap(),
+            "https://openrouter.ai/api/v1/audio/transcriptions"
+        );
+    }
+
     #[tokio::test]
     async fn multipart_request_omits_auto_language_and_includes_context() {
         let (base_url, request) = mock_server(r#"{"text":"hello"}"#).await;

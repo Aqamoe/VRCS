@@ -162,13 +162,6 @@ export function CloudProviderSettings({
           disabled={disabled || Boolean(liveTranslationServiceName(service?.id))}
           onChange={(value) => onUpdateAsr("language", value)}
         />
-        {service?.recognition_transport === "segmented_upload" && (
-          <div className="cloud-transport-hint" role="note">
-            <strong>{t("settings.recognition.segmentedUpload.title")}</strong>
-            <small>{t("settings.recognition.segmentedUpload.description")}</small>
-            {!service.partial_results && <small>{t("settings.recognition.segmentedUpload.noPartial")}</small>}
-          </div>
-        )}
         {Boolean(liveTranslationServiceName(service?.id)) && <div className="cloud-transport-hint" role="note"><strong>{liveTranslationServiceName(service?.id)}</strong><small>{t("settings.translation.liveTranslateHint")}</small><small>{t("settings.translation.liveTranslatePreview")}</small></div>}
         {selectedProfile && <small className="cloud-api-hint">{selectedProfile.provider === "qwen_local"
           ? t("settings.recognition.selectedLocalQwenHint", { name: selectedProfile.name })

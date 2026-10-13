@@ -1240,11 +1240,6 @@
           "realtime_stream": "リアルタイムストリーム",
           "segmented_upload": "区間ごとのアップロード"
         },
-        "segmentedUpload": {
-          "title": "発話終了後に結果を返します",
-          "description": "音声は連続ストリームではなく、発話終了後にアップロードされます。",
-          "noPartial": "このサービスでは部分結果を利用できません。"
-        },
         "selectedApiHint": "API 接続「{{name}}」を使用中です。接続情報とキーは「API 管理」で管理できます。",
         "selectedLocalQwenHint": "ローカル Qwen ASR 接続「{{name}}」を使用中です。アドレスは「API 管理」で変更できます。VRCS は音声をこのサービスに送信し、その後の処理はサービス側で決まります。",
         "cloudDescription": "ローカルで音声を検出した間だけ音声を送信します。",

@@ -37,6 +37,7 @@ pub const SERVICE_TOKEN_PLAN_REALTIME: &str = "token_plan_realtime";
 pub const SERVICE_OPENAI_REALTIME: &str = "openai_realtime";
 pub const SERVICE_OPENAI_REALTIME_TRANSLATE: &str = "openai_realtime_translate";
 pub const SERVICE_GROQ_TRANSCRIPTION: &str = "groq_transcription";
+pub const SERVICE_OPENROUTER_TRANSCRIPTION: &str = "openrouter_transcription";
 pub const SERVICE_GEMINI_TRANSCRIBE: &str = "gemini_transcribe";
 pub const SERVICE_GEMINI_LIVE_TRANSLATE: &str = "gemini_live_translate";
 pub const SERVICE_QWEN_LOCAL_TRANSCRIPTION: &str = "qwen_local_transcription";
@@ -151,6 +152,11 @@ const OPENAI_ASR_MODELS: &[&str] = &[
     "gpt-4o-transcribe",
 ];
 const GROQ_ASR_MODELS: &[&str] = &["whisper-large-v3-turbo", "whisper-large-v3"];
+const OPENROUTER_ASR_MODELS: &[&str] = &[
+    "openai/whisper-large-v3-turbo",
+    "openai/whisper-large-v3",
+    "openai/whisper-1",
+];
 const GEMINI_ASR_MODELS: &[&str] = &["gemini-3.5-transcribe-live"];
 const QWEN_LOCAL_ASR_MODELS: &[&str] = &["Qwen/Qwen3-ASR-0.6B", "Qwen/Qwen3-ASR-1.7B"];
 
@@ -489,14 +495,31 @@ const GROQ_SERVICES: &[ProviderServiceDefinition] = &[
     ),
 ];
 
-const OPENROUTER_SERVICES: &[ProviderServiceDefinition] = &[multimodal_service(
-    "openrouter_chat_completions",
-    "OpenRouter Chat Completions",
-    ServiceAdapter::OpenAiChatCompletions {
-        behavior: OpenAiProtocolBehavior::Standard,
+const OPENROUTER_SERVICES: &[ProviderServiceDefinition] = &[
+    multimodal_service(
+        "openrouter_chat_completions",
+        "OpenRouter Chat Completions",
+        ServiceAdapter::OpenAiChatCompletions {
+            behavior: OpenAiProtocolBehavior::Standard,
+        },
+        SupportLevel::ProtocolCompatible,
+    ),
+    ProviderServiceDefinition {
+        supports_model_listing: true,
+        ..recognition_service_definition(
+            SERVICE_OPENROUTER_TRANSCRIPTION,
+            "OpenRouter Transcription",
+            ServiceAdapter::OpenAiAudioTranscriptions,
+            RecognitionServiceSpec {
+                transport: RecognitionTransport::SegmentedUpload,
+                partial_results: false,
+                models: OPENROUTER_ASR_MODELS,
+                context_max_chars: None,
+                support: SupportLevel::Native,
+            },
+        )
     },
-    SupportLevel::ProtocolCompatible,
-)];
+];
 
 const DEEPSEEK_SERVICES: &[ProviderServiceDefinition] = &[multimodal_service(
     "deepseek_chat_completions",
@@ -736,7 +759,7 @@ pub fn definition(provider: &str) -> Option<ProviderDefinition> {
                     true,
                 ),
                 OPENROUTER_SERVICES,
-                LLM_PURPOSES,
+                SHARED_PURPOSES,
                 LLM_TRANSLATION_LANGUAGES,
                 true,
             ),
@@ -1335,6 +1358,35 @@ pub fn translation_language_name(language: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn openrouter_transcription_exposes_segmented_asr_and_dynamic_models() {
+        let speech_profile = profile(OPENROUTER_PROVIDER, &[CAPABILITY_SPEECH_TO_TEXT]);
+        validation::validate_profile(&speech_profile).unwrap();
+        let resolved =
+            resolve_profile_service(&speech_profile, "openrouter_transcription").unwrap();
+        assert_eq!(
+            resolved.service.adapter,
+            ServiceAdapter::OpenAiAudioTranscriptions
+        );
+        assert_eq!(
+            resolved.service.recognition_transport,
+            Some(RecognitionTransport::SegmentedUpload)
+        );
+        assert!(resolved.service.supports_model_listing);
+        assert!(!resolved.service.partial_results);
+        assert!(!resolved.service.supports_context);
+        assert_eq!(resolved.provider.purposes, SHARED_PURPOSES);
+        assert!(recognition_model_supported(
+            resolved.service,
+            "new-provider/new-asr"
+        ));
+        assert!(resolve_profile_service(
+            &profile(OPENROUTER_PROVIDER, TEXT_CAPABILITIES),
+            "openrouter_transcription"
+        )
+        .is_err());
+    }
 
     fn profile(provider: &str, capabilities: &[&str]) -> ApiProfile {
         ApiProfile {
