@@ -342,7 +342,8 @@ impl VisionService {
                     instructions: &instructions,
                     input: question,
                     max_output_tokens: snapshot.vision.max_output_tokens,
-                    thinking_enabled: false,
+                    thinking_enabled: snapshot.vision.thinking_enabled,
+                    reasoning_control: snapshot.vision.reasoning_control.clone(),
                 },
                 image,
             ),
@@ -898,6 +899,21 @@ mod tests {
     }
 
     #[test]
+    fn thinking_preference_round_trips_and_invalidates_request_snapshots() {
+        let old: VisionConfig = serde_json::from_str(r#"{"model":"image-model"}"#).unwrap();
+        assert!(!old.thinking_enabled);
+        let enabled: VisionConfig =
+            serde_json::from_str(r#"{"model":"image-model","thinking_enabled":true}"#).unwrap();
+        assert!(enabled.thinking_enabled);
+        assert_ne!(request_configuration(&old), request_configuration(&enabled));
+        let saved = serde_json::to_string(&enabled).unwrap();
+        assert_eq!(
+            serde_json::from_str::<VisionConfig>(&saved).unwrap(),
+            enabled
+        );
+    }
+
+    #[test]
     fn image_limits_are_checked_before_sending() {
         let mut config = VisionConfig::default();
         let image = test_png();
@@ -915,6 +931,24 @@ mod tests {
         let mut oversized = image.clone();
         oversized[16..20].copy_from_slice(&2000_u32.to_be_bytes());
         assert!(validate_image(&oversized, &config).is_err());
+    }
+
+    #[test]
+    fn enabled_vision_still_rejects_incomplete_connection_before_requests() {
+        let mut config = AppConfig::default();
+        config.vision.enabled = true;
+        assert!(config.validate_settings().is_ok());
+        assert_eq!(
+            vision_profile(&config).err().as_deref(),
+            Some("Select a model that supports image input")
+        );
+
+        config.vision.model = "image-model".into();
+        assert!(config.validate_settings().is_ok());
+        assert_eq!(
+            vision_profile(&config).err().as_deref(),
+            Some("Select an image-input API profile")
+        );
     }
 
     #[test]

@@ -17,7 +17,14 @@ pub(super) async fn generate(
     request: LlmRequest<'_>,
     on_progress: Option<&LlmProgress>,
 ) -> Result<String, LlmError> {
-    let body = request_body(&request);
+    let mut body = request_body(&request);
+    super::models_dev::apply_request(&mut body, profile, &request);
+    super::reasoning::apply_explicit_control(
+        &mut body,
+        &profile.provider,
+        &request,
+        super::models_dev::model_details(profile, request.model).as_ref(),
+    )?;
     let request = generation_request(
         http,
         profile,
@@ -36,7 +43,14 @@ pub(super) async fn generate_with_image(
     request: LlmRequest<'_>,
     image: &[u8],
 ) -> Result<String, LlmError> {
-    let body = image_request_body(&request, image);
+    let mut body = image_request_body(&request, image);
+    super::models_dev::apply_request(&mut body, profile, &request);
+    super::reasoning::apply_explicit_control(
+        &mut body,
+        &profile.provider,
+        &request,
+        super::models_dev::model_details(profile, request.model).as_ref(),
+    )?;
     let request = generation_request(http, profile, api_key, request.model, &body, false)?;
     generate_response(request, None).await
 }
@@ -91,6 +105,15 @@ pub(super) async fn list_models(
     http: &reqwest::Client,
     api_key: &str,
 ) -> Result<Vec<String>, LlmError> {
+    list_model_catalog(http, api_key)
+        .await
+        .map(|catalog| catalog.models)
+}
+
+pub(super) async fn list_model_catalog(
+    http: &reqwest::Client,
+    api_key: &str,
+) -> Result<super::model_catalog::ModelCatalog, LlmError> {
     let response = http
         .get(format!("{BASE_URL}/models"))
         .header("x-goog-api-key", api_key)
@@ -101,16 +124,34 @@ pub(super) async fn list_models(
     if !status.is_success() {
         return Err(response_error(response).await);
     }
-    let value = response.json().await.map_err(invalid_response)?;
+    let value: Value = response.json().await.map_err(invalid_response)?;
     let models = extract_models(&value);
     if models.is_empty() {
         return Err(LlmError {
             code: "llm.invalid_response",
             detail: "Gemini did not return any models that support generateContent".into(),
             retryable: false,
+            retry_after: None,
         });
     }
-    Ok(models)
+    let model_details = value
+        .get("models")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let model = entry.get("name")?.as_str()?.strip_prefix("models/")?;
+            if !models.iter().any(|id| id == model) {
+                return None;
+            }
+            let details = super::model_catalog::ModelDetails::from_native(entry, "gemini");
+            Some((model.to_owned(), details))
+        })
+        .collect();
+    Ok(super::model_catalog::ModelCatalog {
+        models,
+        model_details,
+    })
 }
 
 fn image_request_body(request: &LlmRequest<'_>, image: &[u8]) -> Value {
@@ -168,6 +209,7 @@ fn model_id(model: &str) -> Result<&str, LlmError> {
             code: "llm.invalid_profile",
             detail: "Gemini model ID is invalid".into(),
             retryable: false,
+            retry_after: None,
         });
     }
     Ok(model)
@@ -206,6 +248,7 @@ fn process_sse_line(
         code: "llm.invalid_response",
         detail: error.to_string(),
         retryable: false,
+        retry_after: None,
     })?;
     let line = line.trim_end_matches(['\r', '\n']);
     if let Some(data) = line.strip_prefix("data:") {
@@ -219,6 +262,7 @@ fn process_sse_line(
         code: "llm.invalid_response",
         detail: error.to_string(),
         retryable: false,
+        retry_after: None,
     })?;
     event_data.clear();
     let completed = response_completed(&value)?;
@@ -283,6 +327,7 @@ fn response_failure(detail: String, retryable: bool) -> LlmError {
         code: "llm.request_failed",
         detail,
         retryable,
+        retry_after: None,
     }
 }
 
@@ -344,6 +389,7 @@ fn network_error(error: reqwest::Error) -> LlmError {
         },
         detail: error.to_string(),
         retryable: true,
+        retry_after: None,
     }
 }
 
@@ -355,6 +401,7 @@ fn invalid_response(error: reqwest::Error) -> LlmError {
         code: "llm.invalid_response",
         detail: error.to_string(),
         retryable: false,
+        retry_after: None,
     }
 }
 
@@ -385,6 +432,7 @@ fn status_error(status: StatusCode, value: &Value) -> LlmError {
         code,
         detail,
         retryable,
+        retry_after: None,
     }
 }
 
@@ -404,6 +452,7 @@ mod tests {
             input: "What is visible?",
             max_output_tokens: 256,
             thinking_enabled: false,
+            reasoning_control: None,
         };
         let body = image_request_body(&request, b"\x89PNG\r\n\x1a\n");
         assert_eq!(
@@ -471,6 +520,7 @@ mod tests {
                 input: "What is visible?",
                 max_output_tokens: 256,
                 thinking_enabled,
+                reasoning_control: None,
             };
             let body = image_request_body(&request, b"png");
             let mut expected = request_body(&request);
@@ -496,6 +546,7 @@ mod tests {
             input: "",
             max_output_tokens: 256,
             thinking_enabled: false,
+            reasoning_control: None,
         };
         let mut body = image_request_body(&request, b"png");
         let overhead = serde_json::to_vec(&body).unwrap().len();
@@ -635,6 +686,7 @@ mod tests {
                 input: "Hello",
                 max_output_tokens: 256,
                 thinking_enabled: thinking,
+                reasoning_control: None,
             });
             assert_eq!(body["generationConfig"]["thinkingConfig"], expected_config);
             assert_eq!(
@@ -652,6 +704,7 @@ mod tests {
             input: "こんにちは",
             max_output_tokens: 256,
             thinking_enabled: false,
+            reasoning_control: None,
         });
         assert_eq!(body["systemInstruction"]["parts"][0]["text"], "Translate");
         assert_eq!(body["contents"][0]["parts"][0]["text"], "こんにちは");

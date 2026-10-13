@@ -21,9 +21,9 @@ const GEMINI_DIAGNOSTIC_MODELS: &[&str] =
     &["gemini-3.7-flash", "gemini-3.6-flash", "gemini-2.5-flash"];
 const ALIBABA_DIAGNOSTIC_MODELS: &[&str] = &["qwen3.6-flash", "qwen3.7-plus", "qwen3.7-max"];
 const OPENROUTER_DIAGNOSTIC_MODELS: &[&str] = &[
-    "openai/gpt-5-mini",
-    "google/gemini-2.5-flash",
     "openai/gpt-4o-mini",
+    "google/gemini-2.5-flash",
+    "openai/gpt-5-mini",
 ];
 
 use super::cloud::{ensure_asr_profile_ready, profile_api_key, profile_not_found};
@@ -118,7 +118,16 @@ pub(super) async fn credential_test(
                     diagnostic_invalid("Select an image-capable model to test".into())
                 })?;
             let key = profile_api_key(profile)?;
-            crate::llm::LlmClient::new(reqwest::Client::new())
+            let client = crate::llm::LlmClient::new(reqwest::Client::new());
+            let details = client.openrouter_model_details(profile, &key, model).await;
+            let max_output_tokens = if profile.provider == OPENROUTER_PROVIDER
+                && crate::llm::openrouter::needs_reasoning_budget(details.as_ref(), false, model)
+            {
+                4096
+            } else {
+                128
+            };
+            client
                 .generate_with_image(
                     profile,
                     &key,
@@ -126,8 +135,9 @@ pub(super) async fn credential_test(
                         model,
                         instructions: "Describe the supplied test image briefly.",
                         input: "What color is the image?",
-                        max_output_tokens: 128,
+                        max_output_tokens,
                         thinking_enabled: false,
+                        reasoning_control: None,
                     },
                     &crate::vision::test_png(),
                 )
@@ -226,6 +236,7 @@ async fn test_text_generation(
                 input: "Connection test",
                 max_output_tokens: DIAGNOSTIC_MAX_OUTPUT_TOKENS,
                 thinking_enabled: false,
+                reasoning_control: None,
             },
             None,
         )
@@ -269,6 +280,7 @@ async fn test_translation(
         model,
         model_by_profile: Default::default(),
         thinking_enabled: false,
+        reasoning_control: None,
     };
     let prompt = crate::config::TranslationPromptConfig::default();
     state
@@ -317,7 +329,7 @@ async fn compatible_diagnostic(
     let model = match client.list_models(profile, &api_key).await {
         Ok(models) => {
             checks.push(passed("endpoint"));
-            checks.push(passed("authentication"));
+            checks.push(skipped("authentication"));
             checks.push(passed("models"));
             requested_model.or_else(|| select_listed_model(&profile.provider, models))
         }
@@ -339,7 +351,7 @@ async fn compatible_diagnostic(
         }
         Err(error) => {
             checks.push(passed("endpoint"));
-            checks.push(passed("authentication"));
+            checks.push(skipped("authentication"));
             checks.push(warning("models", "llm.models_unsupported", error.detail));
             requested_model
         }
@@ -353,17 +365,42 @@ async fn compatible_diagnostic(
         checks.push(skipped("streaming"));
         return Ok(diagnostic_value(false, started, checks));
     };
+    let details = client
+        .openrouter_model_details(profile, &api_key, &model)
+        .await;
+    let max_output_tokens = if profile.provider == OPENROUTER_PROVIDER
+        && crate::llm::openrouter::needs_reasoning_budget(details.as_ref(), false, &model)
+    {
+        4096
+    } else {
+        DIAGNOSTIC_MAX_OUTPUT_TOKENS
+    };
     let request = || crate::llm::LlmRequest {
         model: &model,
         instructions: "Reply with OK only.",
         input: "Connection test",
-        max_output_tokens: DIAGNOSTIC_MAX_OUTPUT_TOKENS,
+        max_output_tokens,
         thinking_enabled: false,
+        reasoning_control: None,
     };
     if let Err(error) = client.generate(profile, &api_key, request(), None).await {
+        if error.code == "llm.authentication_failed" {
+            if let Some(check) = checks
+                .iter_mut()
+                .find(|check| check.name == "authentication")
+            {
+                *check = failed("authentication", error.code, error.detail.clone());
+            }
+        }
         checks.push(failed("completion", error.code, error.detail));
         checks.push(skipped("streaming"));
         return Ok(diagnostic_value(false, started, checks));
+    }
+    if let Some(check) = checks
+        .iter_mut()
+        .find(|check| check.name == "authentication")
+    {
+        *check = passed("authentication");
     }
     checks.push(passed("completion"));
     let progress = |_: &str| {};
@@ -376,12 +413,7 @@ async fn compatible_diagnostic(
             Ok(diagnostic_value(true, started, checks))
         }
         Err(error) => {
-            let code = if error.code == "llm.invalid_response" {
-                "llm.sse_incompatible"
-            } else {
-                error.code
-            };
-            checks.push(failed("streaming", code, error.detail));
+            checks.push(failed("streaming", error.code, error.detail));
             Ok(diagnostic_value(false, started, checks))
         }
     }

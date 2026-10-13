@@ -1,6 +1,76 @@
 use super::*;
 
 #[tokio::test]
+async fn public_model_catalog_does_not_prove_completion_authentication() {
+    use axum::{
+        routing::{get, post},
+        Json, Router,
+    };
+    let upstream = Router::new()
+        .route(
+            "/v1/models",
+            get(|| async { Json(serde_json::json!({"data": [{"id": "fixture"}]})) }),
+        )
+        .route(
+            "/v1/chat/completions",
+            post(|| async {
+                (
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"error": {"message": "Invalid key"}})),
+                )
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream_address = listener.local_addr().unwrap();
+    let upstream_task = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let directory = tempfile::tempdir().unwrap();
+    let config_path = directory.path().join("config.json");
+    let mut config = config::AppConfig::default();
+    config.asr.api_profiles = vec![config::ApiProfile {
+        id: "public-catalog".into(),
+        name: "Public catalog fixture".into(),
+        provider: providers::OPENAI_COMPATIBLE_PROVIDER.into(),
+        auth_mode: config::ApiAuthMode::None,
+        is_local: true,
+        base_url: Some(format!("http://{upstream_address}/v1")),
+        enabled_capabilities: vec![providers::CAPABILITY_TEXT_GENERATION.into()],
+        ..config::ApiProfile::default()
+    }];
+    config::save_config(&config_path, &config).unwrap();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let handle = start(CoreOptions {
+        config_path,
+        host: Some("127.0.0.1".into()),
+        port: Some(port),
+        session_token: Some("diagnostic-fixture".into()),
+        vad_model_path: Some(directory.path().join("missing-silero.onnx")),
+        asr_model_dir: None,
+    })
+    .await
+    .unwrap();
+    let response = reqwest::Client::builder().no_proxy().build().unwrap()
+        .post(format!("http://{}/api/asr/profiles/public-catalog/test?capability=text_generation&model=fixture", handle.address()))
+        .bearer_auth("diagnostic-fixture").send().await.unwrap();
+    let status = response.status();
+    let value: serde_json::Value = response.json().await.unwrap();
+    handle.shutdown().await.unwrap();
+    upstream_task.abort();
+    assert_eq!(status, reqwest::StatusCode::OK, "{value}");
+    assert_eq!(value["ok"], false);
+    let checks = value["checks"].as_array().unwrap();
+    let check = |name| checks.iter().find(|check| check["name"] == name).unwrap();
+    assert_eq!(check("models")["status"], "passed");
+    assert_eq!(check("authentication")["status"], "failed");
+    assert_eq!(check("authentication")["code"], "llm.authentication_failed");
+    assert_eq!(check("completion")["status"], "failed");
+    assert_eq!(check("streaming")["status"], "skipped");
+}
+
+#[tokio::test]
 async fn feature_switches_project_runtime_and_block_business_routes() {
     let directory = tempfile::tempdir().unwrap();
     let config_path = directory.path().join("config.json");

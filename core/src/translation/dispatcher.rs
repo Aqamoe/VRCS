@@ -11,6 +11,37 @@ use crate::subtitle_output::{SubtitleLifecyclePublisher, TranslationFailure};
 
 use super::TranslationService;
 
+fn retry_delay(error: &super::TranslationError) -> Option<Duration> {
+    if !error.retryable {
+        return None;
+    }
+    let delay = error.retry_after.unwrap_or(Duration::from_millis(250));
+    (delay <= Duration::from_secs(5)).then_some(delay)
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+
+    #[test]
+    fn respects_server_delays_and_limits_automatic_subtitle_retries() {
+        let mut error = super::super::TranslationError {
+            code: "llm.rate_limited",
+            detail: String::new(),
+            retryable: true,
+            retry_after: None,
+        };
+        assert_eq!(retry_delay(&error), Some(Duration::from_millis(250)));
+        error.retry_after = Some(Duration::from_secs(3));
+        assert_eq!(retry_delay(&error), Some(Duration::from_secs(3)));
+        error.retry_after = Some(Duration::from_secs(6));
+        assert_eq!(retry_delay(&error), None);
+        error.retry_after = None;
+        error.retryable = false;
+        assert_eq!(retry_delay(&error), None);
+    }
+}
+
 #[derive(Clone)]
 pub struct TranslationDispatcher {
     sender: mpsc::Sender<TranslationJob>,
@@ -184,8 +215,8 @@ async fn process_job(
         )
         .await;
     let result = match first {
-        Err(error) if error.retryable => {
-            tokio::time::sleep(Duration::from_millis(250)).await;
+        Err(error) if retry_delay(&error).is_some() => {
+            tokio::time::sleep(retry_delay(&error).unwrap()).await;
             service
                 .translate_with_progress(
                     &target,

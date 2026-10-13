@@ -16,6 +16,7 @@ pub(super) async fn generate(
 ) -> Result<String, LlmError> {
     openai_compatible::generate_standard(
         http,
+        profile,
         format!("{}/chat/completions", base_url(profile)?),
         api_key,
         request,
@@ -45,6 +46,7 @@ pub(super) fn base_url(profile: &ApiProfile) -> Result<String, LlmError> {
             code: "llm.invalid_profile",
             detail,
             retryable: false,
+            retry_after: None,
         });
     }
     let workspace = profile.workspace_id.as_deref().unwrap_or("").trim();
@@ -65,6 +67,7 @@ pub(super) fn base_url(profile: &ApiProfile) -> Result<String, LlmError> {
             code: "llm.invalid_profile",
             detail: "Alibaba Cloud region is invalid".into(),
             retryable: false,
+            retry_after: None,
         }),
     }
 }

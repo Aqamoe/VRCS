@@ -300,6 +300,7 @@ pub(super) async fn subtitle_translate(
             code: "translation.not_configured",
             detail: "No translation target is configured".into(),
             retryable: false,
+            retry_after: None,
         }))
     })?;
     Ok(Json(json!(record)))
@@ -308,6 +309,9 @@ pub(super) async fn subtitle_translate(
 fn translation_error(error: TranslationError) -> (StatusCode, Json<Value>) {
     let status = match error.code {
         "translation.invalid_text"
+        | "llm.reasoning_unsupported"
+        | "llm.reasoning_budget_invalid"
+        | "llm.reasoning_capability_unavailable"
         | "translation.invalid_target_language"
         | "translation.unsupported_provider" => StatusCode::UNPROCESSABLE_ENTITY,
         "translation.not_configured"

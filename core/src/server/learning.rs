@@ -319,6 +319,9 @@ fn learning_db_error(error: AppError) -> (StatusCode, Json<Value>) {
 fn learning_service_error(error: LearningError) -> (StatusCode, Json<Value>) {
     let status = match error.code {
         "learning.invalid_request"
+        | "llm.reasoning_unsupported"
+        | "llm.reasoning_budget_invalid"
+        | "llm.reasoning_capability_unavailable"
         | "learning.not_configured"
         | "learning.unsupported_provider"
         | "learning.credential_missing"

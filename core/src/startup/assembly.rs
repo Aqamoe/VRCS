@@ -73,6 +73,11 @@ impl RuntimeAssembly {
         let learning_service = Arc::new(learning::LearningService::new()?);
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        crate::llm::models_dev::initialize(
+            &plan.config_path,
+            &plan.config.asr.api_profiles,
+            shutdown_rx.clone(),
+        );
         let vrcx = vrcx::VrcxIntegration::new(shutdown_rx.clone());
         let vrcx_token = match credentials::read_vrcx_token() {
             Ok(token) => token,

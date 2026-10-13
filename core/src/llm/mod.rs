@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use crate::config::ApiProfile;
+use crate::config::{ApiProfile, ReasoningSetting};
 use crate::providers::{
     self, OpenAiProtocolBehavior, ServiceAdapter, CAPABILITY_IMAGE_UNDERSTANDING,
     CAPABILITY_TEXT_GENERATION,
@@ -11,8 +11,11 @@ use crate::providers::{
 mod alibaba;
 mod gemini;
 mod http;
+pub mod model_catalog;
+pub mod models_dev;
 mod openai;
 mod openai_compatible;
+pub mod openrouter;
 mod reasoning;
 
 #[derive(Debug, Clone)]
@@ -22,6 +25,7 @@ pub struct LlmRequest<'a> {
     pub input: &'a str,
     pub max_output_tokens: u32,
     pub thinking_enabled: bool,
+    pub reasoning_control: Option<ReasoningSetting>,
 }
 
 pub type LlmProgress = dyn Fn(&str) + Send + Sync;
@@ -31,16 +35,55 @@ pub struct LlmError {
     pub code: &'static str,
     pub detail: String,
     pub retryable: bool,
+    pub retry_after: Option<std::time::Duration>,
 }
 
 #[derive(Clone)]
 pub struct LlmClient {
     http: reqwest::Client,
+    openrouter_catalog: openrouter::CatalogCache,
 }
 
 impl LlmClient {
     pub fn new(http: reqwest::Client) -> Self {
-        Self { http }
+        Self {
+            http,
+            openrouter_catalog: Default::default(),
+        }
+    }
+
+    pub async fn openrouter_models(
+        &self,
+        profile: &ApiProfile,
+        api_key: &str,
+    ) -> Result<std::sync::Arc<openrouter::ModelCatalog>, LlmError> {
+        let mut catalog = self
+            .openrouter_catalog
+            .get(&self.http, profile, api_key)
+            .await?;
+        models_dev::supplement(profile, std::sync::Arc::make_mut(&mut catalog));
+        Ok(catalog)
+    }
+
+    pub async fn openrouter_model_details(
+        &self,
+        profile: &ApiProfile,
+        api_key: &str,
+        model: &str,
+    ) -> Option<openrouter::ModelDetails> {
+        if profile.provider != providers::OPENROUTER_PROVIDER {
+            return None;
+        }
+        match self.openrouter_models(profile, api_key).await {
+            Ok(catalog) => catalog.model_details.get(model).cloned(),
+            Err(error) => {
+                tracing::debug!(
+                    error_code = error.code,
+                    "OpenRouter model metadata unavailable"
+                );
+                models_dev::model_details(profile, model)
+            }
+        }
     }
 
     pub async fn generate(
@@ -76,15 +119,45 @@ impl LlmClient {
                     code: "llm.unsupported_provider",
                     detail,
                     retryable: false,
+                    retry_after: None,
                 })?;
         if image.is_empty() {
             return Err(LlmError {
                 code: "llm.request_failed",
                 detail: "Image input must not be empty".into(),
                 retryable: false,
+                retry_after: None,
             });
         }
-        match resolved.service.adapter {
+        let details = self
+            .openrouter_model_details(profile, api_key, request.model)
+            .await
+            .or_else(|| models_dev::model_details(profile, request.model));
+        if details.as_ref().is_some_and(|details| {
+            details
+                .field_sources
+                .get("input_modalities")
+                .is_some_and(|source| source == "provider_api")
+                && !details.input_modalities.is_empty()
+                && !details
+                    .input_modalities
+                    .iter()
+                    .any(|modality| modality == "image")
+        }) {
+            return Err(LlmError {
+                code: "llm.request_failed",
+                detail: format!(
+                    "The selected {} model does not accept image input",
+                    resolved.provider.display_name
+                ),
+                retryable: false,
+                retry_after: None,
+            });
+        }
+        let started = Instant::now();
+        let model = request.model;
+        let max_output_tokens = request.max_output_tokens;
+        let result = match resolved.service.adapter {
             ServiceAdapter::OpenAiResponses => {
                 openai::generate_with_image(&self.http, profile, api_key, request, image).await
             }
@@ -100,6 +173,7 @@ impl LlmClient {
                     image,
                     resolved.provider.display_name,
                     behavior,
+                    details.as_ref(),
                 )
                 .await
             }
@@ -112,11 +186,24 @@ impl LlmClient {
                     image,
                     resolved.provider.display_name,
                     OpenAiProtocolBehavior::Alibaba,
+                    None,
                 )
                 .await
             }
             adapter => Err(unsupported_adapter(adapter)),
-        }
+        };
+        tracing::info!(
+            provider = profile.provider,
+            model,
+            capability = CAPABILITY_IMAGE_UNDERSTANDING,
+            latency_ms = started.elapsed().as_millis() as u64,
+            max_output_tokens,
+            success = result.is_ok(),
+            error_code = result.as_ref().err().map(|error| error.code),
+            retryable = result.as_ref().err().map(|error| error.retryable),
+            "LLM image request completed"
+        );
+        result
     }
 
     pub(crate) async fn generate_for_capability(
@@ -131,10 +218,14 @@ impl LlmClient {
         let model = request.model.to_owned();
         let input_chars = request.input.chars().count();
         let thinking_enabled = request.thinking_enabled;
+        let max_output_tokens = request.max_output_tokens;
+        let details = self
+            .openrouter_model_details(profile, api_key, request.model)
+            .await;
         let result = match providers::resolve_profile_capability(profile, capability) {
             Ok(resolved) => match resolved.service.adapter {
                 ServiceAdapter::OpenAiResponses => {
-                    openai::generate(&self.http, api_key, request).await
+                    openai::generate(&self.http, profile, api_key, request).await
                 }
                 ServiceAdapter::OpenAiChatCompletions { behavior } => {
                     openai_compatible::generate(
@@ -144,6 +235,7 @@ impl LlmClient {
                         request,
                         resolved.provider.display_name,
                         behavior,
+                        details.as_ref(),
                         on_progress,
                     )
                     .await
@@ -160,10 +252,12 @@ impl LlmClient {
                 code: "llm.unsupported_provider",
                 detail,
                 retryable: false,
+                retry_after: None,
             }),
         };
         tracing::info!(
             provider = profile.provider,
+            capability,
             model,
             latency_ms = started.elapsed().as_millis() as u64,
             input_chars,
@@ -171,6 +265,14 @@ impl LlmClient {
             thinking_enabled,
             streamed = on_progress.is_some(),
             success = result.is_ok(),
+            max_output_tokens,
+            error_code = result.as_ref().err().map(|error| error.code),
+            retryable = result.as_ref().err().map(|error| error.retryable),
+            retry_after_ms = result
+                .as_ref()
+                .err()
+                .and_then(|error| error.retry_after)
+                .map(|delay| delay.as_millis() as u64),
             "LLM request completed"
         );
         result
@@ -195,12 +297,14 @@ impl LlmClient {
                 profile.id
             ),
             retryable: false,
+            retry_after: None,
         })?;
         if !resolved.service.supports_model_listing {
             return Err(LlmError {
                 code: "llm.models_unsupported",
                 detail: format!("Service {} does not expose LLM models", resolved.service.id),
                 retryable: false,
+                retry_after: None,
             });
         }
         self.list_models_with_adapter(profile, api_key, resolved.service.adapter)
@@ -216,6 +320,7 @@ impl LlmClient {
             code: "llm.models_unsupported",
             detail: format!("Unsupported API provider: {}", profile.provider),
             retryable: false,
+            retry_after: None,
         })?;
         let adapter = provider
             .services
@@ -238,9 +343,41 @@ impl LlmClient {
                     profile.provider
                 ),
                 retryable: false,
+                retry_after: None,
             })?;
         self.list_models_with_adapter(profile, api_key, adapter)
             .await
+    }
+
+    pub async fn list_model_catalog(
+        &self,
+        profile: &ApiProfile,
+        api_key: &str,
+    ) -> Result<model_catalog::ModelCatalog, LlmError> {
+        if profile.provider == providers::OPENROUTER_PROVIDER {
+            return self
+                .openrouter_models(profile, api_key)
+                .await
+                .map(|catalog| catalog.as_ref().clone());
+        }
+        let mut catalog = match profile.provider.as_str() {
+            providers::GEMINI_PROVIDER => gemini::list_model_catalog(&self.http, api_key).await?,
+            providers::OPENAI_PROVIDER => {
+                openai::list_model_catalog(&self.http, profile, api_key).await?
+            }
+            providers::GROQ_PROVIDER | providers::DEEPSEEK_PROVIDER => {
+                openai_compatible::list_model_catalog(&self.http, profile, api_key).await?
+            }
+            _ => model_catalog::ModelCatalog {
+                models: self.list_provider_models(profile, api_key).await?,
+                ..Default::default()
+            },
+        };
+        models_dev::supplement(profile, &mut catalog);
+        for (model, details) in &mut catalog.model_details {
+            reasoning::add_builtin_options(details, &profile.provider, model);
+        }
+        Ok(catalog)
     }
 
     async fn list_models_with_adapter(
@@ -249,6 +386,12 @@ impl LlmClient {
         api_key: &str,
         adapter: ServiceAdapter,
     ) -> Result<Vec<String>, LlmError> {
+        if profile.provider == providers::OPENROUTER_PROVIDER {
+            return self
+                .openrouter_models(profile, api_key)
+                .await
+                .map(|catalog| catalog.models.clone());
+        }
         match adapter {
             ServiceAdapter::OpenAiResponses => {
                 openai::list_models(&self.http, profile, api_key).await
@@ -276,14 +419,19 @@ impl LlmClient {
             code: "llm.models_unsupported",
             detail,
             retryable: false,
+            retry_after: None,
         })?;
         let ServiceAdapter::OpenAiChatCompletions { behavior } = resolved.service.adapter else {
             return Err(LlmError {
                 code: "llm.models_unsupported",
                 detail: "Strict streaming diagnostics require an OpenAI-compatible adapter".into(),
                 retryable: false,
+                retry_after: None,
             });
         };
+        let details = self
+            .openrouter_model_details(profile, api_key, request.model)
+            .await;
         openai_compatible::test_streaming(
             &self.http,
             profile,
@@ -291,6 +439,7 @@ impl LlmClient {
             request,
             resolved.provider.display_name,
             behavior,
+            details.as_ref(),
             on_progress,
         )
         .await
@@ -302,6 +451,7 @@ fn unsupported_adapter(adapter: ServiceAdapter) -> LlmError {
         code: "llm.unsupported_provider",
         detail: format!("Unsupported LLM service adapter: {adapter:?}"),
         retryable: false,
+        retry_after: None,
     }
 }
 
@@ -319,7 +469,79 @@ mod tests {
             input: "What is visible?",
             max_output_tokens: 256,
             thinking_enabled: false,
+            reasoning_control: None,
         }
+    }
+
+    #[tokio::test]
+    async fn native_provider_image_constraints_apply_only_to_direct_facts() {
+        let gemini = ApiProfile {
+            id: "native-gemini-prefix-fixture".into(),
+            provider: providers::GEMINI_PROVIDER.into(),
+            ..Default::default()
+        };
+        let mut catalog = model_catalog::ModelCatalog {
+            models: vec!["prefix-fixture".into()],
+            model_details: [(
+                "prefix-fixture".into(),
+                model_catalog::ModelDetails::from_native(
+                    &json!({"outputTokenLimit": 256}),
+                    "gemini",
+                ),
+            )]
+            .into(),
+        };
+        models_dev::supplement(&gemini, &mut catalog);
+        assert_eq!(
+            models_dev::model_details(&gemini, " models/prefix-fixture ")
+                .unwrap()
+                .max_output_tokens,
+            Some(256)
+        );
+        let profile = ApiProfile {
+            id: "native-image-constraint-fixture".into(),
+            provider: providers::DEEPSEEK_PROVIDER.into(),
+            enabled_capabilities: vec![CAPABILITY_IMAGE_UNDERSTANDING.into()],
+            ..Default::default()
+        };
+        let mut catalog = model_catalog::ModelCatalog {
+            models: vec!["vision-model".into()],
+            model_details: [(
+                "vision-model".into(),
+                model_catalog::ModelDetails::from_native(
+                    &json!({"input_modalities": ["text"]}),
+                    "deepseek",
+                ),
+            )]
+            .into(),
+        };
+        models_dev::supplement(&profile, &mut catalog);
+        // A local closed proxy prevents any external API request if validation regresses.
+        let http = reqwest::Client::builder()
+            .proxy(reqwest::Proxy::all("http://127.0.0.1:9").unwrap())
+            .build()
+            .unwrap();
+        let client = LlmClient::new(http);
+        let error = client
+            .generate_with_image(&profile, "fixture", request(), b"image")
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "llm.request_failed");
+        assert!(error.detail.contains("does not accept image input"));
+        let mut public = profile.clone();
+        public.id = "public-image-constraint-fixture".into();
+        catalog
+            .model_details
+            .get_mut("vision-model")
+            .unwrap()
+            .field_sources
+            .insert("input_modalities".into(), "models_dev".into());
+        models_dev::supplement(&public, &mut catalog);
+        let error = client
+            .generate_with_image(&public, "fixture", request(), b"image")
+            .await
+            .unwrap_err();
+        assert!(!error.detail.contains("does not accept image input"));
     }
 
     #[tokio::test]

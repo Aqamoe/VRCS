@@ -4,6 +4,15 @@ use serde_json::{json, Value};
 use super::LlmError;
 
 pub(super) async fn list_models(request: reqwest::RequestBuilder) -> Result<Vec<String>, LlmError> {
+    list_model_catalog(request, "")
+        .await
+        .map(|catalog| catalog.models)
+}
+
+pub(super) async fn list_model_catalog(
+    request: reqwest::RequestBuilder,
+    provider: &str,
+) -> Result<super::model_catalog::ModelCatalog, LlmError> {
     let response = request.send().await.map_err(network_error)?;
     let status = response.status();
     if !status.is_success() {
@@ -16,9 +25,27 @@ pub(super) async fn list_models(request: reqwest::RequestBuilder) -> Result<Vec<
             code: "llm.invalid_response",
             detail: "The LLM service did not return any models".into(),
             retryable: false,
+            retry_after: None,
         });
     }
-    Ok(models)
+    let model_details = value
+        .get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let id = entry.get("id")?.as_str()?.trim();
+            if !models.iter().any(|model| model == id) {
+                return None;
+            }
+            let details = super::model_catalog::ModelDetails::from_native(entry, provider);
+            (!details.field_sources.is_empty()).then(|| (id.to_owned(), details))
+        })
+        .collect();
+    Ok(super::model_catalog::ModelCatalog {
+        models,
+        model_details,
+    })
 }
 
 pub(super) fn network_error(error: reqwest::Error) -> LlmError {
@@ -26,6 +53,7 @@ pub(super) fn network_error(error: reqwest::Error) -> LlmError {
         code: network_error_code(&error),
         detail: error.to_string(),
         retryable: true,
+        retry_after: None,
     }
 }
 
@@ -52,6 +80,7 @@ pub(super) fn invalid_response(error: reqwest::Error) -> LlmError {
         code: "llm.invalid_response",
         detail: error.to_string(),
         retryable: false,
+        retry_after: None,
     }
 }
 
@@ -64,6 +93,7 @@ pub(super) fn max_serialized_body(
         code: "llm.request_failed",
         detail: format!("Could not serialize {limit_name}: {error}"),
         retryable: false,
+        retry_after: None,
     })?;
     if bytes.len() > max_bytes {
         return Err(LlmError {
@@ -73,6 +103,7 @@ pub(super) fn max_serialized_body(
                 bytes.len()
             ),
             retryable: false,
+        retry_after: None,
         });
     }
     Ok(())
@@ -82,13 +113,52 @@ pub(super) async fn response_status_error(
     response: reqwest::Response,
     status: StatusCode,
 ) -> LlmError {
+    let retry_after = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| parse_retry_after(value, chrono::Utc::now()));
+    tracing::warn!(
+        http_status = status.as_u16(),
+        retry_after_ms = retry_after.map(|delay| delay.as_millis() as u64),
+        "LLM HTTP request failed"
+    );
     let value = match response.text().await {
         Ok(text) => serde_json::from_str(&text).unwrap_or_else(|_| {
             json!({ "error": { "message": format!("HTTP {status} returned a non-JSON response") } })
         }),
         Err(error) => return network_error(error),
     };
-    status_error(status, &value)
+    let mut error = status_error(status, &value);
+    error.retry_after = retry_after;
+    if status == StatusCode::PAYMENT_REQUIRED
+        && retry_after.is_some()
+        && value
+            .pointer("/error/metadata/limit_source")
+            .and_then(Value::as_str)
+            == Some("openrouter_in_flight_budget")
+    {
+        error.code = "llm.provider_unavailable";
+        error.retryable = true;
+    }
+    error
+}
+
+fn parse_retry_after(
+    value: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<std::time::Duration> {
+    let value = value.trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(std::time::Duration::from_secs(seconds));
+    }
+    chrono::DateTime::parse_from_rfc2822(value)
+        .ok()
+        .map(|date| {
+            (date.with_timezone(&chrono::Utc) - now)
+                .to_std()
+                .unwrap_or_default()
+        })
 }
 
 pub(super) fn status_error(status: StatusCode, value: &Value) -> LlmError {
@@ -98,27 +168,77 @@ pub(super) fn status_error(status: StatusCode, value: &Value) -> LlmError {
         .unwrap_or("LLM request failed")
         .to_owned();
     let error_type = value
-        .pointer("/error/type")
+        .pointer("/error/metadata/error_type")
+        .or_else(|| value.pointer("/error/type"))
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let (code, retryable) = match status.as_u16() {
-        401 | 403 => ("llm.authentication_failed", false),
-        404 if detail.to_ascii_lowercase().contains("model")
-            || error_type.to_ascii_lowercase().contains("model") =>
-        {
-            ("llm.model_not_found", false)
+    let (code, retryable) = match error_type {
+        "authentication" => ("llm.authentication_failed", false),
+        "permission_denied" | "content_policy_violation" | "refusal" => {
+            ("llm.permission_denied", false)
         }
-        404 => ("llm.path_not_found", false),
-        408 => ("llm.timeout", true),
-        429 => ("llm.rate_limited", true),
-        500..=599 => ("llm.provider_unavailable", true),
-        _ => ("llm.request_failed", false),
+        "payment_required" => ("llm.payment_required", false),
+        "max_tokens_exceeded" => ("llm.output_length_exceeded", false),
+        "invalid_request"
+        | "invalid_prompt"
+        | "context_length_exceeded"
+        | "token_limit_exceeded"
+        | "precondition_failed"
+        | "payload_too_large"
+        | "invalid_image"
+        | "image_too_large"
+        | "image_too_small"
+        | "unsupported_image_format"
+        | "image_not_found"
+        | "image_download_failed" => ("llm.request_failed", false),
+        "rate_limit_exceeded" => ("llm.rate_limited", true),
+        "provider_overloaded" | "provider_unavailable" | "server" => {
+            ("llm.provider_unavailable", true)
+        }
+        "timeout" => ("llm.timeout", true),
+        _ => match status.as_u16() {
+            401 => ("llm.authentication_failed", false),
+            402 => ("llm.payment_required", false),
+            403 => ("llm.permission_denied", false),
+            404 if detail.to_ascii_lowercase().contains("model")
+                || error_type.to_ascii_lowercase().contains("model") =>
+            {
+                ("llm.model_not_found", false)
+            }
+            404 => ("llm.path_not_found", false),
+            408 => ("llm.timeout", true),
+            429 => ("llm.rate_limited", true),
+            500..=599 => ("llm.provider_unavailable", true),
+            _ => ("llm.request_failed", false),
+        },
     };
     LlmError {
         code,
         detail,
         retryable,
+        retry_after: None,
     }
+}
+
+pub(super) fn completion_error(value: &Value) -> Option<LlmError> {
+    let error = value
+        .get("error")
+        .filter(|error| !error.is_null())
+        .or_else(|| {
+            value
+                .get("choices")?
+                .as_array()?
+                .iter()
+                .find_map(|choice| choice.get("error").filter(|error| !error.is_null()))
+        })?;
+    let status = error
+        .get("code")
+        .and_then(Value::as_u64)
+        .and_then(|code| u16::try_from(code).ok())
+        .and_then(|code| StatusCode::from_u16(code).ok())
+        .filter(|status| status.is_client_error() || status.is_server_error())
+        .unwrap_or(StatusCode::BAD_GATEWAY);
+    Some(status_error(status, &json!({"error": error})))
 }
 
 fn network_error_code(error: &reqwest::Error) -> &'static str {
@@ -167,6 +287,137 @@ fn extract_model_ids(value: &Value) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn catalogs_preserve_native_facts_and_legacy_id_only_responses() {
+        use axum::{routing::get, Json, Router};
+        let app = Router::new().route("/models", get(|| async { Json(json!({"data": [
+            {"id": "shared", "context_window": 32000, "max_output_tokens": 2048,
+             "max_completion_tokens": 1024, "input_modalities": ["text", "image"], "output_modalities": ["text"],
+             "effort": {"supported_levels": ["low", "high"], "default_level": "high"}},
+            {"id": "unknown"}
+        ]})) }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/models", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = reqwest::Client::new();
+        let deepseek = list_model_catalog(client.get(&url), "deepseek")
+            .await
+            .unwrap();
+        assert_eq!(deepseek.models, ["shared", "unknown"]);
+        assert_eq!(
+            deepseek.model_details["shared"].max_output_tokens,
+            Some(2048)
+        );
+        assert_eq!(
+            deepseek.model_details["shared"].input_modalities,
+            ["text", "image"]
+        );
+        assert!(!deepseek.model_details.contains_key("unknown"));
+        let groq = list_model_catalog(client.get(&url), "groq").await.unwrap();
+        assert_eq!(groq.model_details["shared"].context_tokens, Some(32000));
+        assert_eq!(groq.model_details["shared"].max_output_tokens, Some(1024));
+        assert!(groq.model_details["shared"].input_modalities.is_empty());
+        for provider in [
+            "openai",
+            "alibaba_cloud",
+            "alibaba_token_plan",
+            "openai_compatible",
+        ] {
+            let catalog = list_model_catalog(client.get(&url), provider)
+                .await
+                .unwrap();
+            assert_eq!(catalog.models, ["shared", "unknown"]);
+            assert!(catalog.model_details.is_empty());
+        }
+        server.abort();
+    }
+
+    #[test]
+    fn classifies_openrouter_errors_and_retry_after() {
+        for (status, error_type, code, retryable) in [
+            (402, "", "llm.payment_required", false),
+            (403, "", "llm.permission_denied", false),
+            (502, "rate_limit_exceeded", "llm.rate_limited", true),
+            (502, "invalid_request", "llm.request_failed", false),
+            (
+                502,
+                "max_tokens_exceeded",
+                "llm.output_length_exceeded",
+                false,
+            ),
+            (
+                502,
+                "content_policy_violation",
+                "llm.permission_denied",
+                false,
+            ),
+        ] {
+            let error = status_error(
+                StatusCode::from_u16(status).unwrap(),
+                &json!({"error": {"metadata": {"error_type": error_type}}}),
+            );
+            assert_eq!((error.code, error.retryable), (code, retryable));
+        }
+        let now = chrono::DateTime::parse_from_rfc2822("Wed, 21 Oct 2015 07:28:00 GMT")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        assert_eq!(
+            parse_retry_after("2", now),
+            Some(std::time::Duration::from_secs(2))
+        );
+        assert_eq!(
+            parse_retry_after("Wed, 21 Oct 2015 07:28:03 GMT", now),
+            Some(std::time::Duration::from_secs(3))
+        );
+        assert_eq!(
+            parse_retry_after("Wed, 21 Oct 2015 07:27:00 GMT", now),
+            Some(std::time::Duration::ZERO)
+        );
+        assert_eq!(parse_retry_after("invalid", now), None);
+    }
+
+    #[tokio::test]
+    async fn preserves_retry_after_on_http_errors() {
+        let response = reqwest::Response::from(
+            tokio_tungstenite::tungstenite::http::Response::builder()
+                .status(429)
+                .header("retry-after", "10")
+                .body("rate limited")
+                .unwrap(),
+        );
+        let error = response_status_error(response, StatusCode::TOO_MANY_REQUESTS).await;
+        assert_eq!(error.retry_after, Some(std::time::Duration::from_secs(10)));
+        assert_eq!(error.code, "llm.rate_limited");
+    }
+
+    #[tokio::test]
+    async fn only_temporary_in_flight_budget_errors_with_a_valid_delay_can_retry() {
+        for (limit_source, retry_after, expected) in [
+            ("openrouter_in_flight_budget", Some("2"), true),
+            ("openrouter_in_flight_budget", None, false),
+            ("openrouter_in_flight_budget", Some("invalid"), false),
+            ("openrouter_key_limit", Some("2"), false),
+            ("", Some("2"), false),
+        ] {
+            let mut response =
+                tokio_tungstenite::tungstenite::http::Response::builder().status(402);
+            if let Some(delay) = retry_after {
+                response = response.header("retry-after", delay);
+            }
+            let response = reqwest::Response::from(
+                response
+                    .body(
+                        json!({"error": {"metadata": {"limit_source": limit_source}}}).to_string(),
+                    )
+                    .unwrap(),
+            );
+            let error = response_status_error(response, StatusCode::PAYMENT_REQUIRED).await;
+            assert_eq!(error.retryable, expected);
+        }
+    }
 
     #[test]
     fn serialized_body_limit_counts_utf8_escaping_and_json_overhead() {

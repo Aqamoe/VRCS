@@ -264,7 +264,7 @@ mod tests {
         use crate::providers::{
             catalog, profile_capabilities, supports_llm_models, CAPABILITY_IMAGE_UNDERSTANDING,
             GEMINI_PROVIDER, GROQ_PROVIDER, LM_STUDIO_PROVIDER, OPENAI_PROVIDER,
-            OPENROUTER_PROVIDER,
+            OPENROUTER_PROVIDER, QWEN_AI_PROVIDER,
         };
         let supported = [
             ALIBABA_PROVIDER,
@@ -276,6 +276,7 @@ mod tests {
             OPENROUTER_PROVIDER,
             LM_STUDIO_PROVIDER,
             OLLAMA_PROVIDER,
+            QWEN_AI_PROVIDER,
         ];
         for provider in catalog() {
             let expected = supported.contains(&provider.id);

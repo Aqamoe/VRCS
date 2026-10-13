@@ -21,10 +21,29 @@ fn vision_defaults_and_limits_are_validated_even_when_disabled() {
         .contains("vision.wrist"));
     config.vision = super::ocr::VisionConfig::default();
     config.vision.enabled = true;
-    assert!(config
-        .validate_settings()
-        .unwrap_err()
-        .contains("Enabled vision"));
+    assert!(config.validate_settings().is_ok());
+}
+
+#[test]
+fn vision_can_be_enabled_before_connection_setup_is_complete() {
+    let mut config = AppConfig::default();
+    config.vision.enabled = true;
+    assert!(config.validate_settings().is_ok());
+
+    config.vision.model = "image-model".into();
+    assert!(config.validate_settings().is_ok());
+
+    config.asr.api_profiles.push(ApiProfile {
+        id: "images".into(),
+        name: "Images".into(),
+        provider: "openai_compatible".into(),
+        base_url: Some("https://example.com/v1".into()),
+        enabled_capabilities: vec!["image_understanding".into()],
+        ..ApiProfile::default()
+    });
+    config.vision.profile_id = Some("images".into());
+    config.vision.model.clear();
+    assert!(config.validate_settings().is_ok());
 }
 
 #[test]

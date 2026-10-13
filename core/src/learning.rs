@@ -4,7 +4,7 @@ use std::time::Duration;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::json;
 
-use crate::config::ApiProfile;
+use crate::config::{ApiProfile, ReasoningSetting};
 use crate::credentials;
 use crate::llm::{LlmClient, LlmError, LlmRequest};
 use crate::models::{CardRequest, DictionaryEntry};
@@ -537,6 +537,10 @@ pub struct AnalyzeLearningItemRequest {
     pub level: LearningLevel,
     #[serde(default)]
     pub focus: AnalysisFocus,
+    #[serde(default)]
+    pub thinking_enabled: bool,
+    #[serde(default)]
+    pub reasoning_control: Option<ReasoningSetting>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -553,6 +557,10 @@ pub struct SelectionQueryRequest {
     pub model: String,
     pub explanation_language: String,
     pub level: LearningLevel,
+    #[serde(default)]
+    pub thinking_enabled: bool,
+    #[serde(default)]
+    pub reasoning_control: Option<ReasoningSetting>,
 }
 
 impl SelectionQueryRequest {
@@ -592,6 +600,9 @@ impl SelectionQueryRequest {
         if !providers::is_valid_translation_language(&self.explanation_language) {
             return Err("explanation_language is invalid".into());
         }
+        if let Some(control) = &self.reasoning_control {
+            control.validate()?;
+        }
         Ok(())
     }
 }
@@ -613,6 +624,9 @@ impl AnalyzeLearningItemRequest {
         }
         if !providers::is_valid_translation_language(&self.explanation_language) {
             return Err("explanation_language is invalid".into());
+        }
+        if let Some(control) = &self.reasoning_control {
+            control.validate()?;
         }
         Ok(())
     }
@@ -657,8 +671,16 @@ impl LearningService {
             .map_err(|detail| learning_error("learning.invalid_request", detail, false))?;
         let (profile, api_key) = resolve_generation_profile(profiles, &request.profile_id)?;
         let (instructions, input) = analysis_prompt(item, request, profile);
+        let llm_request = LlmRequest {
+            model: &request.model,
+            instructions: &instructions,
+            input: &input,
+            max_output_tokens: 8_192,
+            thinking_enabled: request.thinking_enabled,
+            reasoning_control: request.reasoning_control.clone(),
+        };
         let output = self
-            .generate(profile, &api_key, &request.model, &instructions, &input)
+            .generate(profile, &api_key, llm_request.clone())
             .await?;
         match parse_analysis_response(&output, request, profile) {
             Ok(analysis) => Ok(analysis),
@@ -675,9 +697,11 @@ impl LearningService {
                     .generate(
                         profile,
                         &api_key,
-                        &request.model,
-                        &repair_instructions,
-                        &repair_input,
+                        LlmRequest {
+                            instructions: &repair_instructions,
+                            input: &repair_input,
+                            ..llm_request
+                        },
                     )
                     .await?;
                 parse_analysis_response(&repaired, request, profile)
@@ -697,13 +721,17 @@ impl LearningService {
         let (profile, api_key) = resolve_generation_profile(profiles, &request.profile_id)?;
         let (instructions, input) = selection_query_prompt(request);
         let output = self
-            .generate_with_limit(
+            .generate(
                 profile,
                 &api_key,
-                &request.model,
-                &instructions,
-                &input,
-                2_048,
+                LlmRequest {
+                    model: &request.model,
+                    instructions: &instructions,
+                    input: &input,
+                    max_output_tokens: 2_048,
+                    thinking_enabled: request.thinking_enabled,
+                    reasoning_control: request.reasoning_control.clone(),
+                },
             )
             .await?;
         let answer = parse_selection_answer(&output)
@@ -720,35 +748,9 @@ impl LearningService {
         &self,
         profile: &ApiProfile,
         api_key: &str,
-        model: &str,
-        instructions: &str,
-        input: &str,
+        request: LlmRequest<'_>,
     ) -> Result<String, LearningError> {
-        self.generate_with_limit(profile, api_key, model, instructions, input, 8_192)
-            .await
-    }
-
-    async fn generate_with_limit(
-        &self,
-        profile: &ApiProfile,
-        api_key: &str,
-        model: &str,
-        instructions: &str,
-        input: &str,
-        max_output_tokens: u32,
-    ) -> Result<String, LearningError> {
-        let future = self.llm.generate(
-            profile,
-            api_key,
-            LlmRequest {
-                model,
-                instructions,
-                input,
-                max_output_tokens,
-                thinking_enabled: false,
-            },
-            None,
-        );
+        let future = self.llm.generate(profile, api_key, request, None);
         tokio::time::timeout(Duration::from_millis(profile.timeout_ms), future)
             .await
             .map_err(|_| {
@@ -1011,6 +1013,9 @@ fn strip_markdown_fence(output: &str) -> &str {
 
 fn map_llm_error(error: LlmError) -> LearningError {
     let code = match error.code {
+        "llm.reasoning_unsupported"
+        | "llm.reasoning_budget_invalid"
+        | "llm.reasoning_capability_unavailable" => error.code,
         "llm.timeout" => "learning.timeout",
         "llm.invalid_response" => "learning.invalid_response",
         "llm.authentication_failed" => "learning.authentication_failed",
@@ -1147,6 +1152,8 @@ mod tests {
             explanation_language: "en".into(),
             level: LearningLevel::Intermediate,
             focus: AnalysisFocus::Default,
+            thinking_enabled: false,
+            reasoning_control: None,
         }
     }
 
@@ -1161,6 +1168,8 @@ mod tests {
             model: "gpt-test".into(),
             explanation_language: "en".into(),
             level: LearningLevel::Intermediate,
+            thinking_enabled: false,
+            reasoning_control: None,
         }
     }
 
@@ -1171,6 +1180,69 @@ mod tests {
             provider: OPENAI_PROVIDER.into(),
             enabled_capabilities: vec![providers::CAPABILITY_TEXT_GENERATION.into()],
             ..ApiProfile::default()
+        }
+    }
+
+    #[test]
+    fn old_learning_requests_default_to_disabled_thinking() {
+        let analysis: AnalyzeLearningItemRequest = serde_json::from_value(json!({
+            "task_type": "sentence_analysis", "profile_id": "profile", "model": "gpt-test",
+            "explanation_language": "en", "level": "intermediate"
+        }))
+        .unwrap();
+        assert!(!analysis.thinking_enabled);
+        assert!(analysis.reasoning_control.is_none());
+        let selection: SelectionQueryRequest = serde_json::from_value(json!({
+            "selected_text": "eat", "source_text": "I eat", "question": "Explain",
+            "profile_id": "profile", "model": "gpt-test",
+            "explanation_language": "en", "level": "intermediate"
+        }))
+        .unwrap();
+        assert!(!selection.thinking_enabled);
+        assert!(selection.reasoning_control.is_none());
+    }
+
+    #[test]
+    fn learning_requests_accept_explicit_reasoning_controls() {
+        let analysis: AnalyzeLearningItemRequest = serde_json::from_value(json!({
+            "task_type": "sentence_analysis", "profile_id": "profile", "model": "gpt-test",
+            "explanation_language": "en", "level": "intermediate", "thinking_enabled": true,
+            "reasoning_control": { "type": "effort", "value": "high" }
+        }))
+        .unwrap();
+        assert!(analysis.thinking_enabled);
+        assert_eq!(
+            analysis.reasoning_control,
+            Some(ReasoningSetting::Effort("high".into()))
+        );
+        let selection: SelectionQueryRequest = serde_json::from_value(json!({
+            "selected_text": "eat", "source_text": "I eat", "question": "Explain",
+            "profile_id": "profile", "model": "gpt-test",
+            "explanation_language": "en", "level": "intermediate", "thinking_enabled": true,
+            "reasoning_control": { "type": "budget_tokens", "value": 4096 }
+        }))
+        .unwrap();
+        assert!(selection.thinking_enabled);
+        assert_eq!(
+            selection.reasoning_control,
+            Some(ReasoningSetting::BudgetTokens(4096))
+        );
+    }
+
+    #[test]
+    fn learning_requests_reject_invalid_reasoning_controls() {
+        for control in [
+            ReasoningSetting::Effort(String::new()),
+            ReasoningSetting::Effort(" high ".into()),
+            ReasoningSetting::BudgetTokens(0),
+            ReasoningSetting::BudgetTokens(-2),
+        ] {
+            let mut analysis = request();
+            analysis.reasoning_control = Some(control.clone());
+            assert!(analysis.validate().is_err());
+            let mut selection = selection_request();
+            selection.reasoning_control = Some(control);
+            assert!(selection.validate().is_err());
         }
     }
 

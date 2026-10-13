@@ -6,7 +6,7 @@ use super::{
     VadConfig, VrOcrConfig, VrOverlayConfig, VrcxConfig,
 };
 
-pub const SCHEMA_VERSION: u32 = 32;
+pub const SCHEMA_VERSION: u32 = 33;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -292,6 +292,7 @@ mod tests {
                 "profile_id",
                 "request_timeout_seconds",
                 "system_prompt",
+                "thinking_enabled",
                 "vr_enabled",
                 "wrist",
             ],

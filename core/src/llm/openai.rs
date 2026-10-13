@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use crate::config::ApiProfile;
 
 use super::http::{
-    invalid_response, list_models as parse_models, network_error, response_status_error,
+    invalid_response, list_model_catalog as parse_catalog, network_error, response_status_error,
 };
 use super::{LlmError, LlmRequest};
 
@@ -14,11 +14,12 @@ const MAX_RETRY_OUTPUT_TOKENS: u32 = 16_384;
 
 pub(super) async fn generate(
     http: &reqwest::Client,
+    profile: &ApiProfile,
     api_key: &str,
     request: LlmRequest<'_>,
 ) -> Result<String, LlmError> {
     let body = request_body(&request, request.max_output_tokens);
-    generate_response(http, api_key, request, body, None, true).await
+    generate_response(http, profile, api_key, request, body, None, true).await
 }
 
 pub(super) async fn generate_with_image(
@@ -31,6 +32,7 @@ pub(super) async fn generate_with_image(
     let body = image_request_body(&request, request.max_output_tokens, image);
     generate_response(
         http,
+        profile,
         api_key,
         request,
         body,
@@ -42,6 +44,7 @@ pub(super) async fn generate_with_image(
 
 async fn generate_response(
     http: &reqwest::Client,
+    profile: &ApiProfile,
     api_key: &str,
     request: LlmRequest<'_>,
     mut body: Value,
@@ -51,6 +54,13 @@ async fn generate_response(
     let mut max_output_tokens = request.max_output_tokens;
     for attempt in 0..=1 {
         body["max_output_tokens"] = json!(max_output_tokens);
+        super::models_dev::apply_request(&mut body, profile, &request);
+        let explicit_reasoning = super::reasoning::apply_explicit_control(
+            &mut body,
+            &profile.provider,
+            &request,
+            super::models_dev::model_details(profile, request.model).as_ref(),
+        )?;
         let response = generation_request(http, api_key, &body, timeout)
             .send()
             .await
@@ -59,9 +69,11 @@ async fn generate_response(
             ParsedResponse::Complete(text) => return Ok(text),
             ParsedResponse::Incomplete(reason) => {
                 if attempt == 0 {
-                    if let Some(retry_limit) =
-                        retry_output_token_limit(&reason, max_output_tokens, allow_budget_retry)
-                    {
+                    if let Some(retry_limit) = retry_output_token_limit(
+                        &reason,
+                        max_output_tokens,
+                        allow_budget_retry && !explicit_reasoning,
+                    ) {
                         tracing::warn!(
                             model = request.model,
                             initial_limit = max_output_tokens,
@@ -173,6 +185,7 @@ fn incomplete_error(reason: &str) -> LlmError {
         code: "llm.request_failed",
         detail: format!("OpenAI response was incomplete: {reason}"),
         retryable: false,
+        retry_after: None,
     }
 }
 
@@ -199,6 +212,7 @@ fn parse_response(value: &Value) -> Result<ParsedResponse, LlmError> {
             code: "llm.invalid_response",
             detail: "OpenAI response did not contain text".into(),
             retryable: false,
+            retry_after: None,
         })
 }
 
@@ -207,10 +221,21 @@ pub(super) async fn list_models(
     profile: &ApiProfile,
     api_key: &str,
 ) -> Result<Vec<String>, LlmError> {
-    parse_models(
+    list_model_catalog(http, profile, api_key)
+        .await
+        .map(|catalog| catalog.models)
+}
+
+pub(super) async fn list_model_catalog(
+    http: &reqwest::Client,
+    profile: &ApiProfile,
+    api_key: &str,
+) -> Result<super::model_catalog::ModelCatalog, LlmError> {
+    parse_catalog(
         http.get("https://api.openai.com/v1/models")
             .timeout(Duration::from_millis(profile.timeout_ms))
             .bearer_auth(api_key),
+        &profile.provider,
     )
     .await
 }
@@ -248,6 +273,7 @@ mod tests {
             input: "What is visible?",
             max_output_tokens: 1_024,
             thinking_enabled: false,
+            reasoning_control: None,
         };
         let body = image_request_body(&request, request.max_output_tokens, b"\x89PNG\r\n\x1a\n");
         assert_eq!(
@@ -298,6 +324,7 @@ mod tests {
                 input: "What is visible?",
                 max_output_tokens: 1_024,
                 thinking_enabled,
+                reasoning_control: None,
             };
             let body = image_request_body(&request, 1_024, b"png");
             assert_eq!(body["max_output_tokens"], 1_024);
@@ -383,7 +410,7 @@ mod tests {
         for (status, code, retryable) in [
             (503, "llm.provider_unavailable", true),
             (429, "llm.rate_limited", true),
-            (403, "llm.authentication_failed", false),
+            (403, "llm.permission_denied", false),
         ] {
             let response = tokio_tungstenite::tungstenite::http::Response::builder()
                 .status(status)
@@ -503,6 +530,7 @@ mod tests {
             input: "hello",
             max_output_tokens: 1_024,
             thinking_enabled,
+            reasoning_control: None,
         };
 
         assert_eq!(

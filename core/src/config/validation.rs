@@ -95,6 +95,9 @@ impl AppConfig {
 
 fn validate_vision(config: &AppConfig) -> Result<(), String> {
     let vision = &config.vision;
+    if let Some(control) = &vision.reasoning_control {
+        control.validate()?;
+    }
     if vision.desktop_shortcut.trim().is_empty() || vision.desktop_shortcut.len() > 64 {
         return Err("Vision desktop shortcut must contain 1 to 64 characters".into());
     }
@@ -165,9 +168,6 @@ fn validate_vision(config: &AppConfig) -> Result<(), String> {
             crate::providers::CAPABILITY_IMAGE_UNDERSTANDING,
         )
         .map_err(|detail| format!("vision.profile_id requires image_understanding: {detail}"))?;
-    }
-    if vision.enabled && (vision.profile_id.is_none() || vision.model.trim().is_empty()) {
-        return Err("Enabled vision requires a profile and an image-capable model".into());
     }
     if let Some(wrist) = &vision.wrist {
         if !["left", "right", "dominant"].contains(&wrist.hand.as_str())
@@ -601,6 +601,9 @@ fn validate_translation_targets(
     }
     let mut languages = HashSet::new();
     for (index, target) in targets.iter().enumerate() {
+        if let Some(control) = &target.reasoning_control {
+            control.validate()?;
+        }
         if !providers::is_valid_translation_language(&target.target_language) {
             return Err(format!(
                 "Invalid {source} translation target language: {}",

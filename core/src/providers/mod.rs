@@ -345,7 +345,7 @@ const ALIBABA_SERVICES: &[ProviderServiceDefinition] = &[
 ];
 
 const QWEN_AI_SERVICES: &[ProviderServiceDefinition] = &[
-    text_service(
+    multimodal_service(
         "qwen_ai_chat_completions",
         "Qwen AI Chat Completions",
         ServiceAdapter::AlibabaChatCompletions,
@@ -1358,6 +1358,23 @@ mod tests {
             "https://maas.qianwenaiapi.com/compatible-mode/v1"
         );
         assert!(resolve_profile_service(&profile, SERVICE_TOKEN_PLAN_REALTIME).is_err());
+    }
+
+    #[test]
+    fn qwen_ai_image_profiles_resolve_without_changing_existing_services() {
+        let profile = profile(QWEN_AI_PROVIDER, &[CAPABILITY_IMAGE_UNDERSTANDING]);
+        validation::validate_profile(&profile).unwrap();
+        let resolved =
+            resolve_profile_capability(&profile, CAPABILITY_IMAGE_UNDERSTANDING).unwrap();
+        assert_eq!(
+            resolved.service.adapter,
+            ServiceAdapter::AlibabaChatCompletions
+        );
+        assert_eq!(resolved.service.id, "qwen_ai_chat_completions");
+        assert!(resolved.provider.capabilities.supports_image_understanding);
+        assert!(service(QWEN_AI_PROVIDER, SERVICE_QWEN_REALTIME).is_some());
+        assert!(service(QWEN_AI_PROVIDER, SERVICE_QWEN_LIVE_TRANSLATE).is_some());
+        assert!(service(QWEN_AI_PROVIDER, SERVICE_FUN_ASR_REALTIME).is_some());
     }
 
     #[test]

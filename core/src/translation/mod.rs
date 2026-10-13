@@ -24,6 +24,7 @@ pub struct TranslationError {
     pub code: &'static str,
     pub detail: String,
     pub retryable: bool,
+    pub retry_after: Option<std::time::Duration>,
 }
 
 #[derive(Debug, Clone)]
@@ -208,6 +209,7 @@ impl TranslationService {
                     &api_key,
                     &target_config.model,
                     target_config.thinking_enabled,
+                    target_config.reasoning_control.as_ref(),
                     text,
                     source_language,
                     target,
@@ -232,6 +234,7 @@ impl TranslationService {
         api_key: &str,
         model: &str,
         thinking_enabled: bool,
+        reasoning_control: Option<&crate::config::ReasoningSetting>,
         text: &str,
         source: Option<&str>,
         target: &str,
@@ -249,6 +252,16 @@ impl TranslationService {
             None => builder,
         };
         let prompt = builder.build(source, target, context, text);
+        let details = self
+            .llm
+            .openrouter_model_details(profile, api_key, model)
+            .await;
+        let needs_reasoning = profile.provider == providers::OPENROUTER_PROVIDER
+            && crate::llm::openrouter::needs_reasoning_budget(
+                details.as_ref(),
+                thinking_enabled,
+                model,
+            );
         let translated = self
             .llm
             .generate_for_capability(
@@ -262,9 +275,10 @@ impl TranslationService {
                     max_output_tokens: translation_output_token_limit(
                         text,
                         &profile.provider,
-                        thinking_enabled,
+                        thinking_enabled || needs_reasoning,
                     ),
                     thinking_enabled,
+                    reasoning_control: reasoning_control.cloned(),
                 },
                 on_progress,
             )
@@ -273,6 +287,7 @@ impl TranslationService {
                 code: error.code,
                 detail: error.detail,
                 retryable: error.retryable,
+                retry_after: error.retry_after,
             })?;
         Ok(TranslationResult {
             text: translated,
@@ -294,7 +309,8 @@ fn translation_output_token_limit(text: &str, provider: &str, thinking_enabled: 
             | providers::QWEN_AI_PROVIDER
             | providers::ALIBABA_TOKEN_PLAN_PROVIDER
     );
-    if !openai && !(alibaba && thinking_enabled) {
+    let openrouter = provider == providers::OPENROUTER_PROVIDER;
+    if !(openai || (alibaba || openrouter) && thinking_enabled) {
         return visible;
     }
     let (minimum, reasoning_reserve) = if thinking_enabled {
@@ -338,6 +354,7 @@ pub(super) fn error(
         code,
         detail: detail.into(),
         retryable,
+        retry_after: None,
     }
 }
 
@@ -416,6 +433,14 @@ mod tests {
 
     #[test]
     fn translation_output_limit_scales_without_unbounded_generation() {
+        assert_eq!(
+            translation_output_token_limit("こんにちは", providers::OPENROUTER_PROVIDER, true),
+            4096
+        );
+        assert_eq!(
+            translation_output_token_limit("こんにちは", providers::OPENROUTER_PROVIDER, false),
+            128
+        );
         assert_eq!(
             translation_output_token_limit("hello", providers::DEEPSEEK_PROVIDER, false),
             128

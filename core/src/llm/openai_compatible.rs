@@ -8,12 +8,11 @@ use serde_json::{json, Value};
 use crate::config::ApiProfile;
 use crate::providers::{self, OpenAiProtocolBehavior, OPENROUTER_PROVIDER};
 
-use super::http::{
-    invalid_response, list_models as parse_models, network_error, response_status_error,
-};
+use super::http::{completion_error, invalid_response, network_error, response_status_error};
 use super::reasoning::{self, InlineReasoningFilter};
 use super::{LlmError, LlmProgress, LlmRequest};
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn generate(
     http: &reqwest::Client,
     profile: &ApiProfile,
@@ -21,6 +20,7 @@ pub(super) async fn generate(
     request: LlmRequest<'_>,
     provider_name: &str,
     behavior: OpenAiProtocolBehavior,
+    model_details: Option<&super::openrouter::ModelDetails>,
     on_progress: Option<&LlmProgress>,
 ) -> Result<String, LlmError> {
     generate_chat_completion(
@@ -33,10 +33,12 @@ pub(super) async fn generate(
         Some(profile),
         on_progress,
         None,
+        model_details,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn generate_with_image(
     http: &reqwest::Client,
     profile: &ApiProfile,
@@ -45,6 +47,7 @@ pub(super) async fn generate_with_image(
     image: &[u8],
     provider_name: &str,
     behavior: OpenAiProtocolBehavior,
+    model_details: Option<&super::openrouter::ModelDetails>,
 ) -> Result<String, LlmError> {
     generate_chat_completion(
         http,
@@ -56,12 +59,15 @@ pub(super) async fn generate_with_image(
         Some(profile),
         None,
         Some(image),
+        model_details,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn generate_standard(
     http: &reqwest::Client,
+    profile: &ApiProfile,
     endpoint: String,
     api_key: &str,
     request: LlmRequest<'_>,
@@ -76,8 +82,9 @@ pub(super) async fn generate_standard(
         request,
         provider_name,
         behavior,
-        None,
+        Some(profile),
         on_progress,
+        None,
         None,
     )
     .await
@@ -88,27 +95,24 @@ pub(super) async fn list_models(
     profile: &ApiProfile,
     api_key: &str,
 ) -> Result<Vec<String>, LlmError> {
-    let request = apply_profile_request(http.get(models_url(profile)?), profile, api_key)?;
-    if profile.provider != OPENROUTER_PROVIDER {
-        return parse_models(request).await;
-    }
-    let response = request.send().await.map_err(network_error)?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(response_status_error(response, status).await);
-    }
-    let value: Value = response.json().await.map_err(invalid_response)?;
-    let models = extract_openrouter_models(&value);
-    if models.is_empty() {
-        return Err(LlmError {
-            code: "llm.invalid_response",
-            detail: "OpenRouter did not return any models with text output".into(),
-            retryable: false,
-        });
-    }
-    Ok(models)
+    list_model_catalog(http, profile, api_key)
+        .await
+        .map(|catalog| catalog.models)
 }
 
+pub(super) async fn list_model_catalog(
+    http: &reqwest::Client,
+    profile: &ApiProfile,
+    api_key: &str,
+) -> Result<super::model_catalog::ModelCatalog, LlmError> {
+    if profile.provider == OPENROUTER_PROVIDER {
+        return super::openrouter::fetch_catalog(http, profile, api_key).await;
+    }
+    let request = apply_profile_request(http.get(models_url(profile)?), profile, api_key)?;
+    super::http::list_model_catalog(request, &profile.provider).await
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn test_streaming(
     http: &reqwest::Client,
     profile: &ApiProfile,
@@ -116,9 +120,20 @@ pub(super) async fn test_streaming(
     request: LlmRequest<'_>,
     provider_name: &str,
     behavior: OpenAiProtocolBehavior,
+    model_details: Option<&super::openrouter::ModelDetails>,
     on_progress: &LlmProgress,
 ) -> Result<String, LlmError> {
-    let body = chat_completion_body(&request, behavior, true);
+    let mut body = chat_completion_body(&request, behavior, true);
+    if profile.provider == OPENROUTER_PROVIDER {
+        super::openrouter::apply_reasoning(&mut body, model_details, request.thinking_enabled);
+    }
+    super::models_dev::apply_request(&mut body, profile, &request);
+    reasoning::apply_explicit_control(
+        &mut body,
+        &profile.provider,
+        &request,
+        model_details.or(super::models_dev::model_details(profile, request.model).as_ref()),
+    )?;
     let endpoint = chat_completions_url(profile)?;
     check_request_size(&endpoint, &body)?;
     let response = apply_profile_request(http.post(endpoint).json(&body), profile, api_key)?
@@ -134,6 +149,7 @@ pub(super) async fn test_streaming(
             code: "llm.sse_incompatible",
             detail: "The service did not return a text/event-stream response".into(),
             retryable: false,
+            retry_after: None,
         });
     }
     stream_chat_completion(
@@ -157,8 +173,24 @@ async fn generate_chat_completion(
     profile: Option<&ApiProfile>,
     on_progress: Option<&LlmProgress>,
     image: Option<&[u8]>,
+    model_details: Option<&super::openrouter::ModelDetails>,
 ) -> Result<String, LlmError> {
     let mut body = chat_completion_body(&request, behavior, on_progress.is_some());
+    if profile.is_some_and(|profile| profile.provider == OPENROUTER_PROVIDER) {
+        super::openrouter::apply_reasoning(&mut body, model_details, request.thinking_enabled);
+    }
+    if let Some(profile) = profile {
+        super::models_dev::apply_request(&mut body, profile, &request);
+        if let Some(details) = model_details {
+            details.apply_request(&mut body, &profile.provider, request.thinking_enabled);
+        }
+        reasoning::apply_explicit_control(
+            &mut body,
+            &profile.provider,
+            &request,
+            model_details.or(super::models_dev::model_details(profile, request.model).as_ref()),
+        )?;
+    }
     if let Some(image) = image {
         body["messages"][1]["content"] = json!([
             { "type": "text", "text": request.input },
@@ -191,6 +223,7 @@ async fn generate_chat_completion(
         code: "llm.invalid_response",
         detail: format!("{provider_name} response did not contain text"),
         retryable: false,
+        retry_after: None,
     })?;
     let text = reasoning::sanitize_response_text(behavior, request.model, &text);
     if text.is_empty() {
@@ -198,6 +231,7 @@ async fn generate_chat_completion(
             code: "llm.invalid_response",
             detail: format!("{provider_name} response did not contain final answer text"),
             retryable: false,
+            retry_after: None,
         });
     }
     if let Some(progress) = on_progress {
@@ -230,7 +264,7 @@ fn chat_completion_body(
     body
 }
 
-fn apply_profile_request(
+pub(super) fn apply_profile_request(
     mut builder: reqwest::RequestBuilder,
     profile: &ApiProfile,
     api_key: &str,
@@ -245,6 +279,7 @@ fn apply_profile_request(
                 code: "llm.invalid_profile",
                 detail: error.to_string(),
                 retryable: false,
+                retry_after: None,
             },
         )?;
         let value =
@@ -252,6 +287,7 @@ fn apply_profile_request(
                 code: "llm.invalid_profile",
                 detail: error.to_string(),
                 retryable: false,
+                retry_after: None,
             })?;
         builder = builder.header(name, value);
     }
@@ -268,37 +304,91 @@ async fn stream_chat_completion(
     let mut chunks = response.bytes_stream();
     let mut buffer = Vec::<u8>::new();
     let mut output = String::new();
+    let mut event = Vec::new();
+    let mut finished = false;
     let mut filter = reasoning::should_filter_inline_reasoning(behavior, model)
         .then(InlineReasoningFilter::default);
     while let Some(chunk) = chunks.next().await {
         buffer.extend_from_slice(&chunk.map_err(network_error)?);
         while let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
             let line = buffer.drain(..=newline).collect::<Vec<_>>();
-            if process_sse_line(
-                &line,
-                &mut output,
-                filter.as_mut(),
-                on_progress,
-                provider_name,
-                model,
-            )? {
-                return completed_filtered_stream(output, filter, on_progress, provider_name);
+            if line.iter().all(|byte| matches!(byte, b'\r' | b'\n')) {
+                if process_sse_event(
+                    &event,
+                    &mut output,
+                    filter.as_mut(),
+                    on_progress,
+                    provider_name,
+                    model,
+                    &mut finished,
+                )? {
+                    return completed_filtered_stream(output, filter, on_progress, provider_name);
+                }
+                event.clear();
+            } else {
+                event.extend_from_slice(&line);
             }
         }
     }
-    if !buffer.is_empty() {
-        let _ = process_sse_line(
-            &buffer,
+    event.extend_from_slice(&buffer);
+    if !event.is_empty() {
+        finished |= process_sse_event(
+            &event,
             &mut output,
             filter.as_mut(),
             on_progress,
             provider_name,
             model,
+            &mut finished,
         )?;
+    }
+    if !finished {
+        return Err(LlmError {
+            code: "llm.provider_unavailable",
+            detail: format!("{provider_name} stream ended before completion"),
+            retryable: true,
+            retry_after: None,
+        });
     }
     completed_filtered_stream(output, filter, on_progress, provider_name)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn process_sse_event(
+    event: &[u8],
+    output: &mut String,
+    filter: Option<&mut InlineReasoningFilter>,
+    on_progress: &LlmProgress,
+    provider_name: &str,
+    model: &str,
+    finished: &mut bool,
+) -> Result<bool, LlmError> {
+    let event = std::str::from_utf8(event).map_err(|error| LlmError {
+        code: "llm.invalid_response",
+        detail: error.to_string(),
+        retryable: false,
+        retry_after: None,
+    })?;
+    let data = event
+        .lines()
+        .filter_map(|line| line.strip_prefix("data:").map(str::trim_start))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if data.is_empty() {
+        return Ok(false);
+    }
+    process_sse_line(
+        format!("data: {data}").as_bytes(),
+        output,
+        filter,
+        on_progress,
+        provider_name,
+        model,
+        finished,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn process_sse_line(
     line: &[u8],
     output: &mut String,
@@ -306,11 +396,13 @@ fn process_sse_line(
     on_progress: &LlmProgress,
     provider_name: &str,
     model: &str,
+    finished: &mut bool,
 ) -> Result<bool, LlmError> {
     let line = std::str::from_utf8(line).map_err(|error| LlmError {
         code: "llm.invalid_response",
         detail: error.to_string(),
         retryable: false,
+        retry_after: None,
     })?;
     let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else {
         return Ok(false);
@@ -322,9 +414,14 @@ fn process_sse_line(
         code: "llm.invalid_response",
         detail: error.to_string(),
         retryable: false,
+        retry_after: None,
     })?;
     trace_usage(&value, provider_name, model);
     check_completion_status(&value, provider_name)?;
+    *finished |= value
+        .pointer("/choices/0/finish_reason")
+        .and_then(Value::as_str)
+        == Some("stop");
     if let Some(delta) = extract_delta(&value) {
         let delta = match filter {
             Some(filter) => filter.push(&delta),
@@ -339,6 +436,26 @@ fn process_sse_line(
 }
 
 fn check_completion_status(value: &Value, provider_name: &str) -> Result<(), LlmError> {
+    if let Some(error) = completion_error(value) {
+        return Err(error);
+    }
+    if let Some(reason) = value
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| {
+            choices
+                .iter()
+                .filter_map(|choice| choice.get("finish_reason").and_then(Value::as_str))
+                .find(|reason| matches!(*reason, "error" | "content_filter"))
+        })
+    {
+        return Err(LlmError {
+            code: "llm.request_failed",
+            detail: format!("{provider_name} response failed (finish_reason={reason})"),
+            retryable: false,
+            retry_after: None,
+        });
+    }
     if value
         .get("choices")
         .and_then(Value::as_array)
@@ -354,6 +471,7 @@ fn check_completion_status(value: &Value, provider_name: &str) -> Result<(), Llm
                 "{provider_name} response was incomplete: output token limit reached (finish_reason=length). Increase the output token limit or disable thinking."
             ),
             retryable: false,
+        retry_after: None,
         });
     }
     Ok(())
@@ -382,6 +500,7 @@ fn completed_stream(output: String, provider_name: &str) -> Result<String, LlmEr
             code: "llm.invalid_response",
             detail: format!("{provider_name} stream did not contain text"),
             retryable: false,
+            retry_after: None,
         });
     }
     Ok(output)
@@ -403,7 +522,30 @@ fn check_request_size(endpoint: &str, body: &Value) -> Result<(), LlmError> {
         return Ok(());
     }
     let host = url.host_str().unwrap_or_default();
-    if host.ends_with(".maas.aliyuncs.com") {
+    if host == "maas.qianwenaiapi.com" {
+        // Qwen AI limits each encoded image to 20 MB and the JSON body to 64 MB.
+        // https://platform.qianwenai.com/docs/developer-guides/multimodal/vision
+        for content in body["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|message| message["content"].as_array().into_iter().flatten())
+        {
+            if let Some(uri) = content.pointer("/image_url/url").and_then(Value::as_str) {
+                if uri.starts_with("data:") && uri.len() > 20_000_000 {
+                    return Err(LlmError {
+                        code: "llm.request_failed",
+                        detail:
+                            "Qwen AI image Data URI exceeds the 20 MB limit. Reduce the image size."
+                                .into(),
+                        retryable: false,
+                        retry_after: None,
+                    });
+                }
+            }
+        }
+        super::http::max_serialized_body(body, 64_000_000, "Qwen AI request (64 MB)")?;
+    } else if host.ends_with(".maas.aliyuncs.com") {
         // The 20 MB JSON body cap also bounds every embedded Data URI to 20 MB.
         super::http::max_serialized_body(
             body,
@@ -437,7 +579,7 @@ fn chat_completions_url(profile: &ApiProfile) -> Result<String, LlmError> {
     }
 }
 
-fn models_url(profile: &ApiProfile) -> Result<String, LlmError> {
+pub(super) fn models_url(profile: &ApiProfile) -> Result<String, LlmError> {
     let base_url = providers::effective_base_url(profile).map_err(invalid_profile)?;
     let base_url = base_url.trim_end_matches('/');
     let base_url = base_url
@@ -456,30 +598,13 @@ fn invalid_profile(detail: String) -> LlmError {
         code: "llm.invalid_profile",
         detail,
         retryable: false,
+        retry_after: None,
     }
 }
 
+#[cfg(test)]
 fn extract_openrouter_models(value: &Value) -> Vec<String> {
-    let mut models = value
-        .get("data")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|entry| {
-            entry
-                .pointer("/architecture/output_modalities")
-                .and_then(Value::as_array)
-                .is_some_and(|modalities| modalities.iter().any(|modality| modality == "text"))
-        })
-        .filter_map(|entry| entry.get("id").and_then(Value::as_str))
-        .map(str::trim)
-        .filter(|model| !model.is_empty() && model.len() <= 200 && !model.ends_with(":batch"))
-        .map(str::to_owned)
-        .take(500)
-        .collect::<Vec<_>>();
-    models.sort_by_key(|model| model.to_ascii_lowercase());
-    models.dedup();
-    models
+    super::openrouter::parse_catalog(value).models
 }
 
 fn extract_text(value: &Value) -> Option<String> {
@@ -511,12 +636,30 @@ fn extract_delta(value: &Value) -> Option<String> {
 }
 
 fn trace_usage(value: &Value, provider_name: &str, model: &str) {
-    let Some(usage) = value.get("usage") else {
+    let finish_reason = value
+        .pointer("/choices/0/finish_reason")
+        .and_then(Value::as_str)
+        .filter(|reason| {
+            matches!(
+                *reason,
+                "stop" | "length" | "error" | "content_filter" | "tool_calls"
+            )
+        });
+    if value.get("usage").is_none() && finish_reason.is_none() {
         return;
-    };
-    tracing::debug!(
+    }
+    let usage = &value["usage"];
+    let generation_id = value.get("id").and_then(Value::as_str).filter(|id| {
+        id.len() <= 128
+            && id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    });
+    tracing::info!(
         provider = provider_name,
         model,
+        finish_reason,
+        generation_id,
         prompt_tokens = usage
             .get("prompt_tokens")
             .and_then(|value| value.as_u64())
@@ -548,6 +691,85 @@ mod tests {
     use super::*;
     use crate::config::{ApiAuthMode, HttpHeaderConfig};
     use crate::providers::{GROQ_PROVIDER, OPENAI_COMPATIBLE_PROVIDER};
+
+    #[tokio::test]
+    async fn openrouter_wire_request_excludes_reasoning_and_preserves_image_budget() {
+        use axum::{routing::post, Json, Router};
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new().route("/chat/completions", post(move |Json(body): Json<Value>| async move {
+            sender.send(body).unwrap();
+            Json(json!({"choices": [{"finish_reason": "stop", "message": {"content": "OK", "reasoning": "private"}}]}))
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/chat/completions", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let profile = ApiProfile {
+            provider: OPENROUTER_PROVIDER.into(),
+            auth_mode: ApiAuthMode::None,
+            ..ApiProfile::default()
+        };
+        let details = super::super::openrouter::ModelDetails {
+            input_modalities: vec!["text".into(), "image".into()],
+            reasoning: Some(super::super::openrouter::ReasoningOptions {
+                mandatory: Some(true),
+                supports_max_tokens: Some(true),
+                supported_efforts: Some(vec!["high".into(), "low".into(), "minimal".into()]),
+                ..Default::default()
+            }),
+            field_sources: [("reasoning".into(), "provider_api".into())].into(),
+            ..Default::default()
+        };
+        for (setting, expected_reasoning) in [
+            (None, json!({"exclude": true, "effort": "minimal"})),
+            (
+                Some(crate::config::ReasoningSetting::Effort("high".into())),
+                json!({"exclude": true, "effort": "high"}),
+            ),
+            (
+                Some(crate::config::ReasoningSetting::BudgetTokens(128)),
+                json!({"exclude": true, "max_tokens": 128}),
+            ),
+        ] {
+            for image in [None, Some(b"png".as_slice())] {
+                for streamed in [false, true] {
+                    let progress = |_: &str| {};
+                    let result = generate_chat_completion(
+                        &http,
+                        endpoint.clone(),
+                        "",
+                        LlmRequest {
+                            model: "openai/gpt-5-mini",
+                            instructions: "Reply",
+                            input: "hello",
+                            max_output_tokens: 256,
+                            thinking_enabled: false,
+                            reasoning_control: setting.clone(),
+                        },
+                        "OpenRouter",
+                        OpenAiProtocolBehavior::Standard,
+                        Some(&profile),
+                        streamed.then_some(&progress as &LlmProgress),
+                        image,
+                        Some(&details),
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(result, "OK");
+                    let body = receiver.recv().await.unwrap();
+                    assert_eq!(body["max_tokens"], 256);
+                    assert_eq!(body["reasoning"], expected_reasoning);
+                    assert_eq!(body["stream"], streamed);
+                    assert!(body.get("enable_thinking").is_none());
+                    assert!(body.get("reasoning_effort").is_none());
+                    if image.is_some() {
+                        assert_eq!(body["messages"][1]["content"][1]["type"], "image_url");
+                    }
+                }
+            }
+        }
+        server.abort();
+    }
 
     #[tokio::test]
     async fn image_requests_preserve_provider_reasoning_and_final_answer_filtering() {
@@ -597,6 +819,7 @@ mod tests {
                 input: "What is visible?",
                 max_output_tokens: 256,
                 thinking_enabled: false,
+                reasoning_control: None,
             };
             let output = generate_with_image(
                 &reqwest::Client::new(),
@@ -606,6 +829,7 @@ mod tests {
                 b"\x89PNG\r\n\x1a\n",
                 "Test",
                 behavior,
+                None,
             )
             .await
             .unwrap();
@@ -640,6 +864,7 @@ mod tests {
         for (provider, region, workspace, expected) in [
             (providers::DEEPSEEK_PROVIDER, None, None, "https://api.deepseek.com/v1/chat/completions"),
             (GROQ_PROVIDER, None, None, "https://api.groq.com/openai/v1/chat/completions"),
+            (providers::QWEN_AI_PROVIDER, None, None, "https://maas.qianwenaiapi.com/compatible-mode/v1/chat/completions"),
             (providers::ALIBABA_PROVIDER, Some("singapore"), None, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"),
             (providers::ALIBABA_PROVIDER, Some("china_beijing"), Some("ws-example"), "https://ws-example.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions"),
         ] {
@@ -705,7 +930,6 @@ mod tests {
             "https://api.openai.com/v1/chat/completions",
             "https://api.groq.com/openai/v1/chat/completions",
             "https://api.deepseek.com/v1/chat/completions",
-            "https://maas.qianwenaiapi.com/compatible-mode/v1/chat/completions",
             "https://custom.example/compatible-mode/v1/chat/completions",
             "https://ws.cn-beijing.maas.aliyuncs.com.example/compatible-mode/v1/chat/completions",
             "https://custom-dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
@@ -727,6 +951,108 @@ mod tests {
         assert_eq!(models, ["mixed-model", "text-model"]);
     }
 
+    #[tokio::test]
+    async fn qwen_ai_image_requests_preserve_auth_image_and_thinking_controls() {
+        use axum::{http::HeaderMap, routing::post, Json, Router};
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new().route(
+            "/chat/completions",
+            post(
+                move |headers: HeaderMap, Json(body): Json<Value>| async move {
+                    sender.send((headers, body)).unwrap();
+                    Json(json!({"choices": [{"finish_reason": "stop", "message": {
+                        "content": "A red square", "reasoning_content": "private reasoning"
+                    }}]}))
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/chat/completions", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let profile = ApiProfile {
+            provider: providers::QWEN_AI_PROVIDER.into(),
+            enabled_capabilities: vec![providers::CAPABILITY_IMAGE_UNDERSTANDING.into()],
+            ..Default::default()
+        };
+        for model in ["qwen3.8-max", "qwen3.8-flash", "qwen3-vl-plus"] {
+            for enabled in [false, true] {
+                let request = LlmRequest {
+                    model,
+                    instructions: "Answer briefly",
+                    input: "What is visible?",
+                    max_output_tokens: 256,
+                    thinking_enabled: enabled,
+                    reasoning_control: None,
+                };
+                let answer = generate_chat_completion(
+                    &http,
+                    endpoint.clone(),
+                    "fixture-key",
+                    request,
+                    "Qwen AI",
+                    OpenAiProtocolBehavior::Alibaba,
+                    Some(&profile),
+                    None,
+                    Some(b"\x89PNG\r\n\x1a\n"),
+                    None,
+                )
+                .await
+                .unwrap();
+                let (headers, body) = receiver.recv().await.unwrap();
+                assert_eq!(headers["authorization"], "Bearer fixture-key");
+                assert_eq!(body["model"], model);
+                assert_eq!(body["enable_thinking"], enabled, "{model}");
+                assert_eq!(body["max_tokens"], 256);
+                assert_eq!(body["stream"], false);
+                assert_eq!(
+                    body["messages"][1]["content"],
+                    json!([
+                        {"type": "text", "text": "What is visible?"},
+                        {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}}
+                    ])
+                );
+                assert_eq!(answer, "A red square");
+            }
+        }
+        server.abort();
+    }
+
+    #[test]
+    fn qwen_ai_bounds_each_data_uri_and_the_total_json_body() {
+        let endpoint = "https://maas.qianwenaiapi.com/compatible-mode/v1/chat/completions";
+        let mut body = json!({"messages": [{"content": [{
+            "type": "image_url", "image_url": {"url": ""}
+        }]}]});
+        let prefix = "data:image/png;base64,";
+        body["messages"][0]["content"][0]["image_url"]["url"] =
+            json!(format!("{prefix}{}", "A".repeat(20_000_000 - prefix.len())));
+        check_request_size(endpoint, &body).unwrap();
+        body["messages"][0]["content"][0]["image_url"]["url"] = json!(format!(
+            "{prefix}{}",
+            "A".repeat(20_000_000 - prefix.len() + 1)
+        ));
+        let error = check_request_size(endpoint, &body).unwrap_err();
+        assert_eq!(error.code, "llm.request_failed");
+        assert!(!error.retryable);
+        assert!(error.detail.contains("Data URI"));
+        check_request_size(
+            "https://maas.qianwenaiapi.com.example/compatible-mode/v1/chat/completions",
+            &body,
+        )
+        .unwrap();
+
+        let mut body = json!({"messages": [{"content": ""}]});
+        let overhead = serde_json::to_vec(&body).unwrap().len();
+        body["messages"][0]["content"] = json!("a".repeat(64_000_000 - overhead));
+        check_request_size(endpoint, &body).unwrap();
+        body["messages"][0]["content"] = json!("a".repeat(64_000_000 - overhead + 1));
+        let error = check_request_size(endpoint, &body).unwrap_err();
+        assert_eq!(error.code, "llm.request_failed");
+        assert!(!error.retryable);
+        assert!(error.detail.contains("serialized JSON body limit"));
+    }
+
     #[test]
     fn extracts_chat_completions_text() {
         let value = json!({
@@ -743,6 +1069,7 @@ mod tests {
             input: "hello",
             max_output_tokens: 128,
             thinking_enabled: false,
+            reasoning_control: None,
         };
         let body = chat_completion_body(&request, OpenAiProtocolBehavior::DeepSeek, true);
         assert_eq!(body.pointer("/thinking/type"), Some(&json!("disabled")));
@@ -772,6 +1099,7 @@ mod tests {
             input: "hello",
             max_output_tokens: 128,
             thinking_enabled,
+            reasoning_control: None,
         };
 
         let gpt_oss = chat_completion_body(
@@ -822,6 +1150,7 @@ mod tests {
             input: "hello",
             max_output_tokens: 128,
             thinking_enabled: false,
+            reasoning_control: None,
         };
 
         let hybrid =
@@ -860,6 +1189,7 @@ mod tests {
                         input: "hello",
                         max_output_tokens: 4096,
                         thinking_enabled: enabled,
+                        reasoning_control: None,
                     },
                     OpenAiProtocolBehavior::Alibaba,
                     true,
@@ -900,6 +1230,7 @@ mod tests {
         let progress = |_: &str| {};
         let result = generate_standard(
             &client,
+            &ApiProfile::default(),
             endpoint,
             "fixture-key",
             LlmRequest {
@@ -908,6 +1239,7 @@ mod tests {
                 input: "hello",
                 max_output_tokens: 128,
                 thinking_enabled: true,
+                reasoning_control: None,
             },
             "Test provider",
             behavior,
@@ -916,6 +1248,62 @@ mod tests {
         .await;
         server.abort();
         result
+    }
+
+    #[tokio::test]
+    async fn provider_errors_never_accept_partial_output() {
+        let error = json!({"code": 429, "message": "Rate limited", "metadata": {"error_type": "rate_limit_exceeded"}});
+        for (body, streaming) in [
+            (json!({"error": error}).to_string(), false),
+            (json!({"choices": [{"message": {"content": "Partial"}, "finish_reason": "error", "error": error}]}).to_string(), false),
+            (format!("data: {}\n\ndata: {}\n\ndata: [DONE]\n\n", json!({"choices": [{"delta": {"content": "Partial"}}]}), json!({"error": error, "choices": [{"delta": {}, "finish_reason": "error"}]})), true),
+        ] {
+            let failure = chat_fixture_result(body, streaming, OpenAiProtocolBehavior::Standard).await.unwrap_err();
+            assert_eq!(failure.code, "llm.rate_limited");
+            assert!(failure.retryable);
+        }
+    }
+
+    #[tokio::test]
+    async fn interrupted_streams_do_not_accept_partial_output() {
+        let body = "data: {\"choices\":[{\"delta\":{\"content\":\"Partial\"}}]}\n\n";
+        let error = chat_fixture_result(body.into(), true, OpenAiProtocolBehavior::Standard)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "llm.provider_unavailable");
+    }
+
+    #[tokio::test]
+    async fn multiline_events_and_heartbeat_preserve_text() {
+        let body = ": OPENROUTER PROCESSING\r\n\r\ndata: {\"choices\":\r\ndata: [{\"delta\":{\"content\":\"Hello\"}}]}\r\n\r\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\r\n\r\ndata: [DONE]\r\n\r\n";
+        assert_eq!(
+            chat_fixture_result(body.into(), true, OpenAiProtocolBehavior::Standard)
+                .await
+                .unwrap(),
+            "Hello"
+        );
+    }
+
+    #[tokio::test]
+    async fn terminal_stop_and_trailing_usage_complete_without_done_marker() {
+        let body = "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"choices\":[],\"usage\":{\"completion_tokens\":2}}\n\n";
+        assert_eq!(
+            chat_fixture_result(body.into(), true, OpenAiProtocolBehavior::Standard)
+                .await
+                .unwrap(),
+            "你好"
+        );
+    }
+
+    #[test]
+    fn failed_finish_reasons_without_error_objects_are_rejected() {
+        for reason in ["error", "content_filter"] {
+            assert!(check_completion_status(
+                &json!({"choices": [{"finish_reason": reason}]}),
+                "Test"
+            )
+            .is_err());
+        }
     }
 
     #[tokio::test]
@@ -1032,6 +1420,7 @@ mod tests {
             &progress,
             "DeepSeek",
             "deepseek-v4-flash",
+            &mut false,
         )
         .unwrap());
         assert!(!process_sse_line(
@@ -1041,6 +1430,7 @@ mod tests {
             &progress,
             "DeepSeek",
             "deepseek-v4-flash",
+            &mut false,
         )
         .unwrap());
         assert_eq!(output, "你好");
@@ -1052,6 +1442,7 @@ mod tests {
             &progress,
             "DeepSeek",
             "deepseek-v4-flash",
+            &mut false,
         )
         .unwrap());
     }
@@ -1084,6 +1475,7 @@ mod tests {
                 &progress,
                 "Groq",
                 "qwen/qwen3.6-27b",
+                &mut false,
             )
             .unwrap();
         }

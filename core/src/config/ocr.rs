@@ -11,6 +11,9 @@ pub struct VisionConfig {
     pub desktop_shortcut: String,
     pub profile_id: Option<String>,
     pub model: String,
+    pub thinking_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_control: Option<super::ReasoningSetting>,
     pub answer_language: String,
     pub system_prompt: String,
     pub max_capture_seconds: u32,
@@ -32,6 +35,8 @@ impl Default for VisionConfig {
             desktop_shortcut: "Ctrl+Alt+V".into(),
             profile_id: None,
             model: String::new(),
+            thinking_enabled: false,
+            reasoning_control: None,
             answer_language: "zh-Hans".into(),
             system_prompt: DEFAULT_VISION_SYSTEM_PROMPT.into(),
             max_capture_seconds: 30,

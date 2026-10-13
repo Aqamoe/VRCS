@@ -553,21 +553,31 @@ async fn service_models(
 ) -> ApiResult<Json<Value>> {
     if service.supports_model_listing {
         let api_key = profile_api_key(profile)?;
-        let models = crate::llm::LlmClient::new(state.integrations.http.clone())
-            .list_provider_models(profile, &api_key)
+        let mut catalog = crate::llm::LlmClient::new(state.integrations.http.clone())
+            .list_model_catalog(profile, &api_key)
             .await
             .map_err(|error| api_error(StatusCode::BAD_GATEWAY, error.code, error.detail))?;
-        let models = if service.recognition_transport.is_some() {
-            providers::compatible_service_models(service, models)
-        } else {
-            models
-        };
-        if !models.is_empty() {
-            return Ok(Json(json!({ "models": models })));
+        if service.recognition_transport.is_some() {
+            catalog.models = providers::compatible_service_models(service, catalog.models);
+            catalog
+                .model_details
+                .retain(|model, _| catalog.models.contains(model));
+        }
+        if !catalog.models.is_empty() {
+            return Ok(Json(json!(catalog)));
         }
     }
     if !service.models.is_empty() {
-        return Ok(Json(json!({ "models": service.models })));
+        let mut catalog = crate::llm::model_catalog::ModelCatalog {
+            models: service
+                .models
+                .iter()
+                .map(|model| (*model).to_owned())
+                .collect(),
+            ..Default::default()
+        };
+        crate::llm::models_dev::supplement(profile, &mut catalog);
+        return Ok(Json(json!(catalog)));
     }
     if !service.supports_model_listing {
         return Err(api_error(
