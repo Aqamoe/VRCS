@@ -61,8 +61,8 @@ for (const field of ["model", "profile_id", "thinking_enabled"]) {
       page.on("pageerror", error => errors.push(error.message));
       await page.setContent('<div id="root"></div>');
       await page.addScriptTag({ type: "module", content: bundle.outputFiles[0].text });
-      const imageTest = page.locator("details").filter({ has: page.locator("summary").filter({ hasText: "settings.vision.imageTest" }) });
-      await imageTest.locator("summary").click();
+      const visionCard = page.locator(".vision-settings-card");
+      const testResult = visionCard.locator(".vision-settings-result");
       const start = page.getByRole("button", { name: "settings.vision.testButton", exact: true });
       const testing = page.getByRole("button", { name: "settings.vision.testing", exact: true });
       await start.click();
@@ -83,12 +83,12 @@ for (const field of ["model", "profile_id", "thinking_enabled"]) {
       // Flush promise continuations and React's scheduled render before checking old finally.
       await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)));
       assert.equal(await testing.isDisabled(), true, "old finally must not reset the new test");
-      assert.equal(await imageTest.getByRole("status").count(), 0);
-      assert.equal(await imageTest.getByRole("alert").count(), 0);
+      assert.equal(await testResult.count(), 0);
+      assert.equal(await visionCard.getByRole("alert").count(), 0);
       assert.equal(await page.evaluate(() => window.pending[1].signal.aborted), false);
 
       await page.evaluate(() => window.pending[1].complete("New answer"));
-      await imageTest.getByRole("status").filter({ hasText: "New answer" }).waitFor();
+      await testResult.filter({ hasText: "New answer" }).waitFor();
       assert.equal(await start.isEnabled(), true);
       await start.click();
       await page.waitForFunction(() => window.pending.length === 3 && window.pending[2].reading);

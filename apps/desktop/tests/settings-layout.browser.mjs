@@ -133,8 +133,12 @@ for (const width of [1200, 380]) {
           const modelRow = document.querySelector('.vision-settings-card .translation-model-input-row');
           const model = modelRow.querySelector('.dropdown-trigger');
           const refresh = modelRow.querySelector('button.secondary-button');
+          const imageTest = refresh.nextElementSibling;
           sameTop(model, refresh, 'Vision model selector and refresh button stay on one row');
+          sameTop(refresh, imageTest, 'Vision image test stays on the model row');
           check(rect(model).right <= rect(refresh).left, 'Model controls do not overlap');
+          check(rect(refresh).right <= rect(imageTest).left, 'Vision image test stays to the right of refresh');
+          check(imageTest.textContent.trim() === '' && imageTest.getAttribute('aria-label') && imageTest.title, 'Vision image test has only an icon with an accessible label and tooltip');
           const visionGrid = document.querySelector('.vision-settings-card > .vr-overlay-field-grid');
           if (getComputedStyle(visionGrid).gridTemplateColumns.split(' ').length === 2) {
             sameTop(visionGrid.querySelector('.dropdown-trigger'), model, 'Vision fields remain aligned during catalog errors');

@@ -233,14 +233,12 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: savin
         </section>
         <section className="ocr-settings-group" aria-labelledby="ocr-desktop-heading">
           <header className="vr-overlay-card-heading vr-overlay-feature-heading">
-            <div><Monitor size={18} /><span><strong id="ocr-desktop-heading">{t("settings.ocr.desktop")}</strong>
-              <small>{t("settings.ocr.desktopResults")}</small></span></div>
+            <div><Monitor size={18} /><span><strong id="ocr-desktop-heading">{t("settings.ocr.desktop")}</strong></span></div>
             <PreferenceToggle title={t("settings.ocr.desktopEnabled")} hideLabel checked={config.desktop_enabled}
               disabled={disabled || (!config.desktop_enabled && !isVrOcrBackendReady(config.backend, Boolean(status?.configured), models?.state))}
               onChange={(desktop_enabled) => onChange({ desktop_enabled })} />
           </header>
           {config.desktop_enabled && <>
-            <p className="field-description">{t("settings.ocr.desktopDescription")}</p>
             <ShortcutField label={t("settings.ocr.shortcut")} value={config.shortcut} disabled={disabled}
               onChange={(shortcut) => onChange({ shortcut })} />
             {desktopStatus?.shortcut_error && <p className="vr-overlay-native-error" role="alert">

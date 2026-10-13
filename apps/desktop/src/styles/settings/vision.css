@@ -32,6 +32,7 @@
   white-space: pre-wrap;
 }
 .vision-settings-card .field { min-width: 0; }
+.vision-settings-card .translation-model-input-row { grid-template-columns: minmax(0, 1fr) auto auto; }
 .vision-settings-card .spin { animation: model-spin 900ms linear infinite; }
 
 @media (prefers-reduced-motion: reduce) {

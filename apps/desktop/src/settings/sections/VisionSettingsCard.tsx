@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Eye, FlaskConical, Hand, Monitor, RefreshCw } from "lucide-react";
+import { ChevronDown, Eye, FlaskConical, Monitor, RectangleGoggles, RefreshCw } from "lucide-react";
 import { request } from "../../core-client/transport";
 import { useTranslation } from "react-i18next";
 import type { ApiProfileView } from "../../providers/types";
@@ -115,6 +115,13 @@ export function VisionSettingsCard({ config, profiles, vrAvailable, disabled, on
           onClick={() => void refresh()}>
           <RefreshCw size={15} className={loading ? "spin" : undefined} />
         </button>
+        <button className="secondary-button" type="button"
+          aria-label={t(testing ? "settings.vision.testing" : "settings.vision.testButton")}
+          title={`${t(testing ? "settings.vision.testing" : "settings.vision.testButton")}\n${t("settings.vision.testDescription")}`}
+          disabled={disabled || testing || !selected || !config.model.trim()}
+          onClick={() => void testImage()}>
+          {testing ? <RefreshCw size={15} className="spin" /> : <FlaskConical size={15} />}
+        </button>
       </div>
       {loading && <small>{t("settings.apiManagement.loadingModels")}</small>}
       {error && <small className="api-model-catalog-error" role="alert">{error}</small>}
@@ -127,6 +134,8 @@ export function VisionSettingsCard({ config, profiles, vrAvailable, disabled, on
       {reasoningReset && <small>{t("settings.reasoning.reset")}</small>}
       {config.reasoning_control?.type === "budget_tokens" && config.reasoning_control.value > 0
         && <small>{t("settings.reasoning.remainingTokens", { count: Math.max(0, config.max_output_tokens - config.reasoning_control.value) })}</small>}
+      {testResult && <p className="vision-settings-note vision-settings-result" role="status">{testResult}</p>}
+      {testError && <p className="vr-overlay-native-error" role="alert">{testError}</p>}
     </div>
   </>;
   return <section className="vr-overlay-card vision-settings-card" id="vision-question-answering" aria-labelledby="vision-heading">
@@ -163,24 +172,6 @@ export function VisionSettingsCard({ config, profiles, vrAvailable, disabled, on
             onCommit={(value) => onChange({ [field]: value })} />)}
         </div>
       </details>
-      <details className="vision-settings-details">
-        <summary><span>{t("settings.vision.imageTest")}</span><ChevronDown size={16} /></summary>
-        <p className="vision-settings-note">{t("settings.vision.testDescription")}</p>
-        <div className="vr-overlay-card-actions">
-          <button type="button" className="secondary-button" disabled={disabled || testing || !selected || !config.model.trim()}
-            onClick={() => void testImage()}>
-            {testing ? <RefreshCw size={15} className="spin" /> : <FlaskConical size={15} />}
-            {t(testing ? "settings.vision.testing" : "settings.vision.testButton")}
-          </button>
-        </div>
-        {testResult && <p className="vision-settings-note vision-settings-result" role="status">{testResult}</p>}
-        {testError && <p className="vr-overlay-native-error" role="alert">{testError}</p>}
-      </details>
-      <details className="vision-settings-details">
-        <summary><span>{t("settings.vision.usage")}</span><ChevronDown size={16} /></summary>
-        <p className="vision-settings-note">{t("settings.vision.desktopDescription")}</p>
-        <p className="vision-settings-note">{t("settings.vision.privacy")}</p>
-      </details>
       <section className="vision-settings-group" aria-labelledby="vision-desktop-heading">
         <header className="vr-overlay-card-heading vr-overlay-feature-heading">
           <div><Monitor size={18} /><span><strong id="vision-desktop-heading">{t("settings.vision.desktopTitle")}</strong></span></div>
@@ -208,7 +199,7 @@ export function VisionSettingsCard({ config, profiles, vrAvailable, disabled, on
       </section>
       <section className="vision-settings-group" aria-labelledby="vision-wrist-heading">
         <header className="vr-overlay-card-heading vr-overlay-feature-heading">
-          <div><Hand size={18} /><span>
+          <div><RectangleGoggles size={18} /><span>
             <strong id="vision-wrist-heading">{t("settings.vision.wristTitle")}</strong>
             {!vrAvailable && <small>{t("settings.vision.vrUnavailable")}</small>}
           </span></div>
@@ -216,7 +207,6 @@ export function VisionSettingsCard({ config, profiles, vrAvailable, disabled, on
             disabled={disabled || !config.enabled || !vrAvailable} onChange={(vr_enabled) => onChange({ vr_enabled })} />
         </header>
         {config.vr_enabled && <>
-          <p className="vision-settings-note">{t("settings.vision.asrSupport")}</p>
           <RangeField label={t("settings.vision.display_seconds")} value={config.display_seconds}
             {...VISION_LIMITS.display_seconds} disabled={disabled || !vrAvailable} formatValue={(value) => `${value}s`}
             onCommit={(display_seconds) => onChange({ display_seconds })} />
