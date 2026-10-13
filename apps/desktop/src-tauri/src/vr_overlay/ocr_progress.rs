@@ -104,6 +104,7 @@ impl Feedback {
 
     pub fn fail(&mut self, state: OcrState, code: &str, now: Instant) {
         self.error = Some(match code {
+            "ocr_disabled" => ("enableOcr", "Enable OCR in Settings to scan text"),
             "authentication" => ("authentication", "Authentication failed"),
             "credentials_missing" => ("credentialsMissing", "OCR credentials are missing"),
             "rate_limit" => ("rateLimit", "Service rate limit reached"),
@@ -239,6 +240,10 @@ impl Feedback {
                 return None;
             }
             match state {
+                OcrState::Disabled => {
+                    stages = [Stage::Skipped; 4];
+                    status = labels.text("disabled", "OCR is disabled");
+                }
                 OcrState::NoText | OcrState::LowConfidence => {
                     stages = [
                         Stage::Complete,
@@ -338,6 +343,23 @@ impl Feedback {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+
+    #[test]
+    fn disabled_ocr_prompts_to_enable_it_without_starting_processing() {
+        let now = Instant::now();
+        let mut feedback = Feedback::new(1, false, now);
+        feedback.fail(OcrState::Disabled, "ocr_disabled", now);
+        let view = feedback.view(now).unwrap();
+        assert_eq!(view.status, "OCR is disabled");
+        assert!(view.detail.contains("Enable OCR in Settings to scan text"));
+        assert_eq!(view.stages, [Stage::Skipped; 4]);
+        for (_, labels) in locale_labels() {
+            let localized = feedback.view_with_labels(now, &labels).unwrap();
+            assert_eq!(localized.status, labels.0["disabled"]);
+            assert!(localized.detail.contains(&labels.0["enableOcr"]));
+        }
+        assert!(feedback.view(now + Duration::from_secs(3)).is_none());
+    }
 
     pub(crate) fn locale_labels() -> Vec<(&'static str, ProgressLabels)> {
         [

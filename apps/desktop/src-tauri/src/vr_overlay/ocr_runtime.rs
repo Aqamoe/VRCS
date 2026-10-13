@@ -1,7 +1,7 @@
 use super::{
     backend::{OpenVrBackend, OverlayKind},
     ocr_capture::{center_crop, encode_png, CropTransform, StereoCapture},
-    ocr_input::install_manifest,
+    ocr_input::{install_manifest, InputActions},
     ocr_progress::{Feedback, ProgressLabels, ProgressView},
     ocr_progress_renderer,
     ocr_selection::Selection,
@@ -257,6 +257,28 @@ impl OcrRuntime {
         self.displayed_at = Some(now);
     }
 
+    fn reject_disabled_request(&mut self, config: &VrOcrConfig, input: &InputActions) -> bool {
+        let requested = input.frame_confirmed
+            || (input.scan
+                && input.frame.is_none()
+                && !self.selecting
+                && !(self.vision.enabled() && input.vision_trigger.down));
+        if config.enabled || !requested {
+            return false;
+        }
+        self.clear();
+        let now = std::time::Instant::now();
+        self.status.state = OcrState::Disabled;
+        self.status.last_error_code = Some("ocr_disabled".into());
+        self.status.last_error =
+            Some("OCR is disabled; enable OCR in Settings to scan text".into());
+        let mut feedback = Feedback::new(self.status.scan_id, source_view(config), now);
+        feedback.fail(OcrState::Disabled, "ocr_disabled", now);
+        self.feedback = Some(feedback);
+        self.displayed_at = Some(now);
+        true
+    }
+
     pub fn tick(
         &mut self,
         backend: &mut OpenVrBackend,
@@ -494,6 +516,11 @@ impl OcrRuntime {
         }
         if input.frame_cancelled && self.selecting {
             self.clear();
+            backend.reset_ocr();
+            return Ok(());
+        }
+        if self.reject_disabled_request(config, &input) {
+            backend.freeze_ocr_frame();
             backend.reset_ocr();
             return Ok(());
         }
@@ -1118,6 +1145,76 @@ impl Drop for OcrRuntime {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn disabled_ocr_request_ends_selection_and_shows_enable_prompt() {
+        use super::*;
+        let config = VrOcrConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        for confirmed in [false, true] {
+            let mut runtime = OcrRuntime::new(None, None);
+            runtime.selecting = confirmed;
+            runtime.selection = Selection::from_corners(
+                [[-0.2, -0.1, -1.], [0.2, 0.1, -1.]],
+                super::super::transform::matrix(0., 0., 0., [0.; 3]),
+                1,
+                1,
+            );
+            runtime.vision_frame_valid = confirmed;
+            let input = InputActions {
+                vision_trigger: Default::default(),
+                cancel: false,
+                scan: true,
+                clear: false,
+                available: true,
+                gesture_available: true,
+                frame: None,
+                frame_confirmed: confirmed,
+                frame_cancelled: false,
+                navigation: vec![],
+            };
+            assert!(!runtime.reject_disabled_request(
+                &VrOcrConfig {
+                    enabled: true,
+                    ..config.clone()
+                },
+                &input
+            ));
+            assert_eq!(runtime.selecting, confirmed);
+            assert!(runtime.reject_disabled_request(&config, &input));
+            assert!(!runtime.selecting);
+            assert!(runtime.selection.is_none());
+            assert!(!runtime.vision_frame_valid);
+            assert!(runtime.capture.is_none());
+            assert!(runtime.task.is_none());
+            assert_eq!(runtime.status.state, OcrState::Disabled);
+            assert_eq!(
+                runtime.status.last_error_code.as_deref(),
+                Some("ocr_disabled")
+            );
+            let view = runtime
+                .feedback
+                .as_ref()
+                .unwrap()
+                .view(std::time::Instant::now())
+                .unwrap();
+            assert!(view.detail.contains("Enable OCR in Settings"));
+            let idle = InputActions {
+                scan: false,
+                frame_confirmed: false,
+                ..input
+            };
+            assert!(!runtime.reject_disabled_request(&config, &idle));
+            assert!(
+                runtime.feedback.is_some(),
+                "Idle input must preserve the prompt"
+            );
+            runtime.clear();
+            assert!(runtime.feedback.is_none());
+        }
+    }
+
     #[test]
     fn invalid_view_ends_feedback_and_clear_removes_it() {
         let now = std::time::Instant::now();
