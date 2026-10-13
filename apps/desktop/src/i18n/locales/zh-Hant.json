@@ -1084,8 +1084,7 @@
         "editProfile": "編輯 API",
         "profileFormHint": "名稱與連線詳細資料會儲存在設定中；API 金鑰則只會儲存在系統認證儲存區。",
         "profileName": "名稱",
-        "profileNamePlaceholder": "例如：個人帳號",
-        "profileNameOptionalHint": "可留空；儲存時將使用 API 名稱，例如 DeepSeek。",
+        "profileNamePlaceholder": "可留空，預設使用供應商名稱",
         "provider": "供應商",
         "providerCategories": {
           "cloudProvider": "雲服務供應商",

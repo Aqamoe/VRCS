@@ -90,7 +90,7 @@ export function apiProfileDraftCanSave(
   credentialConfigured: boolean,
   requireCredential: boolean,
 ): boolean {
-  if (!draft.provider || !draft.name.trim() || draft.enabled_capabilities.length === 0) return false;
+  if (!draft.provider || draft.enabled_capabilities.length === 0) return false;
   if (definition?.connection.base_url.mode === "editable" && !draft.base_url.trim()) return false;
   if (requireCredential && draft.auth_mode !== "none" && !credentialConfigured && !draft.api_key.trim()) return false;
   if (draft.timeout_ms < 1000 || draft.timeout_ms > 120000) return false;

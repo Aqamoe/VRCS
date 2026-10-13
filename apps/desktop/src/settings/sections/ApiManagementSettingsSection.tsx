@@ -102,7 +102,7 @@ export function ApiManagementSettingsSection({
     : undefined;
 
   const saveEditor = async () => {
-    if (!editor || !editor.name.trim()) return;
+    if (!editor) return;
     const profile = apiProfileFromEditorDraft(editor);
     const saved = editor.id
       ? await profiles.update({ id: editor.id, ...profile }, editor.api_key)
