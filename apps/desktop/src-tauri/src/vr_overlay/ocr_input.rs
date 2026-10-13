@@ -142,6 +142,23 @@ fn write_if_changed(path: &Path, value: &serde_json::Value) -> Result<(), String
 }
 
 impl OcrInput {
+    /// Read the latest action snapshot without taking controller focus.
+    pub fn pointer_sample(&self, right: bool, origin: i32) -> Option<([[f32; 4]; 3], bool)> {
+        let api = unsafe { &*self.table };
+        let pose = read_controller_pose(api, self.poses[usize::from(right)], origin).ok()?;
+        let mut trigger: openvr_sys::InputDigitalActionData_t = unsafe { std::mem::zeroed() };
+        let error = unsafe {
+            api.GetDigitalActionData?(
+                if right { self.scan } else { self.clear },
+                &mut trigger,
+                size_of::<openvr_sys::InputDigitalActionData_t>() as u32,
+                0,
+            )
+        };
+        (error == 0 && trigger.bActive && trigger.activeOrigin != 0)
+            .then_some((pose.pose.mDeviceToAbsoluteTracking.m, trigger.bState))
+    }
+
     pub fn freeze_frame(&mut self) {
         self.frame_session = FrameSession::default();
     }
@@ -435,6 +452,22 @@ fn read_controller(
     head: [[f32; 4]; 3],
     origin: i32,
 ) -> Result<(u64, [f32; 3]), String> {
+    let data = read_controller_pose(api, action, origin)?;
+    if head.iter().flatten().any(|value| !value.is_finite()) {
+        return Err("Controller tracking inactive".into());
+    }
+    let point = point_in_head(head, data.pose.mDeviceToAbsoluteTracking.m, [0.; 3]);
+    if point.iter().any(|value| !value.is_finite()) {
+        return Err("Invalid controller position".into());
+    }
+    Ok((data.activeOrigin, point))
+}
+
+fn read_controller_pose(
+    api: &openvr_sys::VR_IVRInput_FnTable,
+    action: u64,
+    origin: i32,
+) -> Result<openvr_sys::InputPoseActionData_t, String> {
     if action == 0 {
         return Err("Controller pose unbound".into());
     }
@@ -455,19 +488,11 @@ fn read_controller(
         || data.activeOrigin == 0
         || !data.pose.bPoseIsValid
         || !data.pose.bDeviceIsConnected
-        || head
-            .iter()
-            .chain(device.iter())
-            .flatten()
-            .any(|value| !value.is_finite())
+        || device.iter().flatten().any(|value| !value.is_finite())
     {
         return Err("Controller tracking inactive".into());
     }
-    let point = point_in_head(head, device, [0.; 3]);
-    if point.iter().any(|value| !value.is_finite()) {
-        return Err("Invalid controller position".into());
-    }
-    Ok((data.activeOrigin, point))
+    Ok(data)
 }
 
 fn read_hand(
@@ -594,6 +619,53 @@ mod tests {
             frame_session: Default::default(),
             last_digital_state: None,
         }
+    }
+
+    #[test]
+    fn wrist_pointer_reads_existing_hand_pose_and_trigger_actions_only() {
+        unsafe extern "C" fn digital(
+            action: u64,
+            data: *mut openvr_sys::InputDigitalActionData_t,
+            _: u32,
+            _: u64,
+        ) -> i32 {
+            unsafe {
+                (*data).bActive = true;
+                (*data).activeOrigin = action;
+                (*data).bState = action == 2;
+            }
+            0
+        }
+        unsafe extern "C" fn pose(
+            action: u64,
+            _: i32,
+            _: f32,
+            data: *mut openvr_sys::InputPoseActionData_t,
+            _: u32,
+            _: u64,
+        ) -> i32 {
+            unsafe {
+                (*data).bActive = true;
+                (*data).activeOrigin = action;
+                (*data).pose.bPoseIsValid = true;
+                (*data).pose.bDeviceIsConnected = true;
+                (*data).pose.mDeviceToAbsoluteTracking.m =
+                    super::super::transform::matrix(0., 0., 0., [action as f32, 0., 0.]);
+            }
+            0
+        }
+        let mut api: openvr_sys::VR_IVRInput_FnTable = unsafe { std::mem::zeroed() };
+        api.GetDigitalActionData = Some(digital);
+        api.GetPoseActionDataRelativeToNow = Some(pose);
+        let controller = input(&api);
+        let (left, down) = controller.pointer_sample(false, 1).unwrap();
+        assert_eq!(left[0][3], 5.);
+        assert!(down);
+        let (right, down) = controller.pointer_sample(true, 1).unwrap();
+        assert_eq!(right[0][3], 6.);
+        assert!(!down);
+        api.GetDigitalActionData = None;
+        assert!(input(&api).pointer_sample(true, 1).is_none());
     }
 
     #[test]
