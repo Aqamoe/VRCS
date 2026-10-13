@@ -200,7 +200,7 @@ impl VisionRuntime {
         }
     }
 
-    /// Start audio synchronously before mirror readback or image encoding.
+    /// Freeze the image on press before opening question audio.
     pub fn begin(&mut self, backend: &mut OpenVrBackend, selection: &Selection) {
         self.clear();
         let Some(service) = &self.service else {
@@ -208,16 +208,6 @@ impl VisionRuntime {
         };
         let config = service.configuration();
         self.configuration = Some(config.clone());
-        let session = match service.begin() {
-            Ok(session) => session,
-            Err(error) => {
-                self.fail(error);
-                return;
-            }
-        };
-        self.session = Some(session);
-        self.started = Some(Instant::now());
-        self.view = Some(Self::view("Listening · release trigger to ask", "", ""));
         // Capture always uses the left eye, independently of the OCR display mode.
         let capture_config = VrOcrConfig {
             display_mode: VrOcrDisplayMode::Wrist,
@@ -235,25 +225,37 @@ impl VisionRuntime {
                     .next()
                     .ok_or_else(|| "Missing left eye capture".into())
             });
-        match result {
-            Ok(eye) => {
-                let selection = selection.clone();
-                self.image = Some(tauri::async_runtime::spawn(async move {
-                    tauri::async_runtime::spawn_blocking(move || {
-                        let image = selection.crop(&eye)?.image;
-                        prepare_image(image, &config)
-                    })
-                    .await
-                    .map_err(|error| format!("Image encoding failed: {error}"))?
-                }));
+        let eye = match result {
+            Ok(eye) => eye,
+            Err(error) => {
+                self.fail(error);
+                return;
             }
-            Err(error) => self.fail(error),
-        }
+        };
+        let session = match service.begin() {
+            Ok(session) => session,
+            Err(error) => {
+                self.fail(error);
+                return;
+            }
+        };
+        self.session = Some(session);
+        self.started = Some(Instant::now());
+        self.view = Some(Self::view("Listening · release trigger to ask", "", ""));
+        let selection = selection.clone();
+        self.image = Some(tauri::async_runtime::spawn(async move {
+            tauri::async_runtime::spawn_blocking(move || {
+                let image = selection.crop(&eye)?.image;
+                prepare_image(image, &config)
+            })
+            .await
+            .map_err(|error| format!("Image encoding failed: {error}"))?
+        }));
     }
 
     pub fn trigger(&mut self, trigger: &TriggerUpdate) {
         if trigger.lost && self.session.is_some() {
-            self.fail("Trigger binding or controller tracking was lost. Ask again.".into());
+            self.fail("Trigger input was lost. Release the trigger and ask again.".into());
             return;
         }
         if !trigger.released {
@@ -346,7 +348,11 @@ impl VisionRuntime {
         };
         // Use an independent default, never the subtitle or OCR wrist configuration.
         let wrist = config.wrist.clone().unwrap_or_default();
-        if !backend.ensure_ocr_wrist(&wrist)?.available {
+        // SteamVR mouse overlays steal action input while visible. Keep release reachable.
+        if !backend
+            .ensure_ocr_wrist(&wrist, self.session.is_none())?
+            .available
+        {
             return Ok(false);
         }
         if self.rendered.as_ref() != Some(view) {

@@ -83,12 +83,13 @@ impl FrameSession {
     }
 }
 
-/// Origin changes and tracking loss cancel a press; they never synthesize a release.
+/// Brief input gaps preserve a press; source changes never synthesize a release.
 #[derive(Default)]
 pub struct TriggerEdge {
     origin: Option<u64>,
     armed: bool,
     pressed: bool,
+    missing_since: Option<Instant>,
 }
 
 #[derive(Default, Debug, PartialEq, Eq)]
@@ -101,6 +102,20 @@ pub struct TriggerUpdate {
 
 impl TriggerEdge {
     pub fn update(&mut self, origin: Option<u64>, down: bool) -> TriggerUpdate {
+        // Allow five normal VR polls for an inactive action to recover.
+        const RECOVERY_WINDOW: Duration = Duration::from_millis(250);
+        if origin.is_none() && self.pressed {
+            let now = Instant::now();
+            let missing_since = self.missing_since.get_or_insert(now);
+            if now.duration_since(*missing_since) < RECOVERY_WINDOW {
+                return TriggerUpdate {
+                    down: true,
+                    ..TriggerUpdate::default()
+                };
+            }
+        } else {
+            self.missing_since = None;
+        }
         if origin != self.origin || origin.is_none() {
             let lost = self.pressed;
             *self = Self {
@@ -184,14 +199,36 @@ mod tests {
     }
 
     #[test]
-    fn trigger_loss_and_origin_changes_never_submit_a_question() {
+    fn temporary_trigger_loss_preserves_the_real_release() {
         let mut trigger = TriggerEdge::default();
         trigger.update(Some(7), false);
         assert!(trigger.update(Some(7), true).pressed);
+        let missing = trigger.update(None, false);
+        assert!(!missing.lost);
+        assert!(!missing.released);
+        assert!(missing.down);
+        assert!(!trigger.update(Some(7), true).pressed);
+        assert!(trigger.update(Some(7), false).released);
+    }
+
+    #[test]
+    fn persistent_trigger_loss_cancels_without_submitting_or_restarting() {
+        let mut trigger = TriggerEdge::default();
+        trigger.update(Some(7), false);
+        assert!(trigger.update(Some(7), true).pressed);
+        assert!(!trigger.update(None, false).lost);
+        std::thread::sleep(Duration::from_millis(300));
         let lost = trigger.update(None, false);
         assert!(lost.lost);
         assert!(!lost.released);
         assert!(!trigger.update(Some(7), true).pressed);
+        assert!(!trigger.update(Some(7), false).released);
+        assert!(trigger.update(Some(7), true).pressed);
+    }
+
+    #[test]
+    fn replacing_a_trigger_source_never_submits_a_question() {
+        let mut trigger = TriggerEdge::default();
         trigger.update(Some(7), false);
         assert!(trigger.update(Some(7), true).pressed);
         let replaced = trigger.update(Some(8), false);

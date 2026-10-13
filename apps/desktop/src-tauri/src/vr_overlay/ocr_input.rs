@@ -302,7 +302,22 @@ impl OcrInput {
         };
         // Do not mask the recording trigger with wrist focus: a real release must close audio.
         let raw_origin = |data: &openvr_sys::InputDigitalActionData_t| {
-            (data.bActive && data.activeOrigin != 0).then_some(data.activeOrigin)
+            if !data.bActive || data.activeOrigin == 0 {
+                return None;
+            }
+            let Some(query) = api.GetOriginTrackedDeviceInfo else {
+                return Some(data.activeOrigin);
+            };
+            let mut info: openvr_sys::InputOriginInfo_t = unsafe { std::mem::zeroed() };
+            let error = unsafe {
+                query(
+                    data.activeOrigin,
+                    &mut info,
+                    size_of::<openvr_sys::InputOriginInfo_t>() as u32,
+                )
+            };
+            // An action origin identifies a component; devicePath identifies the controller.
+            (error == 0 && info.devicePath != 0).then_some(info.devicePath)
         };
         let vision_trigger = self.vision_trigger.update(raw_origin(&clear), clear.bState);
         let cancel = (self.cancel != 0).then(|| read(self.cancel).ok()).flatten();
@@ -326,7 +341,11 @@ impl OcrInput {
             hasher.finish()
         });
         let gesture_tracking = hands.as_ref().map(|hands| {
-            let frame = gesture_frame(hands, scan.bActive && scan.activeOrigin != 0 && scan.bState);
+            let frame = gesture_frame(
+                hands,
+                (scan.bActive && scan.activeOrigin != 0 && scan.bState)
+                    || (vision_enabled && vision_trigger.down),
+            );
             FrameTracking {
                 origin: gesture_origin.unwrap_or(0),
                 corners: frame.unwrap_or(FrameCorners {
@@ -575,6 +594,172 @@ mod tests {
             frame_session: Default::default(),
             last_digital_state: None,
         }
+    }
+
+    #[test]
+    fn vision_trigger_uses_device_identity_and_releases_with_reading_focus() {
+        use std::cell::Cell;
+        thread_local! { static SAMPLE: Cell<(u64, bool)> = const { Cell::new((11, false)) }; }
+        unsafe extern "C" fn update(
+            _: *mut openvr_sys::VRActiveActionSet_t,
+            _: u32,
+            _: u32,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn digital(
+            _: u64,
+            data: *mut openvr_sys::InputDigitalActionData_t,
+            _: u32,
+            _: u64,
+        ) -> i32 {
+            let (origin, down) = SAMPLE.get();
+            unsafe {
+                (*data).bActive = true;
+                (*data).activeOrigin = origin;
+                (*data).bState = down;
+            }
+            0
+        }
+        unsafe extern "C" fn device(
+            _: u64,
+            data: *mut openvr_sys::InputOriginInfo_t,
+            _: u32,
+        ) -> i32 {
+            unsafe {
+                (*data).devicePath = 7;
+            }
+            0
+        }
+        let mut api = api();
+        api.UpdateActionState = Some(update);
+        api.GetDigitalActionData = Some(digital);
+        api.GetOriginTrackedDeviceInfo = Some(device);
+        let mut input = input(&api);
+        input.poll_with_vision(None, false, true).unwrap();
+        SAMPLE.set((12, true));
+        let pressed = input.poll_with_vision(None, false, true).unwrap();
+        assert!(pressed.vision_trigger.pressed);
+        assert!(!pressed.vision_trigger.lost);
+        SAMPLE.set((13, false));
+        let released = input.poll_with_vision(None, true, true).unwrap();
+        assert!(released.vision_trigger.released);
+        assert!(!released.vision_trigger.lost);
+    }
+
+    #[test]
+    fn left_trigger_keeps_the_skeletal_frame_when_the_index_finger_curls() {
+        unsafe extern "C" fn update(
+            _: *mut openvr_sys::VRActiveActionSet_t,
+            _: u32,
+            _: u32,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn digital(
+            action: u64,
+            data: *mut openvr_sys::InputDigitalActionData_t,
+            _: u32,
+            _: u64,
+        ) -> i32 {
+            unsafe {
+                (*data).bActive = action <= 2;
+                (*data).activeOrigin = action;
+                (*data).bState = action == 2;
+            }
+            0
+        }
+        unsafe extern "C" fn skeletal(
+            action: u64,
+            data: *mut openvr_sys::InputSkeletalActionData_t,
+            _: u32,
+        ) -> i32 {
+            unsafe {
+                (*data).bActive = true;
+                (*data).activeOrigin = action;
+            }
+            0
+        }
+        unsafe extern "C" fn summary(
+            _: u64,
+            _: i32,
+            data: *mut openvr_sys::VRSkeletalSummaryData_t,
+        ) -> i32 {
+            unsafe {
+                (*data).flFingerCurl = [0.1, 0.9, 0.8, 0.8, 0.8];
+            }
+            0
+        }
+        unsafe extern "C" fn pose(
+            action: u64,
+            _: i32,
+            _: f32,
+            data: *mut openvr_sys::InputPoseActionData_t,
+            _: u32,
+            _: u64,
+        ) -> i32 {
+            unsafe {
+                (*data).bActive = true;
+                (*data).activeOrigin = action;
+                (*data).pose.bPoseIsValid = true;
+                (*data).pose.bDeviceIsConnected = true;
+                let position = if action == 72 {
+                    [-0.2, -0.1, -0.5]
+                } else {
+                    [0.2, 0.1, -0.5]
+                };
+                (*data).pose.mDeviceToAbsoluteTracking.m =
+                    super::super::transform::matrix(0., 0., 0., position);
+            }
+            0
+        }
+        let mut api = api();
+        api.UpdateActionState = Some(update);
+        api.GetDigitalActionData = Some(digital);
+        api.GetSkeletalActionData = Some(skeletal);
+        api.GetSkeletalSummaryData = Some(summary);
+        api.GetPoseActionDataRelativeToNow = Some(pose);
+        let head = super::super::transform::matrix(0., 0., 0., [0.; 3]);
+        let mut input = input(&api);
+        input.vision_trigger.update(Some(2), false);
+        let actions = input
+            .poll_with_vision(Some((head, 1)), false, true)
+            .unwrap();
+        assert!(actions.vision_trigger.pressed);
+        let mut hasher = DefaultHasher::new();
+        (72u64, 73u64).hash(&mut hasher);
+        let mut sample = FrameTracking {
+            origin: hasher.finish(),
+            corners: FrameCorners {
+                corners: [[-0.2, -0.1, -0.5], [0.2, 0.1, -0.5]],
+            },
+            activating: false,
+            dragging: false,
+        };
+        let now = Instant::now();
+        input
+            .frame_session
+            .update([Some(sample), None], false, false, now);
+        sample.activating = true;
+        sample.dragging = true;
+        input
+            .frame_session
+            .update([Some(sample), None], false, false, now);
+        input.frame_session.update(
+            [Some(sample), None],
+            false,
+            false,
+            now + std::time::Duration::from_millis(650),
+        );
+        let actions = input
+            .poll_with_vision(Some((head, 1)), false, true)
+            .unwrap();
+        assert!(!actions.frame_cancelled);
+        assert!(actions.frame.is_some());
+        let actions = input
+            .poll_with_vision(Some((head, 1)), false, false)
+            .unwrap();
+        assert!(actions.frame_cancelled);
     }
 
     #[test]

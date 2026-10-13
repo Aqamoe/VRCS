@@ -446,6 +446,20 @@ impl OcrRuntime {
             // The image and audio window are frozen. Grip release cannot cancel them.
             return Ok(());
         }
+        // Freeze the displayed selection before trigger-induced hand/grip changes cancel it.
+        if self.vision.enabled()
+            && input.vision_trigger.pressed
+            && !reading_focus
+            && self.selecting
+            && self.vision_frame_valid
+        {
+            let selection = self.selection.clone().ok_or("Invalid visual frame")?;
+            self.clear();
+            backend.reset_ocr();
+            backend.freeze_ocr_frame();
+            self.vision.begin(backend, &selection);
+            return Ok(());
+        }
         for action in input.navigation.iter().copied() {
             self.reading_action(action);
         }
@@ -530,14 +544,6 @@ impl OcrRuntime {
                 if input.frame_confirmed {
                     self.invalidate(config);
                 }
-                return Ok(());
-            }
-            if self.vision.enabled() && input.vision_trigger.pressed && !reading_focus {
-                let selection = self.selection.clone().ok_or("Invalid visual frame")?;
-                self.clear();
-                backend.reset_ocr();
-                backend.freeze_ocr_frame();
-                self.vision.begin(backend, &selection);
                 return Ok(());
             }
             if input.frame_confirmed && config.enabled {
@@ -701,7 +707,7 @@ impl OcrRuntime {
             .wrist
             .clone()
             .unwrap_or_else(|| vrcs_core::VrOcrWristConfig::from(subtitle_wrist));
-        if !backend.ensure_ocr_wrist(&config_wrist)?.available {
+        if !backend.ensure_ocr_wrist(&config_wrist, true)?.available {
             self.status.wrist_state = OcrWristState::DeviceUnavailable;
             self.status.wrist_error = None;
             return Ok(());
