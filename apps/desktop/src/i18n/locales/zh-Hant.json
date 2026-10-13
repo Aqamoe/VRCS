@@ -575,7 +575,7 @@
         "noProfile": "未選擇設定檔",
         "noProfiles": "沒有可用設定檔。請在 API 設定中新增或編輯設定檔，並啟用圖像理解。",
         "unavailableProfile": "所選設定檔無法使用",
-        "model": "支援圖片的模型",
+        "model": "模型",
         "thinkingMode": "思考模式",
         "selectModel": "選擇模型",
         "noModels": "沒有可用模型。請檢查 API 設定檔後重新整理清單。",

@@ -575,7 +575,7 @@
         "noProfile": "未选择档案",
         "noProfiles": "没有可用档案。请在 API 设置中添加或编辑档案，并启用图像理解。",
         "unavailableProfile": "所选档案不可用",
-        "model": "支持图片的模型",
+        "model": "模型",
         "thinkingMode": "思考模式",
         "selectModel": "选择模型",
         "noModels": "没有可用模型。请检查 API 档案后刷新列表。",

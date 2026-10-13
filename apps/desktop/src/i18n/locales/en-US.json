@@ -575,7 +575,7 @@
         "noProfile": "No profile selected",
         "noProfiles": "No eligible profiles. Add or edit a profile in API settings and enable image understanding.",
         "unavailableProfile": "Selected profile is unavailable",
-        "model": "Image-capable model",
+        "model": "Model",
         "thinkingMode": "Thinking mode",
         "selectModel": "Select a model",
         "noModels": "No models are available. Check the API profile and refresh the list.",
