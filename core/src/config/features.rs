@@ -92,8 +92,8 @@ pub fn apply_feature_gates(config: &AppConfig) -> AppConfig {
     effective.dictionary.selection_lookup_enabled &= features.learning;
     effective.anki.enabled &= features.anki;
     effective.osc.enabled &= features.osc_chatbox;
-    effective.osc.mute_sync_enabled &= features.osc_chatbox;
-    effective.osc.mute_status_toast_enabled &= features.osc_chatbox;
+    effective.osc.mute_sync_enabled &= effective.osc.enabled;
+    effective.osc.mute_status_toast_enabled &= effective.osc.enabled;
     effective.vrcx.enabled &= features.vrcx;
     effective.external_api.enabled &= features.external_api;
     effective.vr_overlay.enabled &= features.vr_overlay;
@@ -107,6 +107,36 @@ pub fn apply_feature_gates(config: &AppConfig) -> AppConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn osc_master_switch_gates_all_runtime_features_without_changing_preferences() {
+        let mut config = AppConfig::default();
+        for available in [false, true] {
+            for enabled in [false, true] {
+                for mute_sync in [false, true] {
+                    for mute_toast in [false, true] {
+                        config.features.osc_chatbox = available;
+                        config.osc.enabled = enabled;
+                        config.osc.mute_sync_enabled = mute_sync;
+                        config.osc.mute_status_toast_enabled = mute_toast;
+                        let effective = apply_feature_gates(&config);
+                        assert_eq!(effective.osc.enabled, available && enabled);
+                        assert_eq!(
+                            effective.osc.mute_sync_enabled,
+                            available && enabled && mute_sync
+                        );
+                        assert_eq!(
+                            effective.osc.mute_status_toast_enabled,
+                            available && enabled && mute_toast
+                        );
+                        assert_eq!(config.osc.enabled, enabled);
+                        assert_eq!(config.osc.mute_sync_enabled, mute_sync);
+                        assert_eq!(config.osc.mute_status_toast_enabled, mute_toast);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn ocr_master_switch_gates_both_modes_without_changing_preferences() {
