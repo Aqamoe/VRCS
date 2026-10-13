@@ -1,8 +1,8 @@
-import { confirmAction } from "../../app/confirm-action";
 import { ArrowDown, ArrowUp, FileUp, Plus, Search, Trash2 } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ConfirmDialog } from "../../app/components/ConfirmDialog";
 import type { GlossaryEntry } from "../types";
 import { DropdownField, type DropdownOption } from "../../shared/ui/DropdownField";
 import {
@@ -47,6 +47,7 @@ export function GlossaryEntryTable({
   const [sortDirection, setSortDirection] = useState<GlossaryEntrySortDirection>("asc");
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(() => new Set());
   const [bulkAction, setBulkAction] = useState<GlossaryEntryBulkAction | "">("");
+  const [pendingRemoval, setPendingRemoval] = useState<ReadonlySet<string> | null>(null);
 
   const categoryOptions = useMemo<DropdownOption[]>(() => GLOSSARY_CATEGORIES.map((value) => ({
     value,
@@ -120,11 +121,14 @@ export function GlossaryEntryTable({
   const updateEntry = (rowId: string, patch: Partial<GlossaryEntry>) => onChange(entries.map((entry) => (
     entry.rowId === rowId ? { ...entry, ...patch } : entry
   )));
-  const removeRows = async (rowIds: ReadonlySet<string>) => {
-    if (!rowIds.size) return;
-    if (!await confirmAction(t("settings.glossary.table.confirmDeleteEntries", { count: rowIds.size }))) return;
-    onChange(entries.filter((entry) => !rowIds.has(entry.rowId)));
+  const requestRemoval = (rowIds: ReadonlySet<string>) => {
+    if (rowIds.size) setPendingRemoval(new Set(rowIds));
+  };
+  const confirmRemoval = () => {
+    if (!pendingRemoval) return;
+    onChange(entries.filter((entry) => !pendingRemoval.has(entry.rowId)));
     setSelectedRowIds(new Set());
+    setPendingRemoval(null);
   };
   const updateSort = (nextKey: GlossaryEntrySortKey) => {
     if (nextKey === "position") {
@@ -308,7 +312,7 @@ export function GlossaryEntryTable({
               disabled={saving}
               aria-label={t("settings.glossary.table.deleteSelected")}
               title={t("settings.glossary.table.deleteSelected")}
-              onClick={() => removeRows(selectedRowIds)}
+              onClick={() => requestRemoval(selectedRowIds)}
             >
               <Trash2 size={15} aria-hidden="true" />
             </button>
@@ -317,6 +321,16 @@ export function GlossaryEntryTable({
           <small>{t("settings.glossary.glossaryEntryLimit", { count: MAX_GLOSSARY_ENTRIES })}</small>
         )}
       </div>
+      {pendingRemoval && (
+        <ConfirmDialog
+          title={t("common.delete")}
+          message={t("settings.glossary.table.confirmDeleteEntries", { count: pendingRemoval.size })}
+          confirmLabel={t("settings.glossary.table.deleteSelected")}
+          icon={<Trash2 size={16} />}
+          onClose={() => setPendingRemoval(null)}
+          onConfirm={confirmRemoval}
+        />
+      )}
     </div>
   );
 }

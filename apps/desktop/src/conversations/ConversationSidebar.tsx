@@ -1,7 +1,8 @@
 import { memo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { PanelLeftClose, Plus, Search, X } from "lucide-react";
+import { PanelLeftClose, Plus, Search, Trash2, X } from "lucide-react";
 import type { RefObject } from "react";
+import { ConfirmDialog } from "../app/components/ConfirmDialog";
 import type { ConversationIcon, ConversationSummary } from "./conversations";
 import {
   DEFAULT_CONVERSATION_SIDEBAR_WIDTH,
@@ -81,6 +82,8 @@ export const ConversationSidebar = memo(function ConversationSidebar({
   const [choosingIcon, setChoosingIcon] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const actionsTriggerRef = useRef<HTMLButtonElement>(null);
 
   const closeActions = (restoreFocus = false) => {
@@ -127,6 +130,17 @@ export const ConversationSidebar = memo(function ConversationSidebar({
   };
 
   const menuConversation = conversations.find((conversation) => conversation.id === actionsId);
+
+  const confirmDelete = async () => {
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
+    try {
+      await onDelete(pendingDelete.id);
+    } finally {
+      setDeleting(false);
+      setPendingDelete(null);
+    }
+  };
 
   return (
     <aside
@@ -270,9 +284,21 @@ export const ConversationSidebar = memo(function ConversationSidebar({
           }}
           onDelete={() => {
             closeActions();
-            void onDelete(menuConversation.id);
+            setPendingDelete(menuConversation);
           }}
           onClose={closeActions}
+        />
+      )}
+      {pendingDelete && (
+        <ConfirmDialog
+          title={t("conversations.delete")}
+          message={t("conversations.deleteConfirm", { title: pendingDelete.title })}
+          confirmLabel={t("conversations.delete")}
+          busy={deleting}
+          icon={<Trash2 size={16} />}
+          returnFocusRef={actionsTriggerRef}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={confirmDelete}
         />
       )}
       </>}

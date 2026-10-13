@@ -947,6 +947,7 @@
         "restorePrompt": "還原預設",
         "previewPrompt": "本機預覽",
         "promptPreviewTitle": "下一次 LLM 請求的系統指令",
+        "promptInvalidTitle": "提示詞無效",
         "contextPreview": "最近 {{count}} 則原文，共 {{chars}} 個字元",
         "contextEnabled": "附帶最近原文",
         "contextEnabledDescription": "依時間順序將所選來源最近完成的原文加入 LLM 提示詞。預設關閉。",
@@ -1050,7 +1051,8 @@
           "applyBulkAction": "套用",
           "deleteSelected": "刪除所選條目",
           "confirmDeleteEntries": "要刪除所選的 {{count}} 個術語條目嗎？",
-          "confirmDiscardChanges": "放棄尚未儲存的術語表修改嗎？"
+          "confirmDiscardChanges": "放棄尚未儲存的術語表修改嗎？",
+          "discardChanges": "放棄變更"
         },
         "glossarySaveFailed": "無法儲存術語表設定，請修正設定錯誤後重試。",
         "glossaryExportFailed": "無法匯出術語表。",

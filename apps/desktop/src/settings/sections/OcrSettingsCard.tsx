@@ -11,7 +11,7 @@ import { DEFAULT_OCR_WRIST_SETTINGS, isVrOcrBackendReady, VR_OVERLAY_POSITION_RA
 import { TranslationRouteList } from "../translation/TranslationRouteList";
 import type { DesktopOcrStatus } from "../../ocr/status";
 import { openVrOcrBindings } from "../../integrations/vr-overlay-native";
-import { ModelDeleteDialog } from "../components/ModelDeleteDialog";
+import { ConfirmDialog } from "../../app/components/ConfirmDialog";
 import { ShortcutField } from "../../shared/ui/ShortcutField";
 
 export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: saving, runtime, desktopStatus, onChange }: {
@@ -329,8 +329,15 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: savin
             </section>}
           </>}
         </section>}
-        {confirmDelete && <ModelDeleteDialog name="PP-OCRv6 small" removing={modelRemoving}
-          returnFocusRef={deleteButtonRef} onClose={() => setConfirmDelete(false)} onConfirm={deleteModels} />}
+        {confirmDelete && <ConfirmDialog
+          title={t("common.delete")}
+          message={t("settings.recognition.confirmDelete", { name: "PP-OCRv6 small" })}
+          confirmLabel={t("common.delete")}
+          busy={modelRemoving}
+          icon={<Trash2 size={16} />}
+          returnFocusRef={deleteButtonRef}
+          onClose={() => setConfirmDelete(false)}
+          onConfirm={deleteModels} />}
       </>}
     </section>
   );

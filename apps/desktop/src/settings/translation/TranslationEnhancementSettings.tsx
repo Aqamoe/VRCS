@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 
 import { translationSettingsApi } from "../translation-api";
 import { localizedError } from "../../app/app-utils";
+import { ConfirmDialog } from "../../app/components/ConfirmDialog";
 import type { ApiProfileView } from "../../providers/types";
 import type {
   TranslationPromptPreview,
@@ -88,6 +89,7 @@ export function TranslationEnhancementSettings({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
   const [promptValidationError, setPromptValidationError] = useState("");
+  const [promptAlert, setPromptAlert] = useState("");
   const [systemPromptDraft, setSystemPromptDraft] = useState(
     translation.prompt.system_prompt,
   );
@@ -133,7 +135,7 @@ export function TranslationEnhancementSettings({
     const validationError = translationPromptVariableError(value);
     if (validationError) {
       setPromptValidationError(validationError);
-      window.alert([
+      setPromptAlert([
         t("errors.translation.prompt_invalid"),
         validationError,
         t("settings.translation.promptVariables"),
@@ -338,6 +340,13 @@ export function TranslationEnhancementSettings({
         </div>
 
       </div>
+      {promptAlert && (
+        <ConfirmDialog
+          title={t("settings.translation.promptInvalidTitle")}
+          message={promptAlert}
+          onClose={() => setPromptAlert("")}
+        />
+      )}
     </div>
   );
 }

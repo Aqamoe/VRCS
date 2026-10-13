@@ -1,4 +1,3 @@
-import { confirmAction } from "../../app/confirm-action";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -42,9 +41,6 @@ export function useDictionaryActions({
   };
 
   const remove = async (dictionary: DictionarySource) => {
-    if (!await confirmAction(t("settings.dictionary.confirmRemove", {
-      title: dictionary.title,
-    }))) return;
     setBusy(true);
     try {
       await onDelete(dictionary.id);

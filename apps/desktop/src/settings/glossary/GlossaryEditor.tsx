@@ -1,4 +1,3 @@
-import { confirmAction } from "../../app/confirm-action";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -16,6 +15,7 @@ import { useTranslation } from "react-i18next";
 
 import { glossaryApi } from "./api";
 import { localizedError } from "../../app/app-utils";
+import { ConfirmDialog } from "../../app/components/ConfirmDialog";
 import type {
   GlossaryLocalSource,
   GlossarySource,
@@ -73,6 +73,11 @@ export function GlossaryEditor({
   const [editorSaving, setEditorSaving] = useState(false);
   const [editorError, setEditorError] = useState("");
   const returnFocusRef = useRef<HTMLButtonElement>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<{
+    source: GlossarySource;
+    name: string;
+  } | null>(null);
+  const removalTriggerRef = useRef<HTMLButtonElement>(null);
   const statusById = useMemo(
     () => new Map(statuses.map((status) => [status.id, status])),
     [statuses],
@@ -213,13 +218,19 @@ export function GlossaryEditor({
     persistSources(next);
   };
 
-  const removeSource = async (source: GlossarySource) => {
+  const requestRemoval = (trigger: HTMLButtonElement, source: GlossarySource) => {
     const status = statusById.get(source.id);
     const name = source.type === "local"
       ? source.name
       : source.display_name || status?.name || source.url;
-    if (!await confirmAction(t("settings.glossary.confirmDeleteGlossary", { name }))) return;
-    persistSources(sources.filter((item) => item.id !== source.id));
+    removalTriggerRef.current = trigger;
+    setPendingRemoval({ source, name });
+  };
+
+  const confirmRemoval = () => {
+    if (!pendingRemoval) return;
+    persistSources(sources.filter((item) => item.id !== pendingRemoval.source.id));
+    setPendingRemoval(null);
   };
 
   const refreshSource = async (id: string) => {
@@ -424,7 +435,7 @@ export function GlossaryEditor({
                   className="secondary-button api-danger-button"
                   type="button"
                   disabled={disabled}
-                  onClick={() => removeSource(source)}
+                  onClick={(event) => requestRemoval(event.currentTarget, source)}
                 >
                   <Trash2 size={14} aria-hidden="true" />
                   {t("common.delete")}
@@ -468,6 +479,17 @@ export function GlossaryEditor({
             setEditorError("");
             setSubscriptionDraft(null);
           }}
+        />
+      )}
+      {pendingRemoval && (
+        <ConfirmDialog
+          title={t("common.delete")}
+          message={t("settings.glossary.confirmDeleteGlossary", { name: pendingRemoval.name })}
+          confirmLabel={t("common.delete")}
+          icon={<Trash2 size={16} />}
+          returnFocusRef={removalTriggerRef}
+          onClose={() => setPendingRemoval(null)}
+          onConfirm={confirmRemoval}
         />
       )}
     </div>

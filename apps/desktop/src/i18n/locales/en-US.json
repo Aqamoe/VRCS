@@ -947,6 +947,7 @@
         "restorePrompt": "Restore default",
         "previewPrompt": "Local preview",
         "promptPreviewTitle": "System instructions for the next LLM request",
+        "promptInvalidTitle": "Invalid prompt",
         "contextPreview": "{{count}} recent source messages, {{chars}} characters",
         "contextEnabled": "Include recent source text",
         "contextEnabledDescription": "Add recent final source text from selected sources to the LLM prompt in chronological order. Off by default.",
@@ -1050,7 +1051,8 @@
           "applyBulkAction": "Apply",
           "deleteSelected": "Delete selected entries",
           "confirmDeleteEntries": "Delete the selected {{count}} entries?",
-          "confirmDiscardChanges": "Discard the unsaved glossary changes?"
+          "confirmDiscardChanges": "Discard the unsaved glossary changes?",
+          "discardChanges": "Discard changes"
         },
         "glossarySaveFailed": "Could not save the glossary settings. Fix the settings error and try again.",
         "glossaryExportFailed": "Could not export the glossary.",

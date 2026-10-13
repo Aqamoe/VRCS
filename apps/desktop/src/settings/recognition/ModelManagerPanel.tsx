@@ -3,10 +3,10 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { NATIVE_APP } from "../../app/app-environment";
+import { ConfirmDialog } from "../../app/components/ConfirmDialog";
 import type { QwenModelRecord } from "../../providers/types";
 import { formatBytes } from "../settings-derived";
 import type { SaveState } from "../settings-types";
-import { ModelDeleteDialog } from "../components/ModelDeleteDialog";
 
 export function ModelManagerPanel({
   locale,
@@ -151,9 +151,12 @@ export function ModelManagerPanel({
         </div>
       )}
       {qwen.message && <p className="model-manager-feedback" role="status">{qwen.message}</p>}
-      {pendingRemoval && <ModelDeleteDialog
-        name={pendingRemoval.name}
-        removing={removing}
+      {pendingRemoval && <ConfirmDialog
+        title={t("common.delete")}
+        message={t("settings.recognition.confirmDelete", { name: pendingRemoval.name })}
+        confirmLabel={t("common.delete")}
+        busy={removing}
+        icon={<Trash2 size={16} />}
         returnFocusRef={returnFocusRef}
         onClose={() => setPendingRemoval(null)}
         onConfirm={confirmRemoval}

@@ -11,6 +11,11 @@ const FOCUSABLE_SELECTOR = [
   "[tabindex]:not([tabindex=\"-1\"])",
 ].join(", ");
 
+// Nested dialogs (for example a confirmation above an editor) only react to keys when they are on top.
+const dialogStack: HTMLElement[] = [];
+let openDialogCount = 0;
+let previousBodyOverflow = "";
+
 export function SettingsDialog({
   label,
   saving,
@@ -42,7 +47,10 @@ export function SettingsDialog({
   }, [saving]);
 
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
+    const dialog = dialogRef.current;
+    if (dialog) dialogStack.push(dialog);
+    if (openDialogCount === 0) previousBodyOverflow = document.body.style.overflow;
+    openDialogCount += 1;
     document.body.style.overflow = "hidden";
     const frame = autoFocus
       ? window.requestAnimationFrame(() => {
@@ -51,6 +59,7 @@ export function SettingsDialog({
       : null;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (dialogStack[dialogStack.length - 1] !== dialogRef.current) return;
       if (event.key === "Escape") {
         event.preventDefault();
         if (!savingRef.current) closeRef.current();
@@ -84,7 +93,10 @@ export function SettingsDialog({
     return () => {
       if (frame !== null) window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
+      const index = dialog ? dialogStack.lastIndexOf(dialog) : -1;
+      if (index !== -1) dialogStack.splice(index, 1);
+      openDialogCount -= 1;
+      if (openDialogCount === 0) document.body.style.overflow = previousBodyOverflow;
       returnFocusRef.current?.focus();
     };
   }, [autoFocus, returnFocusRef]);

@@ -947,6 +947,7 @@
         "restorePrompt": "恢复默认",
         "previewPrompt": "本地预览",
         "promptPreviewTitle": "下一次 LLM 请求的系统指令",
+        "promptInvalidTitle": "提示词无效",
         "contextPreview": "附带最近 {{count}} 条原文，共 {{chars}} 个字符",
         "contextEnabled": "附带最近原文",
         "contextEnabledDescription": "按时间顺序把选定来源的最近 final 原文加入 LLM Prompt。默认关闭。",
@@ -1050,7 +1051,8 @@
           "applyBulkAction": "应用",
           "deleteSelected": "删除所选条目",
           "confirmDeleteEntries": "确定删除所选的 {{count}} 条术语吗？",
-          "confirmDiscardChanges": "放弃尚未保存的术语表修改吗？"
+          "confirmDiscardChanges": "放弃尚未保存的术语表修改吗？",
+          "discardChanges": "放弃更改"
         },
         "glossarySaveFailed": "无法保存术语表设置，请修正设置错误后重试。",
         "glossaryExportFailed": "无法导出术语表。",

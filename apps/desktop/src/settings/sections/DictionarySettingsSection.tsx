@@ -1,7 +1,8 @@
-import type { RefObject } from "react";
+import { useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { BookOpen, Trash2, Upload } from "lucide-react";
 
+import { ConfirmDialog } from "../../app/components/ConfirmDialog";
 import type { DictionarySource } from "../../dictionary/types";
 import { PreferenceToggle } from "../SettingsControls";
 
@@ -36,6 +37,21 @@ export function DictionarySettingsSection({
   const dictionaryFileRef = fileInputRef;
   const chooseDictionary = onChoose;
   const removeDictionary = onRemove;
+  const [pendingRemoval, setPendingRemoval] = useState<DictionarySource | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const removalTriggerRef = useRef<HTMLButtonElement>(null);
+
+  const confirmRemoval = async () => {
+    if (!pendingRemoval || removing) return;
+    setRemoving(true);
+    try {
+      await removeDictionary(pendingRemoval);
+    } finally {
+      setRemoving(false);
+      setPendingRemoval(null);
+    }
+  };
+
   return (
         <section className="learning-settings-group dictionary-section" aria-labelledby="learning-dictionary-title">
           <div className="section-heading">
@@ -66,11 +82,32 @@ export function DictionarySettingsSection({
                     <strong>{dictionary.title}</strong>
                     <span>{dictionary.source_language.toUpperCase()}{dictionary.target_language ? ` → ${dictionary.target_language.toUpperCase()}` : ""} · {t("settings.dictionary.entryCount", { count: dictionary.entry_count, formatted: new Intl.NumberFormat(locale).format(dictionary.entry_count) })} · {dictionary.revision}</span>
                   </div>
-                  <button type="button" disabled={dictionaryBusy} aria-label={t("settings.dictionary.removeNamed", { title: dictionary.title })} title={t("settings.dictionary.remove")} onClick={() => void removeDictionary(dictionary)}><Trash2 size={16} /></button>
+                  <button
+                    type="button"
+                    disabled={dictionaryBusy}
+                    aria-label={t("settings.dictionary.removeNamed", { title: dictionary.title })}
+                    title={t("settings.dictionary.remove")}
+                    onClick={(event) => {
+                      removalTriggerRef.current = event.currentTarget;
+                      setPendingRemoval(dictionary);
+                    }}
+                  ><Trash2 size={16} /></button>
                 </div>
               ))}
             </div>
           ) : <p className="dictionary-empty">{t("settings.dictionary.emptyHint")}</p>}
+          {pendingRemoval && (
+            <ConfirmDialog
+              title={t("settings.dictionary.remove")}
+              message={t("settings.dictionary.confirmRemove", { title: pendingRemoval.title })}
+              confirmLabel={t("settings.dictionary.remove")}
+              busy={removing}
+              icon={<Trash2 size={16} />}
+              returnFocusRef={removalTriggerRef}
+              onClose={() => setPendingRemoval(null)}
+              onConfirm={confirmRemoval}
+            />
+          )}
           {dictionaryMessage && <p className="dictionary-feedback" role="status">{dictionaryMessage}</p>}
           {dictionaryBusy && dictionaryProgress !== null && progressPercentage !== null && (
             <div className="dictionary-import-progress">

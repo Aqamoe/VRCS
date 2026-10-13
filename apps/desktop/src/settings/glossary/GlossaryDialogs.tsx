@@ -1,7 +1,7 @@
-import { confirmAction } from "../../app/confirm-action";
-import { useRef, type ChangeEvent, type RefObject } from "react";
+import { useRef, useState, type ChangeEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ConfirmDialog } from "../../app/components/ConfirmDialog";
 import { SettingsDialog } from "../components/SettingsDialog";
 import { GlossaryEntryTable } from "./GlossaryEntryTable";
 import {
@@ -37,6 +37,7 @@ export function LocalGlossaryDialog({
 }) {
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const initialSnapshotRef = useRef(JSON.stringify({
     name: draft.name,
     entries: draft.entries.map(glossaryEntryValue),
@@ -47,8 +48,11 @@ export function LocalGlossaryDialog({
   });
   const entryValidationError = validateEntries(draft.entries, t);
 
-  const requestClose = async () => {
-    if (dirty && !await confirmAction(t("settings.glossary.table.confirmDiscardChanges"))) return;
+  const requestClose = () => {
+    if (dirty) {
+      setConfirmDiscard(true);
+      return;
+    }
     onClose();
   };
 
@@ -90,6 +94,7 @@ export function LocalGlossaryDialog({
   };
 
   return (
+    <>
     <SettingsDialog
       label={t(draft.id ? "settings.glossary.editGlossary" : "settings.glossary.addGlossary")}
       saving={saving}
@@ -149,6 +154,16 @@ export function LocalGlossaryDialog({
         </div>
       </form>
     </SettingsDialog>
+    {confirmDiscard && (
+      <ConfirmDialog
+        title={t("settings.glossary.table.discardChanges")}
+        message={t("settings.glossary.table.confirmDiscardChanges")}
+        confirmLabel={t("settings.glossary.table.discardChanges")}
+        onClose={() => setConfirmDiscard(false)}
+        onConfirm={onClose}
+      />
+    )}
+    </>
   );
 }
 

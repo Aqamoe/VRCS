@@ -1,4 +1,3 @@
-import { confirmAction } from "../app/confirm-action";
 import { useEffect, useRef } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
@@ -140,12 +139,7 @@ export function ConversationActionsPopover({
             className="conversation-action-delete"
             type="button"
             role="menuitem"
-            onClick={async () => {
-              if (!await confirmAction(t("conversations.deleteConfirm", {
-                title: conversation.title,
-              }))) return;
-              onDelete();
-            }}
+            onClick={onDelete}
           ><Trash2 size={16} />{t("conversations.delete")}</button>
         </>
       )}

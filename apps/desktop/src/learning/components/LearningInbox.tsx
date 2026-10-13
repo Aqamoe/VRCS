@@ -1,4 +1,3 @@
-import { confirmAction } from "../../app/confirm-action";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -13,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { timestamp } from "../../app/app-utils";
+import { ConfirmDialog } from "../../app/components/ConfirmDialog";
 import type { LearningWorkspaceController } from "../hooks/useLearningWorkspace";
 import { learningTaskForKind } from "../learning";
 import type {
@@ -126,6 +126,8 @@ function LearningItemDetail({
 }) {
   const { t } = useTranslation();
   const [workingText, setWorkingText] = useState(item.working_text);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const busy = workspace.isItemBusy(item.id);
   const archived = item.status === "archived";
   const task = learningTaskForKind(item.kind);
@@ -142,6 +144,16 @@ function LearningItemDetail({
   const analyze = async (taskType: LearningTaskType, focus?: "simpler" | "examples" | "compare") => {
     if (!workingText.trim() || !await prepareWorkingText()) return;
     await workspace.analyze(item.id, taskType, focus);
+  };
+  const deleteItem = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await workspace.deleteItem(item.id);
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
   };
 
   return (
@@ -161,9 +173,7 @@ function LearningItemDetail({
             className="learning-danger-button"
             type="button"
             disabled={busy}
-            onClick={async () => {
-              if (await confirmAction(t("learning.actions.deleteConfirm"))) void workspace.deleteItem(item.id);
-            }}
+            onClick={() => setConfirmDelete(true)}
           ><Trash2 size={14} />{t("learning.actions.delete")}</button>
         </div>
       </header>
@@ -228,6 +238,17 @@ function LearningItemDetail({
         workingText={workingText}
         prepareWorkingText={prepareWorkingText}
       />
+      {confirmDelete && (
+        <ConfirmDialog
+          title={t("learning.actions.delete")}
+          message={t("learning.actions.deleteConfirm")}
+          confirmLabel={t("learning.actions.delete")}
+          busy={deleting}
+          icon={<Trash2 size={16} />}
+          onClose={() => setConfirmDelete(false)}
+          onConfirm={deleteItem}
+        />
+      )}
     </div>
   );
 }

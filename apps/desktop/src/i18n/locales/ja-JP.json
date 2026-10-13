@@ -947,6 +947,7 @@
         "restorePrompt": "既定に戻す",
         "previewPrompt": "ローカルプレビュー",
         "promptPreviewTitle": "次の LLM リクエストのシステム指示",
+        "promptInvalidTitle": "プロンプトが無効です",
         "contextPreview": "最近の原文 {{count}} 件、{{chars}} 文字を添付",
         "contextEnabled": "最近の原文を添付",
         "contextEnabledDescription": "選択したソースの最近の確定原文を時系列で LLM プロンプトに追加します。既定ではオフです。",
@@ -1050,7 +1051,8 @@
           "applyBulkAction": "適用",
           "deleteSelected": "選択した項目を削除",
           "confirmDeleteEntries": "選択した {{count}} 件の用語を削除しますか？",
-          "confirmDiscardChanges": "保存していない用語集の変更を破棄しますか？"
+          "confirmDiscardChanges": "保存していない用語集の変更を破棄しますか？",
+          "discardChanges": "変更を破棄"
         },
         "glossarySaveFailed": "用語集設定を保存できませんでした。設定エラーを修正して再試行してください。",
         "glossaryExportFailed": "用語集をエクスポートできませんでした。",

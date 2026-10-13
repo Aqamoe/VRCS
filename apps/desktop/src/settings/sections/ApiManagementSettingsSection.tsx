@@ -1,4 +1,3 @@
-import { confirmAction } from "../../app/confirm-action";
 import { Check, Cloud, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
@@ -23,6 +22,7 @@ import type {
   ProviderDefinition,
 } from "../../providers/types";
 import type { Settings } from "../types";
+import { ConfirmDialog } from "../../app/components/ConfirmDialog";
 import { ApiProfileEditor } from "../api/ApiProfileEditor";
 import { SettingsDialog } from "../components/SettingsDialog";
 import { useApiProfiles } from "../useApiProfiles";
@@ -89,7 +89,13 @@ export function ApiManagementSettingsSection({
   const { t } = useTranslation();
   const profiles = useApiProfiles(onRefreshSettings);
   const [editor, setEditor] = useState<ApiProfileEditorDraft | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<{
+    profile: ApiProfileView;
+    message: string;
+  } | null>(null);
+  const [removing, setRemoving] = useState(false);
   const editorTriggerRef = useRef<HTMLButtonElement>(null);
+  const removalTriggerRef = useRef<HTMLButtonElement>(null);
   const locked = profiles.busy !== null;
   const editingProfile = editor?.id
     ? profiles.profiles.find((profile) => profile.id === editor.id)
@@ -104,7 +110,7 @@ export function ApiManagementSettingsSection({
     if (saved) setEditor(null);
   };
 
-  const removeProfile = async (profile: ApiProfileView) => {
+  const requestRemoval = (profile: ApiProfileView, button: HTMLButtonElement) => {
     const affectsTranscription = settings.asr.active_profile_id === profile.id;
     const affectsTranslation = profile.translation_active;
     const impact = affectsTranscription && affectsTranslation
@@ -114,11 +120,24 @@ export function ApiManagementSettingsSection({
         : affectsTranslation
           ? t("settings.apiManagement.deleteImpacts.translation")
           : "";
-    if (!await confirmAction(t("settings.apiManagement.confirmDelete", {
-      name: profile.name,
-      impact,
-    }))) return;
-    if (await profiles.remove(profile.id)) setEditor((current) => current?.id === profile.id ? null : current);
+    removalTriggerRef.current = button;
+    setPendingRemoval({
+      profile,
+      message: t("settings.apiManagement.confirmDelete", { name: profile.name, impact }),
+    });
+  };
+
+  const confirmRemoval = async () => {
+    if (!pendingRemoval || removing) return;
+    setRemoving(true);
+    try {
+      if (await profiles.remove(pendingRemoval.profile.id)) {
+        setEditor((current) => current?.id === pendingRemoval.profile.id ? null : current);
+      }
+    } finally {
+      setRemoving(false);
+      setPendingRemoval(null);
+    }
   };
 
   return (
@@ -251,7 +270,7 @@ export function ApiManagementSettingsSection({
                   >
                     <Pencil size={15} />
                   </button>
-                  <button className="api-row-icon-button danger" type="button" aria-label={t("common.delete")} disabled={locked} onClick={() => void removeProfile(profile)}><Trash2 size={15} /></button>
+                  <button className="api-row-icon-button danger" type="button" aria-label={t("common.delete")} disabled={locked} onClick={(event) => requestRemoval(profile, event.currentTarget)}><Trash2 size={15} /></button>
                 </div>
             </section>
           );
@@ -270,6 +289,18 @@ export function ApiManagementSettingsSection({
           onRemoveCredential={editingProfile
             ? () => void profiles.removeCredential(editingProfile.id)
             : undefined}
+        />
+      )}
+      {pendingRemoval && (
+        <ConfirmDialog
+          title={t("common.delete")}
+          message={pendingRemoval.message}
+          confirmLabel={t("common.delete")}
+          busy={removing}
+          icon={<Trash2 size={16} />}
+          returnFocusRef={removalTriggerRef}
+          onClose={() => setPendingRemoval(null)}
+          onConfirm={confirmRemoval}
         />
       )}
       {profiles.message && <small className="api-credential-message" role="status">{profiles.message}</small>}

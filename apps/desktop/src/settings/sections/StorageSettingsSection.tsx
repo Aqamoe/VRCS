@@ -1,8 +1,8 @@
-import { confirmAction } from "../../app/confirm-action";
 import { useCallback, useEffect, useState } from "react";
 import { Database, HardDrive, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { ConfirmDialog } from "../../app/components/ConfirmDialog";
 import { storageApi } from "../../storage/api";
 import { localizedError } from "../../app/app-utils";
 import type { Settings } from "../types";
@@ -30,6 +30,7 @@ export function StorageSettingsSection({
   ));
   const [busy, setBusy] = useState<"refresh" | "clear" | null>(null);
   const [message, setMessage] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
     setQuotaText(String(Math.round(draft.storage.subtitle_history_max_bytes / MEBIBYTE)));
@@ -91,7 +92,7 @@ export function StorageSettingsSection({
   };
 
   const clearHistory = async () => {
-    if (!await confirmAction(t("settings.storage.clearConfirm"))) return;
+    if (busy === "clear") return;
     setBusy("clear");
     setMessage("");
     try {
@@ -102,6 +103,7 @@ export function StorageSettingsSection({
       setMessage(localizedError(reason, t, "errors.storage.clear_failed"));
     } finally {
       setBusy(null);
+      setConfirmClear(false);
     }
   };
 
@@ -170,12 +172,24 @@ export function StorageSettingsSection({
         <div>
           <strong>{t("settings.storage.clearHistory")}</strong>
         </div>
-        <button className="secondary-button storage-clear-button" type="button" disabled={busy !== null} onClick={() => void clearHistory()}>
+        <button className="secondary-button storage-clear-button" type="button" disabled={busy !== null} onClick={() => setConfirmClear(true)}>
           <Trash2 size={15} />
           {busy === "clear" ? t("settings.storage.clearing") : t("settings.storage.clearAction")}
         </button>
       </div>
 
+      {confirmClear && (
+        <ConfirmDialog
+          title={t("settings.storage.clearHistory")}
+          message={t("settings.storage.clearConfirm")}
+          confirmLabel={t("settings.storage.clearAction")}
+          busy={busy === "clear"}
+          busyLabel={t("settings.storage.clearing")}
+          icon={<Trash2 size={16} />}
+          onClose={() => setConfirmClear(false)}
+          onConfirm={clearHistory}
+        />
+      )}
       {message && <p className="storage-feedback" role="status">{message}</p>}
     </section>
   );

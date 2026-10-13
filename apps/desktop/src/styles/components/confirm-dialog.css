@@ -1,0 +1,19 @@
+.confirm-dialog { width: min(440px, 100%); }
+.confirm-dialog .api-profile-editor-actions { border-top: 0; }
+.confirm-dialog .api-danger-button {
+  border-color: var(--error-border);
+  color: var(--error);
+  background: var(--error-soft);
+}
+.confirm-dialog .api-danger-button:hover:not(:disabled) {
+  border-color: var(--error);
+  background: var(--error-soft);
+}
+.confirm-dialog-description {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--settings-text-body);
+  line-height: var(--settings-leading-copy);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
