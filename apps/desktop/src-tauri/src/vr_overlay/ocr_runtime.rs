@@ -258,11 +258,7 @@ impl OcrRuntime {
     }
 
     fn reject_disabled_request(&mut self, config: &VrOcrConfig, input: &InputActions) -> bool {
-        let requested = input.frame_confirmed
-            || (input.scan
-                && input.frame.is_none()
-                && !self.selecting
-                && !(self.vision.enabled() && input.vision_trigger.down));
+        let requested = self.selecting && input.frame_confirmed && input.frame.is_some();
         if config.enabled || !requested {
             return false;
         }
@@ -468,20 +464,6 @@ impl OcrRuntime {
             // The image and audio window are frozen. Grip release cannot cancel them.
             return Ok(());
         }
-        // Freeze the displayed selection before trigger-induced hand/grip changes cancel it.
-        if self.vision.enabled()
-            && input.vision_trigger.pressed
-            && !reading_focus
-            && self.selecting
-            && self.vision_frame_valid
-        {
-            let selection = self.selection.clone().ok_or("Invalid visual frame")?;
-            self.clear();
-            backend.reset_ocr();
-            backend.freeze_ocr_frame();
-            self.vision.begin(backend, &selection);
-            return Ok(());
-        }
         for action in input.navigation.iter().copied() {
             self.reading_action(action);
         }
@@ -526,6 +508,7 @@ impl OcrRuntime {
         }
         let mut capture_requested = false;
         if let Some(frame) = &input.frame {
+            let was_selecting = self.selecting;
             self.vision_frame_valid = false;
             if !self.selecting {
                 self.clear();
@@ -573,7 +556,19 @@ impl OcrRuntime {
                 }
                 return Ok(());
             }
-            if input.frame_confirmed && config.enabled {
+            if was_selecting
+                && self.vision.enabled()
+                && input.vision_trigger.pressed
+                && !reading_focus
+            {
+                let selection = self.selection.clone().ok_or("Invalid visual frame")?;
+                self.clear();
+                backend.reset_ocr();
+                backend.freeze_ocr_frame();
+                self.vision.begin(backend, &selection);
+                return Ok(());
+            }
+            if was_selecting && input.frame_confirmed && config.enabled {
                 self.selecting = false;
                 backend.reset_ocr();
                 self.status.state = OcrState::Capturing;
@@ -590,15 +585,6 @@ impl OcrRuntime {
                 backend.set_opacity(OverlayKind::OcrFrame, 1.)?;
                 backend.show(OverlayKind::OcrFrame)?;
             }
-        } else if input.scan
-            && config.enabled
-            && !self.selecting
-            && !(self.vision.enabled() && input.vision_trigger.down)
-        {
-            self.clear();
-            backend.reset_ocr();
-            self.status.state = OcrState::Capturing;
-            capture_requested = true;
         }
         if capture_requested {
             backend.hide(OverlayKind::OcrProgress);
@@ -1146,6 +1132,31 @@ impl Drop for OcrRuntime {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn stale_confirmation_without_a_frame_does_not_show_the_disabled_ocr_prompt() {
+        use super::*;
+        let mut runtime = OcrRuntime::new(None, None);
+        let input = InputActions {
+            vision_trigger: Default::default(),
+            cancel: false,
+            clear: false,
+            available: true,
+            gesture_available: false,
+            frame: None,
+            frame_confirmed: true,
+            frame_cancelled: false,
+            navigation: vec![],
+        };
+        assert!(!runtime.reject_disabled_request(
+            &VrOcrConfig {
+                enabled: false,
+                ..Default::default()
+            },
+            &input,
+        ));
+        assert!(runtime.feedback.is_none());
+    }
+
+    #[test]
     fn disabled_ocr_request_ends_selection_and_shows_enable_prompt() {
         use super::*;
         let config = VrOcrConfig {
@@ -1165,11 +1176,14 @@ mod tests {
             let input = InputActions {
                 vision_trigger: Default::default(),
                 cancel: false,
-                scan: true,
                 clear: false,
                 available: true,
                 gesture_available: true,
-                frame: None,
+                frame: confirmed.then(|| super::super::ocr_input::Frame {
+                    corners: [[-0.2, -0.1, -1.], [0.2, 0.1, -1.]],
+                    head_pose: super::super::transform::matrix(0., 0., 0., [0.; 3]),
+                    origin: 1,
+                }),
                 frame_confirmed: confirmed,
                 frame_cancelled: false,
                 navigation: vec![],
@@ -1182,6 +1196,11 @@ mod tests {
                 &input
             ));
             assert_eq!(runtime.selecting, confirmed);
+            if !confirmed {
+                assert!(!runtime.reject_disabled_request(&config, &input));
+                assert!(runtime.feedback.is_none());
+                continue;
+            }
             assert!(runtime.reject_disabled_request(&config, &input));
             assert!(!runtime.selecting);
             assert!(runtime.selection.is_none());
@@ -1201,7 +1220,6 @@ mod tests {
                 .unwrap();
             assert!(view.detail.contains("Enable OCR in Settings"));
             let idle = InputActions {
-                scan: false,
                 frame_confirmed: false,
                 ..input
             };

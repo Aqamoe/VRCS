@@ -285,8 +285,6 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: savin
             </div>
             {error && <p className="vr-overlay-native-error" role="alert">{error}</p>}
             <div className="vr-overlay-range-grid">
-              <RangeField label={t("settings.vrOcr.region")} value={config.region_fraction} min={0.1} max={1} step={0.05}
-                disabled={disabled} formatValue={(value) => `${Math.round(value * 100)}%`} onCommit={(region_fraction) => onChange({ region_fraction })} />
               <RangeField label={t("settings.vrOcr.lifetime")} value={config.display_seconds} min={1} max={120} step={1}
                 disabled={disabled} formatValue={(value) => `${value}s`} onCommit={(display_seconds) => onChange({ display_seconds })} />
               <RangeField label={t("settings.vrOcr.background")} value={config.background_opacity} min={0} max={1} step={0.05}

@@ -7,7 +7,6 @@ use std::{ffi::CString, mem::size_of, path::Path, time::Instant};
 pub struct InputActions {
     pub vision_trigger: TriggerUpdate,
     pub cancel: bool,
-    pub scan: bool,
     pub clear: bool,
     pub available: bool,
     pub gesture_available: bool,
@@ -45,6 +44,7 @@ pub struct OcrInput {
     clear: u64,
     cancel: u64,
     vision_trigger: TriggerEdge,
+    vision_confirm: TriggerEdge,
     cancel_trigger: TriggerEdge,
     reading: [u64; 4],
     scan_hold: HoldAction,
@@ -83,7 +83,7 @@ pub fn install_manifest(directory: &Path) -> Result<std::path::PathBuf, String> 
             serde_json::json!({"path":format!("/user/hand/{side}/input/grip"),"mode":mode,"inputs":inputs})
         };
         let binding = serde_json::json!({"controller_type":controller,"name":"VRCS OCR",
-        "description":"Hold both grips to drag a frame. Right trigger confirms OCR. With the visual assistant enabled, hold left trigger in a valid frame to speak and release to ask; otherwise hold to cancel / clear. Bind the optional cancel action as needed. Customize to avoid game input conflicts.",
+        "description":"Hold both grips to drag a frame. After the frame appears, hold the right trigger to confirm OCR. With the visual assistant enabled, hold the left trigger in a valid frame to speak, then release to ask; otherwise hold to cancel / clear. If a trigger was already held before the frame appeared, release it before confirming. Triggers cannot scan or start a question without a frame. Bind the optional cancel action as needed. Customize to avoid game input conflicts.",
         "bindings":{"/actions/ocr":{"poses":[
             {"path":"/user/hand/left/pose/raw","output":"/actions/ocr/in/left_pose"},
             {"path":"/user/hand/right/pose/raw","output":"/actions/ocr/in/right_pose"}
@@ -118,7 +118,7 @@ pub fn install_manifest(directory: &Path) -> Result<std::path::PathBuf, String> 
                 {"name":"/actions/ocr/in/right_hand","type":"skeleton","skeleton":"/skeleton/hand/right","requirement":"optional"}],
             "default_bindings":bindings,
             "localization":[{"language_tag":"en_US","/actions/ocr":"VRCS OCR",
-                "/actions/ocr/in/scan":"Confirm frame / scan (hold)","/actions/ocr/in/clear":"Visual question (press / release) or cancel / clear (hold)",
+                "/actions/ocr/in/scan":"Confirm active frame (hold)","/actions/ocr/in/clear":"Visual question in active frame (press / release) or cancel / clear (hold)",
                 "/actions/ocr/in/cancel":"Cancel visual question (custom binding)",
                                 "/actions/ocr/in/previous_block":"Previous OCR block (point at panel)",
                 "/actions/ocr/in/next_block":"Next OCR block (point at panel)",
@@ -187,6 +187,8 @@ impl OcrInput {
 
     pub fn freeze_frame(&mut self) {
         self.frame_session = FrameSession::default();
+        self.scan_hold = HoldAction::default();
+        self.vision_confirm = TriggerEdge::default();
     }
 
     pub fn open_bindings(&mut self) -> Result<(), String> {
@@ -202,6 +204,7 @@ impl OcrInput {
         self.scan_hold = HoldAction::default();
         self.clear_hold = HoldAction::default();
         self.vision_trigger = TriggerEdge::default();
+        self.vision_confirm = TriggerEdge::default();
         self.cancel_trigger = TriggerEdge::default();
         self.frame_session = FrameSession::default();
         self.last_digital_state = None;
@@ -245,6 +248,7 @@ impl OcrInput {
             clear: action("/actions/ocr/in/clear")?,
             cancel: action("/actions/ocr/in/cancel").unwrap_or(0),
             vision_trigger: TriggerEdge::default(),
+            vision_confirm: TriggerEdge::default(),
             cancel_trigger: TriggerEdge::default(),
             reading: ["previous_block", "next_block", "previous_page", "next_page"]
                 .map(|name| action(&format!("/actions/ocr/in/{name}")).unwrap_or(0)),
@@ -366,7 +370,7 @@ impl OcrInput {
             // An action origin identifies a component; devicePath identifies the controller.
             (error == 0 && info.devicePath != 0).then_some(info.devicePath)
         };
-        let vision_trigger = self.vision_trigger.update(raw_origin(&clear), clear.bState);
+        let mut vision_trigger = self.vision_trigger.update(raw_origin(&clear), clear.bState);
         let cancel = (self.cancel != 0).then(|| read(self.cancel).ok()).flatten();
         let cancel = self
             .cancel_trigger
@@ -434,7 +438,19 @@ impl OcrInput {
             })
         });
         let available = scan.bActive && clear.bActive;
-        let scan = self.scan_hold.update(origin(&scan), scan.bState, now);
+        // Arm confirmation only after a frame was active in a previous poll.
+        // Keep raw left-trigger releases available after the recording frame is frozen.
+        let frame_active = self.frame_session.active();
+        let scan = self
+            .scan_hold
+            .update(origin(&scan).filter(|_| frame_active), scan.bState, now);
+        vision_trigger.pressed = self
+            .vision_confirm
+            .update(
+                raw_origin(&clear).filter(|_| frame_active && !reading_focus && vision_enabled),
+                clear.bState,
+            )
+            .pressed;
         let clear = self.clear_hold.update(origin(&clear), clear.bState, now);
         let frame = self.frame_session.update(
             [gesture_tracking, controllers],
@@ -442,10 +458,10 @@ impl OcrInput {
             cancel || (clear && !vision_enabled),
             now,
         );
+        vision_trigger.pressed &= frame.frame.is_some() && !frame.cancelled;
         Ok(InputActions {
             vision_trigger,
             cancel,
-            scan,
             clear,
             available,
             gesture_available: hands.is_some() || controllers.is_some(),
@@ -631,6 +647,155 @@ fn read_hand(
 mod tests {
     use super::*;
 
+    thread_local! {
+        static CONTROLLER_BUTTONS: std::cell::Cell<[bool; 4]> = const {
+            std::cell::Cell::new([false; 4])
+        };
+    }
+
+    fn controller_api() -> openvr_sys::VR_IVRInput_FnTable {
+        unsafe extern "C" fn digital(
+            action: u64,
+            data: *mut openvr_sys::InputDigitalActionData_t,
+            _: u32,
+            _: u64,
+        ) -> i32 {
+            if !(1..=4).contains(&action) {
+                return 3;
+            }
+            unsafe {
+                (*data).bActive = true;
+                (*data).activeOrigin = action;
+                (*data).bState = CONTROLLER_BUTTONS.get()[action as usize - 1];
+            }
+            0
+        }
+        unsafe extern "C" fn pose(
+            action: u64,
+            _: i32,
+            _: f32,
+            data: *mut openvr_sys::InputPoseActionData_t,
+            _: u32,
+            _: u64,
+        ) -> i32 {
+            let position = if action == 5 {
+                [-0.2, -0.1, -0.5]
+            } else {
+                [0.2, 0.1, -0.5]
+            };
+            unsafe {
+                (*data).bActive = true;
+                (*data).activeOrigin = action;
+                (*data).pose.bPoseIsValid = true;
+                (*data).pose.bDeviceIsConnected = true;
+                (*data).pose.mDeviceToAbsoluteTracking.m =
+                    super::super::transform::matrix(0., 0., 0., position);
+            }
+            0
+        }
+        CONTROLLER_BUTTONS.set([false; 4]);
+        let mut api: openvr_sys::VR_IVRInput_FnTable = unsafe { std::mem::zeroed() };
+        api.GetDigitalActionData = Some(digital);
+        api.GetPoseActionDataRelativeToNow = Some(pose);
+        api
+    }
+
+    #[test]
+    fn right_grip_and_trigger_without_a_frame_cannot_scan() {
+        let api = controller_api();
+        let mut input = input(&api);
+        input.poll_with_vision(None, false, false).unwrap();
+        CONTROLLER_BUTTONS.set([true, false, false, true]);
+        let started = input.poll_with_vision(None, false, false).unwrap();
+        assert!(!started.frame_confirmed);
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        let held = input.poll_with_vision(None, false, false).unwrap();
+        assert!(!held.frame_confirmed);
+        assert!(held.frame.is_none());
+    }
+
+    #[test]
+    fn ocr_requires_a_new_trigger_hold_after_entering_the_frame() {
+        let api = controller_api();
+        let mut input = input(&api);
+        let tracking = Some((super::super::transform::matrix(0., 0., 0., [0.; 3]), 1));
+        input.poll_with_vision(tracking, false, false).unwrap();
+        CONTROLLER_BUTTONS.set([true, false, true, true]);
+        input.poll_with_vision(tracking, false, false).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        let entered = input.poll_with_vision(tracking, false, false).unwrap();
+        assert!(entered.frame.is_some());
+        assert!(!entered.frame_confirmed);
+        assert!(
+            !input
+                .poll_with_vision(tracking, false, false)
+                .unwrap()
+                .frame_confirmed
+        );
+        CONTROLLER_BUTTONS.set([false, false, true, true]);
+        input.poll_with_vision(tracking, false, false).unwrap();
+        CONTROLLER_BUTTONS.set([true, false, true, true]);
+        assert!(
+            !input
+                .poll_with_vision(tracking, false, false)
+                .unwrap()
+                .frame_confirmed
+        );
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        let confirmed = input.poll_with_vision(tracking, false, false).unwrap();
+        assert!(confirmed.frame_confirmed);
+        assert!(confirmed.frame.is_some());
+        let held = input.poll_with_vision(tracking, false, false).unwrap();
+        assert!(!held.frame_confirmed);
+    }
+
+    #[test]
+    fn visual_question_requires_a_new_trigger_press_after_entering_the_frame() {
+        let api = controller_api();
+        let mut input = input(&api);
+        let tracking = Some((super::super::transform::matrix(0., 0., 0., [0.; 3]), 1));
+        input.poll_with_vision(tracking, false, true).unwrap();
+        CONTROLLER_BUTTONS.set([false, true, true, true]);
+        let simultaneous = input.poll_with_vision(tracking, false, true).unwrap();
+        assert!(!simultaneous.vision_trigger.pressed);
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        let entered = input.poll_with_vision(tracking, false, true).unwrap();
+        assert!(entered.frame.is_some());
+        assert!(!entered.vision_trigger.pressed);
+        CONTROLLER_BUTTONS.set([false, false, true, true]);
+        input.poll_with_vision(tracking, false, true).unwrap();
+        CONTROLLER_BUTTONS.set([false, true, true, true]);
+        let confirmed = input.poll_with_vision(tracking, false, true).unwrap();
+        assert!(confirmed.vision_trigger.pressed);
+        assert!(confirmed.frame.is_some());
+        input.freeze_frame();
+        CONTROLLER_BUTTONS.set([false; 4]);
+        let released = input.poll_with_vision(None, true, true).unwrap();
+        assert!(released.vision_trigger.released);
+        assert!(!released.vision_trigger.pressed);
+    }
+
+    #[test]
+    fn releasing_a_grip_on_visual_confirmation_cancels_the_frame() {
+        let api = controller_api();
+        let mut input = input(&api);
+        let tracking = Some((super::super::transform::matrix(0., 0., 0., [0.; 3]), 1));
+        input.poll_with_vision(tracking, false, true).unwrap();
+        CONTROLLER_BUTTONS.set([false, false, true, true]);
+        input.poll_with_vision(tracking, false, true).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        assert!(input
+            .poll_with_vision(tracking, false, true)
+            .unwrap()
+            .frame
+            .is_some());
+        input.poll_with_vision(tracking, false, true).unwrap();
+        CONTROLLER_BUTTONS.set([false, true, false, true]);
+        let cancelled = input.poll_with_vision(tracking, false, true).unwrap();
+        assert!(cancelled.frame_cancelled);
+        assert!(!cancelled.vision_trigger.pressed);
+    }
+
     fn input(api: &openvr_sys::VR_IVRInput_FnTable) -> OcrInput {
         OcrInput {
             table: api,
@@ -639,6 +804,7 @@ mod tests {
             clear: 2,
             cancel: 0,
             vision_trigger: TriggerEdge::default(),
+            vision_confirm: TriggerEdge::default(),
             cancel_trigger: TriggerEdge::default(),
             reading: [0; 4],
             hands: [72, 73],
@@ -801,7 +967,7 @@ mod tests {
         input.poll_with_vision(None, false, true).unwrap();
         SAMPLE.set((12, true));
         let pressed = input.poll_with_vision(None, false, true).unwrap();
-        assert!(pressed.vision_trigger.pressed);
+        assert!(!pressed.vision_trigger.pressed);
         assert!(!pressed.vision_trigger.lost);
         SAMPLE.set((13, false));
         let released = input.poll_with_vision(None, true, true).unwrap();
@@ -887,7 +1053,7 @@ mod tests {
         let actions = input
             .poll_with_vision(Some((head, 1)), false, true)
             .unwrap();
-        assert!(actions.vision_trigger.pressed);
+        assert!(!actions.vision_trigger.pressed);
         let mut hasher = DefaultHasher::new();
         (72u64, 73u64).hash(&mut hasher);
         let mut sample = FrameTracking {
@@ -925,7 +1091,7 @@ mod tests {
     }
 
     #[test]
-    fn optional_frame_apis_do_not_disable_scan_and_clear() {
+    fn missing_frame_apis_keep_controller_actions_available_without_confirmation() {
         unsafe extern "C" fn update(
             _: *mut openvr_sys::VRActiveActionSet_t,
             _: u32,
@@ -994,7 +1160,7 @@ mod tests {
         input.scan_hold.update(Some(1), true, held_since);
         input.clear_hold.update(Some(2), true, held_since);
         let focused = input.poll_with_vision(None, true, false).unwrap();
-        assert!(!focused.scan && !focused.clear);
+        assert!(!focused.frame_confirmed && !focused.clear);
         assert_eq!(
             focused.navigation,
             [

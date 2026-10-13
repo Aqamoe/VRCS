@@ -23,6 +23,10 @@ pub struct FrameSession {
 }
 
 impl FrameSession {
+    pub fn active(&self) -> bool {
+        self.active.is_some()
+    }
+
     pub fn update(
         &mut self,
         tracking: [Option<FrameTracking>; 2],
@@ -57,6 +61,7 @@ impl FrameSession {
                 activated = origin.map(|origin| (index, origin));
             }
         }
+        let confirm = confirm && self.active.is_some();
         if self.active.is_none() {
             self.active = activated;
         }
@@ -280,6 +285,22 @@ mod tests {
                 .update([Some(drag), None], false, false, tick)
                 .cancelled
         );
+    }
+
+    #[test]
+    fn entering_a_frame_cannot_confirm_it_in_the_same_update() {
+        let now = Instant::now();
+        for source in 0..2 {
+            let mut session = FrameSession::default();
+            let mut input = [None; 2];
+            input[source] = Some(tracking(false));
+            session.update(input, false, false, now);
+            input[source] = Some(tracking(true));
+            session.update(input, false, false, now);
+            let activated = session.update(input, true, false, now + Duration::from_millis(650));
+            assert!(activated.frame.is_some());
+            assert!(!activated.confirmed);
+        }
     }
 
     #[test]
