@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import type { DesktopPreferences } from "../../shell/desktop-preferences";
 import { localeCatalog } from "../../i18n/catalog";
+import { useAppTheme } from "../../app/useAppTheme";
 import {
   INTERFACE_SCALE_MAX,
   INTERFACE_SCALE_MIN,
@@ -58,6 +59,7 @@ export function SystemSettingsSection({
   updater: AppUpdaterState;
 }) {
   const { t } = useTranslation();
+  const { themePreference, setThemePreference } = useAppTheme();
   const [transcriptionStartBehavior, setTranscriptionStartBehavior] = useState(
     readTranscriptionStartBehavior,
   );
@@ -112,6 +114,28 @@ export function SystemSettingsSection({
               hideLabel
               onChange={(value) => void onUpdateUiLanguage(value as UiLanguagePreference)}
             />
+          </div>
+          <div className="system-theme-setting">
+            <div>
+              <strong>{t("settings.system.theme")}</strong>
+            </div>
+            <div className="theme-toggle-group" role="group" aria-label={t("settings.system.theme")}>
+              {([
+                ["system", t("settings.system.followSystem")],
+                ["light", t("settings.system.themeLight")],
+                ["dark", t("settings.system.themeDark")],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={themePreference === value}
+                  className={themePreference === value ? "active" : ""}
+                  onClick={() => setThemePreference(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="system-select-setting">
             <div>

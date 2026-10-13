@@ -79,7 +79,7 @@
   padding: 14px 16px;
   overflow: hidden;
   border: 0;
-  border-bottom: 1px solid #edf2f6;
+  border-bottom: 1px solid var(--border);
   color: var(--text);
   background: transparent;
   cursor: pointer;
@@ -97,6 +97,7 @@
 .learning-status { justify-self: start; padding: 3px 7px; border-radius: var(--radius-pill); color: var(--text-secondary); background: var(--surface-subtle); font-size: 9px; font-weight: 650; }
 .learning-status-analyzed, .learning-status-card_draft { color: var(--primary-ink); background: var(--primary-soft); }
 .learning-status-exported { color: #376a47; background: #edf8ef; }
+:root[data-theme="dark"] .learning-status-exported { color: #a1c181; background: rgba(161, 193, 129, 0.12); }
 .learning-status-archived { color: var(--text-quiet); }
 .learning-load-more { display: flex; justify-content: center; padding: 14px; }
 

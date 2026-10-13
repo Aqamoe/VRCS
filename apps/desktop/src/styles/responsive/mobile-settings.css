@@ -9,8 +9,10 @@
   .system-select-setting,
   .osc-strategy-setting,
   .system-scale-setting,
+  .system-theme-setting,
   .system-onboarding-setting { grid-template-columns: 1fr; gap: 8px; padding-block: 9px; }
   .system-scale-input { justify-self: start; }
+  .theme-toggle-group { justify-self: start; }
   .system-onboarding-setting .secondary-button { justify-self: start; }
   .external-api-address-grid { grid-template-columns: 1fr; }
   .external-api-token-row { align-items: stretch; flex-direction: column; }

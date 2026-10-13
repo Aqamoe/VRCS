@@ -36,6 +36,7 @@
 .settings-feature-toggle { margin: 0 0 14px; }
 .system-select-setting,
 .system-scale-setting,
+.system-theme-setting,
 .system-onboarding-setting {
   display: grid;
   grid-template-columns: minmax(140px, 1fr) minmax(180px, 280px);
@@ -45,11 +46,44 @@
   padding: 5px 4px;
 }
 .system-select-setting > div:first-child,
-.system-scale-setting > div:first-child { display: grid; gap: 4px; }
+.system-scale-setting > div:first-child,
+.system-theme-setting > div:first-child { display: grid; gap: 4px; }
 .system-select-setting strong,
-.system-scale-setting strong { color: var(--text); font-size: var(--settings-text-label); font-weight: var(--settings-weight-heading); line-height: var(--settings-leading-label); }
+.system-scale-setting strong,
+.system-theme-setting strong { color: var(--text); font-size: var(--settings-text-label); font-weight: var(--settings-weight-heading); line-height: var(--settings-leading-label); }
 
 .system-select-setting .field { min-width: 0; }
+.theme-toggle-group {
+  display: inline-flex;
+  justify-self: end;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+.theme-toggle-group button {
+  display: inline-flex;
+  min-height: var(--settings-control-compact-height);
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 3px);
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--settings-text-label);
+  font-weight: var(--settings-weight-label);
+  line-height: var(--settings-leading-label);
+  white-space: nowrap;
+  transition: background-color 140ms ease-out, color 140ms ease-out, transform 120ms ease-out;
+}
+.theme-toggle-group button:hover { color: var(--text); background: var(--surface-hover); }
+.theme-toggle-group button:active:not(.active) { transform: scale(0.97); }
+.theme-toggle-group button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.theme-toggle-group button.active { color: var(--primary-ink); background: var(--surface-selected); box-shadow: var(--control-shadow); }
 .system-scale-input {
   display: grid;
   width: 128px;

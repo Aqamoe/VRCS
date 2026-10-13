@@ -63,7 +63,7 @@
   gap: 16px;
   margin: -20px 0 24px;
   padding: 11px 14px;
-  border: 1px solid #e8c9c5;
+  border: 1px solid var(--error-border);
   border-radius: 10px;
   color: var(--error);
   background: var(--error-soft);

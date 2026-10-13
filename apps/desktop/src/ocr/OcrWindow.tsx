@@ -5,10 +5,12 @@ import { closeDesktopOcr, getDesktopOcrStatus, listenDesktopOcrStatus, scanDeskt
 import { applyDesktopOcrStatus, desktopOcrCopyText, type DesktopOcrStatus } from "./status";
 import { localizedLanguageName } from "../translation/translation-languages";
 import { contentLanguageTag } from "../app/ui-language";
+import { useAppTheme } from "../app/useAppTheme";
 import "./ocr-window.css";
 
 export function OcrWindow() {
   const { t, i18n } = useTranslation();
+  useAppTheme();
   const [status, setStatus] = useState<DesktopOcrStatus | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);

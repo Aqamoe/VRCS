@@ -5,12 +5,14 @@ import { CompactEntry } from "./CompactEntry";
 import { DesktopShell } from "./DesktopShell";
 import { OnboardingEntry } from "./OnboardingEntry";
 import { RuntimeWarningDialogs } from "./components/RuntimeNotices";
+import { useAppTheme } from "./useAppTheme";
 import { useAppWorkspace } from "./useAppWorkspace";
 import type { SettingsCategory } from "../settings/settings-types";
 
 function App() {
   const [page, setPage] = useState<Page>("live");
   const [settingsInitialCategory, setSettingsInitialCategory] = useState<SettingsCategory>("system");
+  useAppTheme();
   const workspace = useAppWorkspace({ page, setPage, setSettingsInitialCategory });
 
   useEffect(() => {

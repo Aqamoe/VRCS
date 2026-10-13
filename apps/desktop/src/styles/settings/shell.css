@@ -48,7 +48,7 @@
   white-space: nowrap;
   transition: background-color 140ms ease-out, box-shadow 140ms ease-out, color 140ms ease-out, gap 150ms ease-out, transform 140ms ease-out, width 150ms ease-out;
 }
-.settings-tabbar button:hover { color: var(--text); background: rgba(255, 255, 255, 0.58); }
+.settings-tabbar button:hover { color: var(--text); background: var(--surface-hover); }
 .settings-tabbar button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 .settings-tabbar button:active { transform: scale(0.985); }
 .settings-tabbar button.active {
@@ -57,7 +57,7 @@
   gap: 8px;
   padding-inline: 13px 15px;
   color: var(--primary-ink);
-  background: var(--surface);
+  background: var(--surface-selected);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.065);
 }
 .settings-tab-icon {

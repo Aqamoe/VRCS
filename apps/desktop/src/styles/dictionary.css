@@ -209,7 +209,7 @@
 .dictionary-learning-button.learning-state-error,
 .dictionary-action-row .anki-button.anki-state-error {
   color: var(--error);
-  border-color: #efcbc7;
+  border-color: var(--error-border);
   background: transparent;
 }
 .dictionary-anki-feedback {

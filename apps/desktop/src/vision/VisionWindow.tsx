@@ -9,6 +9,7 @@ import {
 } from "./api";
 import { canAskDesktopVision, DESKTOP_VISION_QUESTION_LIMIT, desktopVisionBusy, desktopVisionSendKey } from "./status";
 import { useDesktopVisionSession } from "./useDesktopVisionSession";
+import { useAppTheme } from "../app/useAppTheme";
 
 import "./vision-window.css";
 
@@ -22,6 +23,7 @@ const answerComponents: Components = {
 
 export function VisionWindow() {
   const { t } = useTranslation();
+  useAppTheme();
   const { status, draft, setDraft, statusError } = useDesktopVisionSession();
   const [commandError, setCommandError] = useState("");
   const [pending, setPending] = useState(false);

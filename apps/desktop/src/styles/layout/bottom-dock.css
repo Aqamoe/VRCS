@@ -54,9 +54,9 @@
 .live-scroll-to-bottom:active { background: var(--primary-hover); }
 
 @media (hover: hover) {
-  .sidebar-icon-button:hover { color: var(--primary-ink); background: rgba(255, 255, 255, 0.62); }
+  .sidebar-icon-button:hover { color: var(--primary-ink); background: var(--surface-hover); }
   .sidebar-new-icon:hover, .new-conversation-button:hover { color: #ffffff; background: var(--primary); }
-  .conversation-item:hover { color: var(--text); background: rgba(255, 255, 255, 0.56); }
+  .conversation-item:hover { color: var(--text); background: var(--surface-hover); }
   .conversation-item.selected:hover { background: var(--surface); }
   .conversation-actions-popover > button:hover,
   .conversation-icon-picker button:hover { color: var(--primary-ink); background: var(--primary-softer); }

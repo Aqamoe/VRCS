@@ -5,8 +5,9 @@
   --font-ui-ko: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", "Noto Sans KR", "Segoe UI", sans-serif;
   --font-mono: "Cascadia Mono", "Consolas", monospace;
   font-family: var(--font-ui);
-  color: #1d2834;
-  background: #f5f8fb;
+  color-scheme: light;
+  color: var(--text);
+  background: var(--canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --canvas: #f5f8fb;
@@ -34,10 +35,44 @@
   --control-shadow: 0 1px 2px rgba(0, 0, 0, 0.035);
   --control-focus-shadow: 0 0 0 3px rgba(116, 214, 255, 0.14), var(--control-shadow);
   --focus-ring: rgba(116, 214, 255, 0.18);
+  --selection-background: #dfe3e8;
+  --surface-hover: rgba(255, 255, 255, 0.58);
+  --surface-selected: #ffffff;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 20px;
   --radius-pill: 999px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #282c33;
+  --surface: #2f343e;
+  --surface-subtle: #2e343e;
+  --surface-elevated: #3b414d;
+  --text: #dce0e5;
+  --text-secondary: #a9afbc;
+  --text-quiet: #878a98;
+  --border: #363c46;
+  --border-strong: #464b57;
+  --primary: #3fb9ec;
+  --primary-hover: #2ba6db;
+  --primary-ink: #7fd8ff;
+  --primary-soft: rgba(116, 214, 255, 0.14);
+  --primary-softer: rgba(116, 214, 255, 0.08);
+  --error: #d07277;
+  --error-soft: rgba(208, 114, 119, 0.1);
+  --error-border: #4c2b2c;
+  --warning: #dec184;
+  --warning-soft: rgba(222, 193, 132, 0.1);
+  --warning-border: #5d4c2f;
+  --overlay-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  --control-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --control-focus-shadow: 0 0 0 3px rgba(116, 214, 255, 0.22), var(--control-shadow);
+  --focus-ring: rgba(116, 214, 255, 0.26);
+  --selection-background: #3e4451;
+  --surface-hover: rgba(255, 255, 255, 0.07);
+  --surface-selected: #454a56;
 }
 
 :lang(zh-CN),
@@ -92,10 +127,9 @@ body {
 
 button, input, select, textarea { font: inherit; }
 button { color: inherit; }
-select { color-scheme: light; }
 button, label, select { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, select:focus-visible, input:focus-visible {
   outline: 3px solid rgba(116, 214, 255, 0.58);
   outline-offset: 2px;
 }
-::selection { color: var(--text); background: #dfe3e8; }
+::selection { color: var(--text); background: var(--selection-background); }
