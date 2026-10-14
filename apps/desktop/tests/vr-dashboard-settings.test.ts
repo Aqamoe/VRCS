@@ -44,6 +44,26 @@ const profiles = [{
   capabilities: { supports_translation: true, supported_languages: ["en", "ja", "zh-Hans", "fr"] },
 }] as unknown as ApiProfileView[];
 
+test("direct display selections preserve other settings and ignore unchanged or invalid values", () => {
+  const content = applyVrDashboardAction(settings, { set_display_content: "all_languages" });
+  assert.equal(content.vr_overlay.translation_display, "all_languages");
+  assert.equal(content.vr_overlay.headset, settings.vr_overlay.headset);
+  assert.equal(content.vr_overlay.wrist, settings.vr_overlay.wrist);
+  assert.equal(applyVrDashboardAction(content, { set_display_content: "all_languages" }), content);
+  assert.equal(applyVrDashboardAction(settings, { set_display_content: "invalid" }), settings);
+  const hand = applyVrDashboardAction(settings, { set_wrist_hand: "dominant" });
+  assert.equal(hand.vr_overlay.wrist.hand, "dominant");
+  assert.equal(hand.vr_overlay.headset, settings.vr_overlay.headset);
+  assert.equal(applyVrDashboardAction(settings, { set_wrist_hand: "invalid" }), settings);
+  const strategy = applyVrDashboardAction(settings, { set_osc_strategy: "all_languages" });
+  assert.equal(strategy.osc.translation_strategy, "all_languages");
+  assert.equal(strategy.osc.port, settings.osc.port);
+  assert.equal(strategy.vr_overlay, settings.vr_overlay);
+  const unavailable = { ...settings, features: { ...settings.features, osc_chatbox: false } };
+  assert.equal(applyVrDashboardAction(unavailable, { set_osc_strategy: "all_languages" }), unavailable);
+  assert.equal(applyVrDashboardAction(settings, { set_osc_strategy: "invalid" }), settings);
+});
+
 test("dashboard language selection preserves the recognition engine and rejects invalid values", () => {
   const next = applyVrDashboardAction(settings, { set_recognition_language: "ja" }, profiles);
   assert.equal(next.asr.language, "ja");

@@ -1,10 +1,10 @@
 use super::dashboard::{
-    control_rect, picker_option_rect, position_field_rect, DashboardControl, DashboardPage,
-    DashboardSaveState, DashboardState, DashboardViewModel, DisplayKind, TargetGroup,
-    DASHBOARD_HEIGHT, DASHBOARD_WIDTH, PICKER_CLOSE_RECT, PICKER_NEXT_RECT, PICKER_PAGE_SIZE,
-    PICKER_PREVIOUS_RECT,
+    control_rect, picker_option_rect, position_field_rect, DashboardAction, DashboardControl,
+    DashboardPage, DashboardSaveState, DashboardState, DashboardViewModel, DisplayKind,
+    TargetGroup, DASHBOARD_HEIGHT, DASHBOARD_WIDTH, PICKER_CLOSE_RECT, PICKER_NEXT_RECT,
+    PICKER_PAGE_SIZE, PICKER_PREVIOUS_RECT,
 };
-use super::renderer::Texture;
+use super::renderer::{BgraTexture, Texture};
 use std::collections::HashMap;
 
 const MAX_TEXT_CACHE_BYTES: usize = 4 * 1024 * 1024;
@@ -71,7 +71,7 @@ impl RasterCache {
     }
 }
 
-// The GDI canvas uses BGRA; into_texture converts the complete image to RGBA.
+// The GDI canvas stays BGRA through D3D11 upload; raw uploads convert at the boundary.
 // Colors match the desktop theme in styles/base.css.
 const CANVAS: [u8; 4] = [0xfb, 0xf8, 0xf5, 255];
 const SURFACE: [u8; 4] = [255, 255, 255, 255];
@@ -80,7 +80,7 @@ const SURFACE_SUBTLE: [u8; 4] = [0xf7, 0xf2, 0xee, 255];
 const TEXT: [u8; 4] = [0x34, 0x28, 0x1d, 255];
 const TEXT_SECONDARY: [u8; 4] = [0x78, 0x68, 0x5a, 255];
 const BORDER: [u8; 4] = [0xe9, 0xe2, 0xdd, 255];
-const BORDER_STRONG: [u8; 4] = [0xdd, 0xd4, 0xcd, 255];
+const BORDER_STRONG: [u8; 4] = [0xbc, 0xb0, 0xa3, 255];
 const PRIMARY: [u8; 4] = [0xff, 0xd6, 0x74, 255];
 const PRIMARY_HOVER: [u8; 4] = [0xf5, 0xc8, 0x56, 255];
 const PRIMARY_SOFT: [u8; 4] = [0xff, 0xf6, 0xdf, 255];
@@ -93,8 +93,27 @@ pub fn render(
     view: &DashboardViewModel,
     state: &DashboardState,
     cache: &mut RasterCache,
-) -> Result<Texture, String> {
-    let mut canvas = Canvas::new(DASHBOARD_WIDTH, DASHBOARD_HEIGHT, CANVAS);
+) -> Result<BgraTexture, String> {
+    let compact = state.page() == DashboardPage::Display
+        && state.display_editor().is_none()
+        && state.picker().is_none()
+        && state.confirmation().is_none();
+    let has_footer = view.error.is_some()
+        || matches!(
+            view.save_state,
+            DashboardSaveState::Saving | DashboardSaveState::Saved
+        );
+    let height = if compact {
+        if has_footer {
+            872
+        } else {
+            840
+        }
+    } else {
+        DASHBOARD_HEIGHT
+    };
+    let footer_top = height as i32 - 40;
+    let mut canvas = Canvas::new(DASHBOARD_WIDTH, height, CANVAS);
     canvas.cache = Some(cache);
     canvas.font_face = if view
         .labels
@@ -114,26 +133,37 @@ pub fn render(
         "Segoe UI\0"
     };
     canvas.icon(Rect::new(48, 26, 116, 94))?;
-    canvas.heading(&view.labels.title, Rect::new(140, 24, 820, 64), 32)?;
+    canvas.heading(&view.labels.title, Rect::new(140, 24, 704, 64), 32)?;
     canvas.text(
         &view.labels.subtitle,
-        Rect::new(140, 64, 900, 102),
+        Rect::new(140, 64, 704, 102),
         20,
         TEXT_SECONDARY,
         Align::Left,
     )?;
-    let save = match view.save_state {
-        DashboardSaveState::Saving => view.labels.saving.as_str(),
-        DashboardSaveState::Saved => view.labels.saved.as_str(),
-        DashboardSaveState::Error => view.error.as_deref().unwrap_or(&view.status),
-        DashboardSaveState::Idle => view.status.as_str(),
-    };
-    // The full error stays in the footer instead of being repeated in a clipped badge.
-    if view.error.is_none() {
-        canvas.pill(
-            Rect::new(1032, 42, 1392, 88),
-            save,
-            view.save_state == DashboardSaveState::Error,
+    canvas.pill(Rect::new(732, 42, 1040, 86), &view.status, false)?;
+    let capture_feedback = visual(state, DashboardControl::Capture);
+    canvas.primary_icon_button(
+        control_rect(DashboardControl::Capture).into(),
+        if view.capture.running {
+            ControlIcon::Square
+        } else {
+            ControlIcon::Mic
+        },
+        capture_feedback,
+        view.capture.available,
+    );
+    if capture_feedback != ControlVisual::Idle {
+        canvas.text(
+            if view.capture.running {
+                &view.labels.capture_stop
+            } else {
+                &view.labels.capture_start
+            },
+            Rect::new(1076, 26, 1258, 102),
+            20,
+            TEXT_SECONDARY,
+            Align::Left,
         )?;
     }
 
@@ -158,21 +188,18 @@ pub fn render(
             continue;
         }
         let feedback = visual(state, control);
-        canvas.button(
+        canvas.selection_button(
             control_rect(control).into(),
             label,
-            if state.page() == page && feedback == ControlVisual::Idle {
-                ControlVisual::Hovered
-            } else {
-                feedback
-            },
+            feedback,
+            state.page() == page,
         )?;
     }
     canvas.outlined_control(
         control_rect(DashboardControl::Master).into(),
         visual(state, DashboardControl::Master),
     );
-    canvas.heading(&view.labels.master, Rect::new(1104, 140, 1258, 196), 20)?;
+    canvas.heading(&view.labels.master, Rect::new(1076, 140, 1258, 196), 20)?;
     canvas.toggle(
         Rect::new(1278, 144, 1362, 192),
         view.enabled,
@@ -187,9 +214,41 @@ pub fn render(
     if state.picker().is_some() {
         render_picker(&mut canvas, view, state)?;
     }
+    if let Some((action, label)) = state.confirmation() {
+        render_confirmation(&mut canvas, view, state, action, label)?;
+    }
     if let Some(error) = view.error.as_deref() {
-        canvas.rounded(Rect::new(48, 860, 1392, 892), 10, ERROR_SOFT);
-        canvas.text(error, Rect::new(64, 860, 1376, 892), 18, ERROR, Align::Left)?;
+        canvas.rounded(
+            Rect::new(48, footer_top, 1392, footer_top + 32),
+            10,
+            ERROR_SOFT,
+        );
+        canvas.text(
+            error,
+            Rect::new(64, footer_top, 1376, footer_top + 32),
+            18,
+            ERROR,
+            Align::Left,
+        )?;
+    }
+    if view.error.is_none()
+        && matches!(
+            view.save_state,
+            DashboardSaveState::Saving | DashboardSaveState::Saved
+        )
+    {
+        let label = if view.save_state == DashboardSaveState::Saving {
+            &view.labels.saving
+        } else {
+            &view.labels.saved
+        };
+        canvas.text(
+            label,
+            Rect::new(48, footer_top, 1392, footer_top + 32),
+            20,
+            TEXT_SECONDARY,
+            Align::Left,
+        )?;
     }
     Ok(canvas.into_texture())
 }
@@ -202,156 +261,276 @@ fn render_display(
     if let Some(kind) = state.display_editor() {
         return render_display_position(canvas, view, state, kind);
     }
-    canvas.card(Rect::new(48, 236, 708, 700));
-    canvas.section_title(
-        &view.labels.headset,
-        Rect::new(78, 254, 560, 320),
-        SectionIcon::Headset,
+    canvas.card(Rect::new(48, 236, 1392, 320));
+    canvas.heading(&view.labels.content, Rect::new(78, 242, 540, 278), 24)?;
+    canvas.text(
+        &view.labels.content_hint,
+        Rect::new(78, 278, 540, 310),
+        20,
+        TEXT_SECONDARY,
+        Align::Left,
     )?;
-    canvas.divider(Rect::new(78, 322, 678, 323));
-    canvas.toggle(
-        Rect::new(600, 264, 678, 312),
-        view.headset.enabled,
-        visual(state, DashboardControl::HeadsetEnabled),
-    );
-    canvas.choice_row(
-        &view.labels.content,
-        &view.headset.content,
-        Rect::new(78, 338, 678, 410),
-        visual(state, DashboardControl::HeadsetContent),
-    )?;
-    canvas.stepper_field(
-        &view.labels.width,
-        &view.headset.width,
-        Rect::new(78, 438, 366, 538),
+    render_segments(
+        canvas,
         state,
-        DashboardControl::HeadsetWidthDown,
-        DashboardControl::HeadsetWidthUp,
-    )?;
-    canvas.stepper_field(
-        &view.labels.opacity,
-        &view.headset.opacity,
-        Rect::new(390, 438, 678, 538),
-        state,
-        DashboardControl::HeadsetOpacityDown,
-        DashboardControl::HeadsetOpacityUp,
-    )?;
-    canvas.button(
-        control_rect(DashboardControl::HeadsetPreview).into(),
-        &view.labels.preview,
-        visual(state, DashboardControl::HeadsetPreview),
-    )?;
-    canvas.label_icon_button(
-        control_rect(DashboardControl::HeadsetPosition).into(),
-        &format!("{} · {}", view.labels.position, view.labels.rotation),
-        (Some(ControlIcon::SlidersHorizontal), None),
-        visual(state, DashboardControl::HeadsetPosition),
-        state.control_enabled(DashboardControl::HeadsetPosition),
+        &view.content,
+        DashboardControl::DisplayContent,
     )?;
 
-    canvas.card(Rect::new(732, 236, 1392, 700));
-    canvas.section_title(
-        &view.labels.wrist,
-        Rect::new(762, 254, 1240, 320),
-        SectionIcon::Wrist,
-    )?;
-    canvas.divider(Rect::new(762, 322, 1362, 323));
-    canvas.toggle(
-        Rect::new(1284, 264, 1362, 312),
-        view.wrist.enabled,
-        visual(state, DashboardControl::WristEnabled),
-    );
-    canvas.choice_row(
-        &view.labels.hand,
-        &view.wrist.hand,
-        Rect::new(762, 338, 1050, 410),
-        visual(state, DashboardControl::WristHand),
-    )?;
-    canvas.choice_row(
-        &view.labels.content,
-        &view.wrist.content,
-        Rect::new(1074, 338, 1362, 410),
-        visual(state, DashboardControl::WristContent),
-    )?;
-    canvas.stepper_field(
-        &view.labels.width,
-        &view.wrist.width,
-        Rect::new(762, 438, 1050, 538),
-        state,
-        DashboardControl::WristWidthDown,
-        DashboardControl::WristWidthUp,
-    )?;
-    canvas.stepper_field(
-        &view.labels.opacity,
-        &view.wrist.opacity,
-        Rect::new(1074, 438, 1362, 538),
-        state,
-        DashboardControl::WristOpacityDown,
-        DashboardControl::WristOpacityUp,
-    )?;
-    canvas.button(
-        control_rect(DashboardControl::WristPreview).into(),
-        &view.labels.preview,
-        visual(state, DashboardControl::WristPreview),
-    )?;
-    canvas.label_icon_button(
-        control_rect(DashboardControl::WristPosition).into(),
-        &format!("{} · {}", view.labels.position, view.labels.rotation),
-        (Some(ControlIcon::SlidersHorizontal), None),
-        visual(state, DashboardControl::WristPosition),
-        state.control_enabled(DashboardControl::WristPosition),
-    )?;
-
+    for (
+        kind,
+        left,
+        title,
+        enabled,
+        width,
+        opacity,
+        preview_visible,
+        down,
+        up,
+        opacity_down,
+        opacity_up,
+        toggle,
+        position,
+        preview,
+    ) in [
+        (
+            DisplayKind::Headset,
+            48,
+            &view.labels.headset,
+            view.headset.enabled,
+            &view.headset.width,
+            &view.headset.opacity,
+            view.headset.preview_visible,
+            DashboardControl::HeadsetWidthDown,
+            DashboardControl::HeadsetWidthUp,
+            DashboardControl::HeadsetOpacityDown,
+            DashboardControl::HeadsetOpacityUp,
+            DashboardControl::HeadsetEnabled,
+            DashboardControl::HeadsetPosition,
+            DashboardControl::HeadsetPreview,
+        ),
+        (
+            DisplayKind::Wrist,
+            732,
+            &view.labels.wrist,
+            view.wrist.enabled,
+            &view.wrist.width,
+            &view.wrist.opacity,
+            view.wrist.preview_visible,
+            DashboardControl::WristWidthDown,
+            DashboardControl::WristWidthUp,
+            DashboardControl::WristOpacityDown,
+            DashboardControl::WristOpacityUp,
+            DashboardControl::WristEnabled,
+            DashboardControl::WristPosition,
+            DashboardControl::WristPreview,
+        ),
+    ] {
+        canvas.card(Rect::new(left, 336, left + 660, 678));
+        canvas.section_title(
+            title,
+            Rect::new(left + 30, 348, left + 530, 404),
+            if kind == DisplayKind::Headset {
+                SectionIcon::Headset
+            } else {
+                SectionIcon::Wrist
+            },
+        )?;
+        canvas.toggle(
+            Rect::new(left + 552, 352, left + 630, 400),
+            enabled,
+            visual(state, toggle),
+        );
+        canvas.divider(Rect::new(left + 30, 406, left + 630, 407));
+        if kind == DisplayKind::Wrist {
+            canvas.text(
+                &view.labels.hand,
+                Rect::new(762, 416, 910, 472),
+                22,
+                TEXT_SECONDARY,
+                Align::Left,
+            )?;
+            render_segments(canvas, state, &view.wrist.hand, DashboardControl::WristHand)?;
+        } else {
+            canvas.text(
+                &view.labels.headset_hint,
+                Rect::new(78, 416, 678, 472),
+                22,
+                TEXT_SECONDARY,
+                Align::Left,
+            )?;
+        }
+        canvas.stepper_field(
+            &view.labels.width,
+            width,
+            Rect::new(left + 30, 478, left + 318, 578),
+            state,
+            down,
+            up,
+        )?;
+        canvas.stepper_field(
+            &view.labels.opacity,
+            opacity,
+            Rect::new(left + 342, 478, left + 630, 578),
+            state,
+            opacity_down,
+            opacity_up,
+        )?;
+        canvas.label_icon_button(
+            control_rect(position).into(),
+            &format!("{} · {}", view.labels.position, view.labels.rotation),
+            (Some(ControlIcon::SlidersHorizontal), None),
+            visual(state, position),
+            state.control_enabled(position),
+        )?;
+        canvas.selection_button(
+            control_rect(preview).into(),
+            if preview_visible {
+                &view.labels.hide_preview
+            } else {
+                &view.labels.preview
+            },
+            visual(state, preview),
+            preview_visible,
+        )?;
+    }
     if !view.ocr_available && !view.vision_available {
         return Ok(());
     }
-    canvas.card(Rect::new(48, 724, 1392, 852));
-    if view.ocr_available {
-        canvas.heading(&view.labels.ocr, Rect::new(78, 738, 320, 790), 24)?;
-        canvas.text(
-            &view.ocr.backend,
-            Rect::new(78, 788, 320, 830),
-            18,
-            TEXT_SECONDARY,
-            Align::Left,
-        )?;
-        canvas.toggle(
-            Rect::new(340, 760, 418, 808),
+    canvas.card(Rect::new(48, 696, 1392, 824));
+    canvas.heading(&view.labels.tools, Rect::new(78, 704, 800, 740), 24)?;
+    for (left, label, checked, control, visible) in [
+        (
+            78,
+            &view.labels.ocr,
             view.ocr.enabled,
-            visual(state, DashboardControl::OcrEnabled),
-        );
-        canvas.text(
+            DashboardControl::OcrEnabled,
+            view.ocr_available,
+        ),
+        (
+            418,
             &view.labels.gesture,
-            Rect::new(486, 752, 728, 816),
+            view.ocr.gesture,
+            DashboardControl::OcrGesture,
+            view.ocr_available,
+        ),
+        (
+            766,
+            &view.labels.vision,
+            view.vision.enabled,
+            DashboardControl::VisionEnabled,
+            view.vision_available,
+        ),
+    ] {
+        if !visible {
+            continue;
+        }
+        canvas.text(
+            label,
+            Rect::new(left, 750, left + 208, 802),
             22,
             TEXT,
             Align::Left,
         )?;
-        canvas.toggle(
-            Rect::new(740, 760, 818, 808),
-            view.ocr.gesture,
-            visual(state, DashboardControl::OcrGesture),
-        );
-        canvas.divider(Rect::new(466, 750, 467, 826));
-    }
-    if view.vision_available {
-        canvas.heading(&view.labels.vision, Rect::new(844, 738, 1024, 782), 18)?;
-        canvas.toggle(
-            Rect::new(890, 788, 968, 830),
-            view.vision.enabled,
-            visual(state, DashboardControl::VisionEnabled),
+        let rect = control_rect(control);
+        canvas.toggle_enabled(
+            Rect::new(rect.left as i32 + 8, 752, rect.right as i32 - 10, 800),
+            checked,
+            visual(state, control),
+            state.control_enabled(control),
         );
     }
-    canvas.button(
-        Rect::new(1040, 752, 1362, 824),
+    canvas.label_icon_button(
+        control_rect(DashboardControl::OcrBindings).into(),
         &view.labels.bindings,
+        (None, None),
         visual(state, DashboardControl::OcrBindings),
+        state.control_enabled(DashboardControl::OcrBindings),
     )?;
-    if !view.vision_available {
-        canvas.divider(Rect::new(938, 750, 939, 826));
-    }
-
     Ok(())
+}
+
+fn render_segments(
+    canvas: &mut Canvas,
+    state: &DashboardState,
+    choice: &super::dashboard::DashboardChoice,
+    control: fn(usize) -> DashboardControl,
+) -> Result<(), String> {
+    for (index, option) in choice.options.iter().enumerate() {
+        let control = control(index);
+        canvas.selection_button(
+            control_rect(control).into(),
+            &option.label,
+            visual(state, control),
+            option.label == choice.value,
+        )?;
+    }
+    Ok(())
+}
+
+fn render_confirmation(
+    canvas: &mut Canvas,
+    view: &DashboardViewModel,
+    state: &DashboardState,
+    action: &DashboardAction,
+    label: &str,
+) -> Result<(), String> {
+    canvas.rounded(Rect::new(48, 124, 1392, 852), 12, SURFACE_SUBTLE);
+    canvas.card(Rect::new(344, 350, 1096, 704));
+    canvas.heading(
+        &view.labels.confirm_delete,
+        Rect::new(408, 388, 1032, 436),
+        28,
+    )?;
+    let context = match action {
+        DashboardAction::DeleteTarget { group, index } => format!(
+            "{} / {} {}",
+            match group {
+                TargetGroup::Speaker => &view.labels.speaker_language,
+                TargetGroup::Microphone => &view.labels.microphone_language,
+            },
+            view.labels.translation_languages,
+            index + 1
+        ),
+        DashboardAction::DeleteLanguagePreset(_) => view.labels.presets.clone(),
+        _ => String::new(),
+    };
+    canvas.text(
+        &context,
+        Rect::new(408, 436, 1032, 466),
+        18,
+        TEXT_SECONDARY,
+        Align::Left,
+    )?;
+    canvas.text(label, Rect::new(408, 466, 1032, 508), 28, TEXT, Align::Left)?;
+    canvas.text(
+        &view.labels.delete_hint,
+        Rect::new(408, 514, 1032, 554),
+        22,
+        TEXT_SECONDARY,
+        Align::Left,
+    )?;
+    canvas.button(
+        control_rect(DashboardControl::CancelDelete).into(),
+        &view.labels.cancel,
+        visual(state, DashboardControl::CancelDelete),
+    )?;
+    let rect: Rect = control_rect(DashboardControl::ConfirmDelete).into();
+    canvas.rounded(rect, 8, ERROR_SOFT);
+    if visual(state, DashboardControl::ConfirmDelete) != ControlVisual::Idle {
+        canvas.rounded(rect, 8, ERROR);
+    }
+    canvas.text(
+        &view.labels.delete,
+        rect,
+        22,
+        if visual(state, DashboardControl::ConfirmDelete) == ControlVisual::Idle {
+            ERROR
+        } else {
+            SURFACE
+        },
+        Align::Center,
+    )
 }
 
 fn render_display_position(
@@ -381,7 +560,14 @@ fn render_display_position(
     )?;
     canvas.button(
         control_rect(DashboardControl::PositionPreview).into(),
-        &view.labels.preview,
+        if match kind {
+            DisplayKind::Headset => view.headset.preview_visible,
+            DisplayKind::Wrist => view.wrist.preview_visible,
+        } {
+            &view.labels.hide_preview
+        } else {
+            &view.labels.preview
+        },
         visual(state, DashboardControl::PositionPreview),
     )?;
     canvas.divider(Rect::new(78, 322, 1362, 323));
@@ -406,6 +592,26 @@ fn render_display_position(
         )?;
     }
     canvas.divider(Rect::new(78, 740, 1362, 741));
+    canvas.centered_icon(
+        ControlIcon::Move3d,
+        Rect::new(636, 760, 708, 828),
+        48,
+        PRIMARY_INK,
+    );
+    canvas.text(
+        &view.labels.position_hint,
+        Rect::new(744, 752, 1362, 792),
+        20,
+        TEXT_SECONDARY,
+        Align::Left,
+    )?;
+    canvas.text(
+        &view.labels.rotation_hint,
+        Rect::new(744, 792, 1362, 832),
+        20,
+        TEXT_SECONDARY,
+        Align::Left,
+    )?;
     canvas.label_icon_button(
         control_rect(DashboardControl::PositionReset).into(),
         &view.labels.reset_position,
@@ -530,11 +736,7 @@ fn render_language(
         ),
     ] {
         canvas.card(Rect::new(left, 366, left + 660, 742));
-        canvas.heading(
-            &format!("{} · {}", view.labels.translation_languages, title),
-            Rect::new(left + 30, 376, left + 560, 416),
-            24,
-        )?;
+        canvas.heading(title, Rect::new(left + 30, 376, left + 560, 416), 24)?;
         canvas.text(
             &format!("{}/3", targets.len()),
             Rect::new(left + 560, 376, left + 630, 416),
@@ -672,11 +874,12 @@ fn render_osc(
             canvas.divider(Rect::new(78, rect.bottom + 9, 1362, rect.bottom + 10));
         }
     }
-    canvas.choice_row(
-        &view.labels.osc_strategy,
+    canvas.heading(&view.labels.osc_strategy, Rect::new(78, 684, 1362, 720), 24)?;
+    render_segments(
+        canvas,
+        state,
         &view.osc.strategy,
-        control_rect(DashboardControl::OscStrategy).into(),
-        visual(state, DashboardControl::OscStrategy),
+        DashboardControl::OscStrategy,
     )?;
     canvas.text(
         &view.labels.osc_hint,
@@ -698,13 +901,24 @@ fn render_picker(
     canvas.card(Rect::new(48, 236, 1392, 852));
     canvas.heading(
         language_label(view, state.picker().unwrap()),
-        Rect::new(78, 250, 820, 306),
+        Rect::new(78, 250, 676, 306),
         26,
     )?;
     canvas.button(
         PICKER_CLOSE_RECT.into(),
         &view.labels.close,
         visual(state, DashboardControl::PickerClose),
+    )?;
+    canvas.text(
+        &format!(
+            "{} / {}",
+            state.picker_page() + 1,
+            choice.options.len().div_ceil(PICKER_PAGE_SIZE).max(1)
+        ),
+        Rect::new(690, 250, 844, 306),
+        22,
+        TEXT_SECONDARY,
+        Align::Center,
     )?;
     let start = state.picker_page() * PICKER_PAGE_SIZE;
     if state.picker_page() > 0 {
@@ -732,14 +946,11 @@ fn render_picker(
     {
         let feedback = visual(state, DashboardControl::PickerOption(index));
         let selected = option.label == choice.value;
-        canvas.button(
+        canvas.selection_button(
             picker_option_rect(index).into(),
             &option.label,
-            if selected && feedback == ControlVisual::Idle {
-                ControlVisual::Hovered
-            } else {
-                feedback
-            },
+            feedback,
+            selected,
         )?;
     }
     Ok(())
@@ -748,7 +959,7 @@ fn render_picker(
 pub fn render_thumbnail(_title: &str) -> Result<Texture, String> {
     let mut canvas = Canvas::new(256, 256, PRIMARY_SOFTER);
     canvas.icon(Rect::new(26, 26, 230, 230))?;
-    Ok(canvas.into_texture())
+    Ok(canvas.into_texture().into_rgba())
 }
 
 fn visual(state: &DashboardState, control: DashboardControl) -> ControlVisual {
@@ -824,10 +1035,11 @@ enum ControlIcon {
     ChevronDown,
     ChevronLeft,
     ChevronRight,
-    Swap,
     Plus,
     Minus,
     Play,
+    Mic,
+    Square,
     BookmarkPlus,
     SlidersHorizontal,
     Move3d,
@@ -835,7 +1047,7 @@ enum ControlIcon {
     RotateCcw,
 }
 
-// Lucide spatial icon geometry (SlidersHorizontal, Move3d, Rotate3d, RotateCcw):
+// Lucide icon geometry (Mic, Square, SlidersHorizontal, Move3d, Rotate3d, RotateCcw):
 // ISC License
 // Copyright (c) 2026 Lucide Icons and Contributors
 //
@@ -891,15 +1103,69 @@ impl ControlIcon {
             Self::ChevronDown => &[&[(6., 9.), (12., 15.), (18., 9.)]],
             Self::ChevronLeft => &[&[(15., 18.), (9., 12.), (15., 6.)]],
             Self::ChevronRight => &[&[(9., 18.), (15., 12.), (9., 6.)]],
-            Self::Swap => &[
-                &[(8., 3.), (4., 7.), (8., 11.)],
-                &[(4., 7.), (20., 7.)],
-                &[(16., 13.), (20., 17.), (16., 21.)],
-                &[(4., 17.), (20., 17.)],
-            ],
             Self::Plus => &[&[(12., 5.), (12., 19.)], &[(5., 12.), (19., 12.)]],
             Self::Minus => &[&[(5., 12.), (19., 12.)]],
             Self::Play => &[&[(6., 3.), (20., 12.), (6., 21.), (6., 3.)]],
+            Self::Mic => &[
+                &[(12., 19.), (12., 22.)],
+                &[
+                    (19., 10.),
+                    (19., 12.),
+                    (18.467, 14.679),
+                    (16.95, 16.95),
+                    (14.679, 18.467),
+                    (12., 19.),
+                    (9.321, 18.467),
+                    (7.05, 16.95),
+                    (5.533, 14.679),
+                    (5., 12.),
+                    (5., 10.),
+                ],
+                &[
+                    (9., 5.),
+                    (9., 12.),
+                    (9.228, 13.148),
+                    (9.879, 14.121),
+                    (10.852, 14.772),
+                    (12., 15.),
+                    (13.148, 14.772),
+                    (14.121, 14.121),
+                    (14.772, 13.148),
+                    (15., 12.),
+                    (15., 5.),
+                    (14.772, 3.852),
+                    (14.121, 2.879),
+                    (13.148, 2.228),
+                    (12., 2.),
+                    (10.852, 2.228),
+                    (9.879, 2.879),
+                    (9.228, 3.852),
+                    (9., 5.),
+                ],
+            ],
+            Self::Square => &[&[
+                (3., 5.),
+                (3., 19.),
+                (3.152, 19.765),
+                (3.586, 20.414),
+                (4.235, 20.848),
+                (5., 21.),
+                (19., 21.),
+                (19.765, 20.848),
+                (20.414, 20.414),
+                (20.848, 19.765),
+                (21., 19.),
+                (21., 5.),
+                (20.848, 4.235),
+                (20.414, 3.586),
+                (19.765, 3.152),
+                (19., 3.),
+                (5., 3.),
+                (4.235, 3.152),
+                (3.586, 3.586),
+                (3.152, 4.235),
+                (3., 5.),
+            ]],
             Self::BookmarkPlus => &[
                 &[
                     (19., 21.),
@@ -1072,11 +1338,8 @@ struct Canvas<'a> {
 }
 
 impl Canvas<'_> {
-    fn into_texture(mut self) -> Texture {
-        for pixel in self.pixels.as_chunks_mut::<4>().0 {
-            pixel.swap(0, 2);
-        }
-        Texture {
+    fn into_texture(self) -> BgraTexture {
+        BgraTexture {
             pixels: self.pixels,
             width: self.width,
             height: self.height,
@@ -1156,16 +1419,6 @@ impl Canvas<'_> {
             if error { ERROR } else { PRIMARY_INK },
             Align::Center,
         )
-    }
-
-    fn choice_row(
-        &mut self,
-        label: &str,
-        value: &str,
-        rect: Rect,
-        visual: ControlVisual,
-    ) -> Result<(), String> {
-        self.choice_field(label, value, rect, visual, ControlIcon::Swap)
     }
 
     fn choice_field(
@@ -1315,6 +1568,33 @@ impl Canvas<'_> {
         self.centered_icon(icon, rect, size, color);
     }
 
+    fn primary_icon_button(
+        &mut self,
+        mut rect: Rect,
+        icon: ControlIcon,
+        visual: ControlVisual,
+        enabled: bool,
+    ) {
+        let mut fill = if enabled && visual != ControlVisual::Idle {
+            PRIMARY_HOVER
+        } else {
+            PRIMARY
+        };
+        let mut ink = SURFACE;
+        if !enabled {
+            for channel in 0..3 {
+                fill[channel] = ((fill[channel] as u16 + CANVAS[channel] as u16) / 2) as u8;
+                ink[channel] = ((ink[channel] as u16 + CANVAS[channel] as u16) / 2) as u8;
+            }
+        }
+        let pressed = enabled && visual == ControlVisual::Pressed;
+        if pressed {
+            rect = Rect::new(rect.left + 2, rect.top + 2, rect.right - 2, rect.bottom - 2);
+        }
+        self.rounded(rect, (rect.bottom - rect.top) / 2, fill);
+        self.centered_icon(icon, rect, if pressed { 36 } else { 38 }, ink);
+    }
+
     fn label_icon_button(
         &mut self,
         rect: Rect,
@@ -1351,6 +1631,49 @@ impl Canvas<'_> {
             text_rect.right -= 16;
         }
         self.text(label, text_rect, 22, color, Align::Center)
+    }
+
+    fn selection_button(
+        &mut self,
+        rect: Rect,
+        label: &str,
+        visual: ControlVisual,
+        selected: bool,
+    ) -> Result<(), String> {
+        if selected {
+            self.rounded(rect, 8, PRIMARY_INK);
+            if visual == ControlVisual::Hovered {
+                self.rounded(rect, 8, TEXT);
+            }
+            self.text(
+                label,
+                Rect::new(rect.left + 12, rect.top, rect.right - 12, rect.bottom),
+                22,
+                SURFACE,
+                Align::Center,
+            )
+        } else {
+            self.button(rect, label, visual)
+        }
+    }
+
+    fn toggle_enabled(&mut self, rect: Rect, checked: bool, visual: ControlVisual, enabled: bool) {
+        if enabled {
+            self.toggle(rect, checked, visual);
+        } else {
+            self.rounded(rect, (rect.bottom - rect.top) / 2, SURFACE_SUBTLE);
+            let diameter = rect.bottom - rect.top - 10;
+            let left = if checked {
+                rect.right - diameter - 5
+            } else {
+                rect.left + 5
+            };
+            self.rounded(
+                Rect::new(left, rect.top + 5, left + diameter, rect.bottom - 5),
+                diameter / 2,
+                BORDER_STRONG,
+            );
+        }
     }
 
     fn small_button(
@@ -1393,7 +1716,12 @@ impl Canvas<'_> {
         if scale <= 0. {
             return;
         }
-        let radius = scale;
+        let radius = scale
+            * if matches!(icon, ControlIcon::Mic | ControlIcon::Square) {
+                0.9
+            } else {
+                1.0
+            };
         let paths = icon.paths();
         for y in rect.top.max(0)..rect.bottom.min(self.height as i32) {
             for x in rect.left.max(0)..rect.right.min(self.width as i32) {
@@ -1521,37 +1849,53 @@ impl Canvas<'_> {
     }
 
     fn rounded(&mut self, rect: Rect, radius: i32, color: [u8; 4]) {
+        if rect.right <= rect.left || rect.bottom <= rect.top {
+            return;
+        }
+        let radius = radius
+            .max(0)
+            .min((rect.right - rect.left) / 2)
+            .min((rect.bottom - rect.top) / 2);
         let left = rect.left.clamp(0, self.width as i32);
         let top = rect.top.clamp(0, self.height as i32);
         let right = rect.right.clamp(left, self.width as i32);
         let bottom = rect.bottom.clamp(top, self.height as i32);
-        let radius = radius
-            .max(0)
-            .min((right - left) / 2)
-            .min((bottom - top) / 2);
         for y in top..bottom {
             for x in left..right {
-                let inside = radius == 0
-                    || (x >= left + radius && x < right - radius)
-                    || (y >= top + radius && y < bottom - radius)
-                    || {
-                        let cx = if x < left + radius {
-                            left + radius
-                        } else {
-                            right - radius - 1
-                        };
-                        let cy = if y < top + radius {
-                            top + radius
-                        } else {
-                            bottom - radius - 1
-                        };
-                        let dx = x - cx;
-                        let dy = y - cy;
-                        dx * dx + dy * dy <= radius * radius
-                    };
-                if inside {
-                    let offset = ((y as u32 * self.width + x as u32) * 4) as usize;
+                let coverage = if radius == 0
+                    || (x >= rect.left + radius && x < rect.right - radius)
+                    || (y >= rect.top + radius && y < rect.bottom - radius)
+                {
+                    255
+                } else {
+                    let cx = if x < rect.left + radius {
+                        rect.left + radius
+                    } else {
+                        rect.right - radius
+                    } as f32;
+                    let cy = if y < rect.top + radius {
+                        rect.top + radius
+                    } else {
+                        rect.bottom - radius
+                    } as f32;
+                    // Blend a one-pixel edge from the pixel center's distance to the curve.
+                    let distance = (x as f32 + 0.5 - cx).hypot(y as f32 + 0.5 - cy);
+                    ((radius as f32 + 0.5 - distance).clamp(0., 1.) * 255.).round() as u16
+                };
+                if coverage == 0 {
+                    continue;
+                }
+                let offset = ((y as u32 * self.width + x as u32) * 4) as usize;
+                if coverage == 255 {
                     self.pixels[offset..offset + 4].copy_from_slice(&color);
+                } else {
+                    for (channel, value) in color.iter().enumerate() {
+                        let background = self.pixels[offset + channel] as u16;
+                        self.pixels[offset + channel] = ((*value as u16 * coverage
+                            + background * (255 - coverage)
+                            + 127)
+                            / 255) as u8;
+                    }
                 }
             }
         }
@@ -1882,7 +2226,69 @@ mod tests {
     };
 
     fn render(view: &DashboardViewModel, state: &DashboardState) -> Result<Texture, String> {
-        super::render(view, state, &mut RasterCache::default())
+        super::render(view, state, &mut RasterCache::default()).map(BgraTexture::into_rgba)
+    }
+
+    #[test]
+    fn rounded_edges_have_partial_coverage_and_stay_symmetric() {
+        let mut canvas = Canvas::new(64, 48, [255; 4]);
+        canvas.rounded(Rect::new(8, 8, 56, 40), 10, [0, 0, 0, 255]);
+        let pixels = canvas.pixels.as_chunks::<4>().0;
+        assert_eq!(pixels[8 * 64 + 8], [255; 4]);
+        assert_eq!(pixels[24 * 64 + 32], [0, 0, 0, 255]);
+        assert!(
+            pixels.iter().any(|pixel| (1..255).contains(&pixel[0])),
+            "Curved edges must include partially covered pixels"
+        );
+        for y in 0..48 {
+            for x in 0..64 {
+                let pixel = pixels[y * 64 + x];
+                assert_eq!(pixel, pixels[y * 64 + 63 - x]);
+                assert_eq!(pixel, pixels[(47 - y) * 64 + x]);
+                assert_eq!(pixel[3], 255);
+            }
+        }
+    }
+
+    #[test]
+    fn rounded_shapes_preserve_geometry_when_clipped() {
+        let mut clipped = Canvas::new(48, 48, CANVAS);
+        clipped.rounded(Rect::new(-4, -6, 36, 34), 12, PRIMARY);
+        let mut reference = Canvas::new(80, 80, CANVAS);
+        reference.rounded(Rect::new(12, 10, 52, 50), 12, PRIMARY);
+        for y in 0..48 {
+            for x in 0..48 {
+                let actual = (y * 48 + x) * 4;
+                let expected = ((y + 16) * 80 + x + 16) * 4;
+                assert_eq!(
+                    clipped.pixels[actual..actual + 4],
+                    reference.pixels[expected..expected + 4]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rounded_rectangles_keep_straight_edges_crisp() {
+        let mut canvas = Canvas::new(32, 24, CANVAS);
+        canvas.rounded(Rect::new(4, 6, 28, 18), 0, PRIMARY);
+        let before = canvas.pixels.clone();
+        canvas.rounded(Rect::new(8, 8, 8, 20), 4, TEXT);
+        canvas.rounded(Rect::new(20, 20, 8, 8), 4, TEXT);
+        assert_eq!(canvas.pixels, before);
+        for y in 0..24 {
+            for x in 0..32 {
+                let offset = (y * 32 + x) * 4;
+                assert_eq!(
+                    canvas.pixels[offset..offset + 4],
+                    if (4..28).contains(&x) && (6..18).contains(&y) {
+                        PRIMARY
+                    } else {
+                        CANVAS
+                    }
+                );
+            }
+        }
     }
 
     fn view(error: Option<String>) -> DashboardViewModel {
@@ -1910,22 +2316,25 @@ mod tests {
                 ..DashboardLabels::default()
             },
             enabled: true,
+            capture: super::super::dashboard::DashboardCapture::default(),
+            content: super::super::dashboard::DashboardChoice::default(),
             headset: DashboardHeadset {
                 enabled: true,
-                content: "Bilingual".into(),
+                preview_visible: false,
                 width: "1.20 m".into(),
                 opacity: "92%".into(),
                 position: Vec::new(),
             },
             wrist: DashboardWrist {
                 enabled: true,
-                hand: "Left".into(),
-                content: "Bilingual".into(),
+                hand: super::super::dashboard::DashboardChoice::default(),
+                preview_visible: false,
                 width: "0.32 m".into(),
                 opacity: "94%".into(),
                 position: Vec::new(),
             },
             ocr: DashboardOcr {
+                available: true,
                 enabled: false,
                 backend: "Cloud".into(),
                 gesture: true,
@@ -1936,13 +2345,75 @@ mod tests {
                 original: true,
                 mute_sync: true,
                 mute_toast: true,
-                strategy: "Preferred language only".into(),
+                strategy: super::super::dashboard::DashboardChoice::default(),
                 endpoint: "127.0.0.1:9000".into(),
             },
             status: "Ready".into(),
             save_state: DashboardSaveState::Idle,
             error,
         }
+    }
+
+    #[test]
+    fn capture_button_is_available_on_every_page_and_respects_runtime_availability() {
+        let mut serialized = serde_json::to_value(view(None)).unwrap();
+        serialized["capture"] = serde_json::json!({ "running": false, "available": true });
+        let mut state = DashboardState::default();
+        state.update_view(&serde_json::from_value(serialized.clone()).unwrap());
+        let rect = control_rect(DashboardControl::Capture);
+        let x = (rect.left + rect.right) / 2.;
+        let y = (rect.top + rect.bottom) / 2.;
+        for tab_x in [200., 500., 800.] {
+            state.pointer_down(tab_x, 168.);
+            state.pointer_up(tab_x, 168.);
+            state.pointer_down(x, y);
+            assert_eq!(
+                state
+                    .pointer_up(x, y)
+                    .map(|action| serde_json::to_value(action).unwrap()),
+                Some(serde_json::json!("toggle_capture"))
+            );
+        }
+        serialized["capture"]["available"] = serde_json::json!(false);
+        state.update_view(&serde_json::from_value(serialized).unwrap());
+        state.pointer_down(x, y);
+        assert_eq!(state.pointer_up(x, y), None);
+        state.pointer_down(1200., 168.);
+        assert_eq!(
+            state.pointer_up(1200., 168.),
+            Some(DashboardAction::ToggleMaster)
+        );
+    }
+
+    #[test]
+    fn capture_button_displays_the_actual_running_state() {
+        let mut serialized = serde_json::to_value(view(None)).unwrap();
+        serialized["capture"] = serde_json::json!({ "running": false, "available": true });
+        serialized["labels"]["capture_start"] = serde_json::json!("Start transcription");
+        serialized["labels"]["capture_stop"] = serde_json::json!("Stop transcription");
+        let stopped: DashboardViewModel = serde_json::from_value(serialized.clone()).unwrap();
+        serialized["capture"]["running"] = serde_json::json!(true);
+        let running: DashboardViewModel = serde_json::from_value(serialized).unwrap();
+        let mut state = DashboardState::default();
+        state.update_view(&stopped);
+        let stopped_texture = render(&stopped, &state).unwrap();
+        state.update_view(&running);
+        let running_texture = render(&running, &state).unwrap();
+        let rect = control_rect(DashboardControl::Capture);
+        assert!((rect.top as u32..rect.bottom as u32).any(|y| {
+            let start = ((y * DASHBOARD_WIDTH + rect.left as u32) * 4) as usize;
+            let end = ((y * DASHBOARD_WIDTH + rect.right as u32) * 4) as usize;
+            stopped_texture.pixels[start..end] != running_texture.pixels[start..end]
+        }));
+    }
+
+    #[test]
+    fn dashboard_canvas_keeps_native_bgra_pixels_for_upload() {
+        let canvas = Canvas::new(2, 1, CANVAS);
+        let buffer = canvas.pixels.as_ptr();
+        let texture = canvas.into_texture();
+        assert_eq!(texture.pixels, [0xfb, 0xf8, 0xf5, 255].repeat(2));
+        assert_eq!(texture.pixels.as_ptr(), buffer);
     }
 
     #[test]
@@ -2080,9 +2551,9 @@ mod tests {
         assert_eq!(state.page(), DashboardPage::Language);
         state.pointer_down(100., 168.);
         state.pointer_up(100., 168.);
-        state.pointer_down(650., 510.);
+        state.pointer_down(650., 550.);
         assert_eq!(
-            state.pointer_up(650., 510.),
+            state.pointer_up(650., 550.),
             Some(super::super::dashboard::DashboardAction::HeadsetOpacityUp)
         );
     }
@@ -2102,7 +2573,7 @@ mod tests {
             &DashboardState::default(),
         )
         .unwrap();
-        let error_offset = ((876 * error.width + 1380) * 4) as usize;
+        let error_offset = (((error.height - 24) * error.width + 1380) * 4) as usize;
         assert_eq!(
             &error.pixels[error_offset..error_offset + 4],
             &[0xfd, 0xf0, 0xee, 255]
@@ -2174,13 +2645,13 @@ mod tests {
     }
 
     #[test]
-    fn renders_an_opaque_dashboard_texture_at_the_declared_size() {
+    fn display_page_trims_unused_bottom_space() {
         let texture = render(&view(None), &DashboardState::default()).unwrap();
 
-        assert_eq!((texture.width, texture.height), (1440, 900));
+        assert_eq!((texture.width, texture.height), (DASHBOARD_WIDTH, 840));
         assert_eq!(
             texture.pixels.len(),
-            (DASHBOARD_WIDTH * DASHBOARD_HEIGHT * 4) as usize
+            (texture.width * texture.height * 4) as usize
         );
         assert!(texture
             .pixels
@@ -2191,17 +2662,37 @@ mod tests {
     }
 
     #[test]
-    fn renders_error_copy_without_changing_the_texture_contract() {
+    fn compact_display_reserves_space_for_errors_and_save_feedback() {
         let texture = render(
             &view(Some("The settings service is unavailable".into())),
             &DashboardState::default(),
         )
         .unwrap();
 
-        assert_eq!(
-            (texture.width, texture.height),
-            (DASHBOARD_WIDTH, DASHBOARD_HEIGHT)
-        );
+        assert_eq!((texture.width, texture.height), (DASHBOARD_WIDTH, 872));
+        for save_state in [DashboardSaveState::Saving, DashboardSaveState::Saved] {
+            let mut view = view(None);
+            view.save_state = save_state;
+            let texture = render(&view, &DashboardState::default()).unwrap();
+            assert_eq!((texture.width, texture.height), (DASHBOARD_WIDTH, 872));
+        }
+    }
+
+    #[test]
+    fn other_pages_keep_the_full_content_height() {
+        let view = view(None);
+        for x in [500., 800.] {
+            let mut state = DashboardState::default();
+            state.update_view(&view);
+            state.pointer_down(x, 168.);
+            state.pointer_up(x, 168.);
+            assert_ne!(state.page(), DashboardPage::Display);
+            let texture = render(&view, &state).unwrap();
+            assert_eq!(
+                (texture.width, texture.height),
+                (DASHBOARD_WIDTH, DASHBOARD_HEIGHT)
+            );
+        }
     }
 
     #[test]

@@ -3,14 +3,17 @@ use serde::{Deserialize, Serialize};
 pub const DASHBOARD_WIDTH: u32 = 1440;
 pub const DASHBOARD_HEIGHT: u32 = 900;
 
-pub fn pointer_from_openvr(x: f32, y: f32) -> (f32, f32) {
-    (x, DASHBOARD_HEIGHT as f32 - y)
+pub fn pointer_from_openvr(x: f32, y: f32, height: u32) -> (f32, f32) {
+    (x, height as f32 - y)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DashboardViewModel {
     pub labels: DashboardLabels,
     pub enabled: bool,
+    #[serde(default)]
+    pub capture: DashboardCapture,
+    pub content: DashboardChoice,
     #[serde(default = "available_by_default")]
     pub ocr_available: bool,
     #[serde(default)]
@@ -42,6 +45,10 @@ pub struct DashboardLabels {
     pub title: String,
     pub subtitle: String,
     pub master: String,
+    #[serde(default)]
+    pub capture_start: String,
+    #[serde(default)]
+    pub capture_stop: String,
     pub headset: String,
     pub wrist: String,
     pub ocr: String,
@@ -79,6 +86,23 @@ pub struct DashboardLabels {
     pub osc_strategy: String,
     pub osc_hint: String,
     pub close: String,
+    pub content_hint: String,
+    pub headset_hint: String,
+    pub tools: String,
+    pub vision_unconfigured: String,
+    pub ocr_unavailable: String,
+    pub hide_preview: String,
+    pub confirm_delete: String,
+    pub delete_hint: String,
+    pub cancel: String,
+    pub position_hint: String,
+    pub rotation_hint: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct DashboardCapture {
+    pub running: bool,
+    pub available: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -126,14 +150,15 @@ pub struct DashboardOsc {
     pub original: bool,
     pub mute_sync: bool,
     pub mute_toast: bool,
-    pub strategy: String,
+    pub strategy: DashboardChoice,
     pub endpoint: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DashboardHeadset {
     pub enabled: bool,
-    pub content: String,
+    #[serde(default)]
+    pub preview_visible: bool,
     pub width: String,
     pub opacity: String,
     pub position: Vec<DashboardNumberField>,
@@ -142,8 +167,9 @@ pub struct DashboardHeadset {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DashboardWrist {
     pub enabled: bool,
-    pub hand: String,
-    pub content: String,
+    pub hand: DashboardChoice,
+    #[serde(default)]
+    pub preview_visible: bool,
     pub width: String,
     pub opacity: String,
     pub position: Vec<DashboardNumberField>,
@@ -185,6 +211,8 @@ pub struct DashboardNumberField {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DashboardOcr {
+    #[serde(default = "available_by_default")]
+    pub available: bool,
     pub enabled: bool,
     pub backend: String,
     pub gesture: bool,
@@ -210,16 +238,14 @@ pub enum DashboardSaveState {
 #[serde(rename_all = "snake_case")]
 pub enum DashboardAction {
     ToggleMaster,
+    ToggleCapture,
     ToggleHeadset,
-    CycleHeadsetContent,
     HeadsetWidthDown,
     HeadsetWidthUp,
     HeadsetOpacityDown,
     HeadsetOpacityUp,
     PreviewHeadset,
     ToggleWrist,
-    CycleWristHand,
-    CycleWristContent,
     WristWidthDown,
     WristWidthUp,
     WristOpacityDown,
@@ -233,7 +259,9 @@ pub enum DashboardAction {
     ToggleOscOriginal,
     ToggleOscMuteSync,
     ToggleOscMuteToast,
-    CycleOscStrategy,
+    SetDisplayContent(String),
+    SetWristHand(String),
+    SetOscStrategy(String),
     SetRecognitionLanguage(String),
     SetTranslationMode(String),
     SetTargetLanguage {
@@ -290,14 +318,15 @@ pub(super) enum DashboardControl {
     OscOriginal,
     OscMuteSync,
     OscMuteToast,
-    OscStrategy,
+    OscStrategy(usize),
     PickerClose,
     PickerPrevious,
     PickerNext,
     PickerOption(usize),
     Master,
+    Capture,
     HeadsetEnabled,
-    HeadsetContent,
+    DisplayContent(usize),
     HeadsetWidthDown,
     HeadsetWidthUp,
     HeadsetOpacityDown,
@@ -305,8 +334,7 @@ pub(super) enum DashboardControl {
     HeadsetPreview,
     HeadsetPosition,
     WristEnabled,
-    WristHand,
-    WristContent,
+    WristHand(usize),
     WristWidthDown,
     WristWidthUp,
     WristOpacityDown,
@@ -321,6 +349,8 @@ pub(super) enum DashboardControl {
     VisionEnabled,
     OcrGesture,
     OcrBindings,
+    ConfirmDelete,
+    CancelDelete,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -346,6 +376,10 @@ impl Rect {
 }
 
 const CONTROLS: &[(DashboardControl, Rect)] = &[
+    (
+        DashboardControl::Capture,
+        Rect::new(1282., 26., 1358., 102.),
+    ),
     (
         DashboardControl::DisplayTab,
         Rect::new(48., 124., 368., 212.),
@@ -392,191 +426,80 @@ const CONTROLS: &[(DashboardControl, Rect)] = &[
         Rect::new(78., 580., 1362., 660.),
     ),
     (
-        DashboardControl::OscStrategy,
-        Rect::new(78., 684., 1362., 780.),
-    ),
-    (
         DashboardControl::Master,
-        Rect {
-            left: 1084.,
-            top: 124.,
-            right: 1392.,
-            bottom: 212.,
-        },
+        Rect::new(1056., 124., 1392., 212.),
     ),
     (
         DashboardControl::HeadsetEnabled,
-        Rect {
-            left: 600.,
-            top: 252.,
-            right: 688.,
-            bottom: 324.,
-        },
-    ),
-    (
-        DashboardControl::HeadsetContent,
-        Rect {
-            left: 78.,
-            top: 338.,
-            right: 678.,
-            bottom: 410.,
-        },
+        Rect::new(590., 346., 688., 404.),
     ),
     (
         DashboardControl::HeadsetWidthDown,
-        Rect {
-            left: 78.,
-            top: 482.,
-            right: 140.,
-            bottom: 538.,
-        },
+        Rect::new(78., 522., 140., 578.),
     ),
     (
         DashboardControl::HeadsetWidthUp,
-        Rect {
-            left: 304.,
-            top: 482.,
-            right: 366.,
-            bottom: 538.,
-        },
+        Rect::new(304., 522., 366., 578.),
     ),
     (
         DashboardControl::HeadsetOpacityDown,
-        Rect {
-            left: 390.,
-            top: 482.,
-            right: 452.,
-            bottom: 538.,
-        },
+        Rect::new(390., 522., 452., 578.),
     ),
     (
         DashboardControl::HeadsetOpacityUp,
-        Rect {
-            left: 616.,
-            top: 482.,
-            right: 678.,
-            bottom: 538.,
-        },
+        Rect::new(616., 522., 678., 578.),
     ),
     (
         DashboardControl::HeadsetPreview,
-        Rect {
-            left: 458.,
-            top: 588.,
-            right: 678.,
-            bottom: 672.,
-        },
+        Rect::new(458., 600., 678., 656.),
     ),
     (
         DashboardControl::HeadsetPosition,
-        Rect::new(78., 588., 438., 672.),
+        Rect::new(78., 600., 438., 656.),
     ),
     (
         DashboardControl::WristEnabled,
-        Rect {
-            left: 1284.,
-            top: 252.,
-            right: 1372.,
-            bottom: 324.,
-        },
-    ),
-    (
-        DashboardControl::WristHand,
-        Rect {
-            left: 762.,
-            top: 338.,
-            right: 1050.,
-            bottom: 410.,
-        },
-    ),
-    (
-        DashboardControl::WristContent,
-        Rect {
-            left: 1074.,
-            top: 338.,
-            right: 1362.,
-            bottom: 410.,
-        },
+        Rect::new(1274., 346., 1372., 404.),
     ),
     (
         DashboardControl::WristWidthDown,
-        Rect {
-            left: 762.,
-            top: 482.,
-            right: 824.,
-            bottom: 538.,
-        },
+        Rect::new(762., 522., 824., 578.),
     ),
     (
         DashboardControl::WristWidthUp,
-        Rect {
-            left: 988.,
-            top: 482.,
-            right: 1050.,
-            bottom: 538.,
-        },
+        Rect::new(988., 522., 1050., 578.),
     ),
     (
         DashboardControl::WristOpacityDown,
-        Rect {
-            left: 1074.,
-            top: 482.,
-            right: 1136.,
-            bottom: 538.,
-        },
+        Rect::new(1074., 522., 1136., 578.),
     ),
     (
         DashboardControl::WristOpacityUp,
-        Rect {
-            left: 1300.,
-            top: 482.,
-            right: 1362.,
-            bottom: 538.,
-        },
+        Rect::new(1300., 522., 1362., 578.),
     ),
     (
         DashboardControl::WristPreview,
-        Rect {
-            left: 1142.,
-            top: 588.,
-            right: 1362.,
-            bottom: 672.,
-        },
+        Rect::new(1142., 600., 1362., 656.),
     ),
     (
         DashboardControl::WristPosition,
-        Rect::new(762., 588., 1122., 672.),
+        Rect::new(762., 600., 1122., 656.),
     ),
     (
         DashboardControl::OcrEnabled,
-        Rect {
-            left: 340.,
-            top: 748.,
-            right: 428.,
-            bottom: 820.,
-        },
+        Rect::new(294., 748., 390., 804.),
     ),
     (
         DashboardControl::OcrGesture,
-        Rect {
-            left: 740.,
-            top: 748.,
-            right: 828.,
-            bottom: 820.,
-        },
+        Rect::new(642., 748., 738., 804.),
     ),
     (
         DashboardControl::VisionEnabled,
-        Rect::new(844., 738., 1024., 836.),
+        Rect::new(994., 748., 1094., 804.),
     ),
     (
         DashboardControl::OcrBindings,
-        Rect {
-            left: 1040.,
-            top: 752.,
-            right: 1362.,
-            bottom: 824.,
-        },
+        Rect::new(1114., 744., 1362., 808.),
     ),
 ];
 
@@ -595,6 +518,11 @@ pub(super) fn picker_option_rect(index: usize) -> Rect {
 pub(super) fn control_rect(control: DashboardControl) -> Rect {
     use DashboardControl::*;
     match control {
+        DisplayContent(index) => return segment_rect(Rect::new(568., 250., 1362., 306.), 2, index),
+        WristHand(index) => return segment_rect(Rect::new(924., 416., 1362., 472.), 3, index),
+        OscStrategy(index) => return segment_rect(Rect::new(78., 732., 1362., 788.), 3, index),
+        ConfirmDelete => return Rect::new(752., 592., 1032., 656.),
+        CancelDelete => return Rect::new(408., 592., 688., 656.),
         PositionStep(field, direction) => {
             let rect = position_field_rect(field);
             return if direction < 0 {
@@ -638,6 +566,12 @@ pub(super) fn control_rect(control: DashboardControl) -> Rect {
     }
 }
 
+fn segment_rect(rect: Rect, count: usize, index: usize) -> Rect {
+    let width = (rect.right - rect.left - 8. * (count - 1) as f32) / count as f32;
+    let left = rect.left + index as f32 * (width + 8.);
+    Rect::new(left, rect.top, left + width, rect.bottom)
+}
+
 pub(super) fn position_field_rect(field: PositionField) -> Rect {
     let index = match field {
         PositionField::Horizontal => 0,
@@ -663,6 +597,7 @@ pub(super) enum DashboardPage {
 fn control_page(control: DashboardControl) -> Option<DashboardPage> {
     match control {
         DashboardControl::Master
+        | DashboardControl::Capture
         | DashboardControl::DisplayTab
         | DashboardControl::LanguageTab
         | DashboardControl::OscTab => None,
@@ -680,7 +615,7 @@ fn control_page(control: DashboardControl) -> Option<DashboardPage> {
         | DashboardControl::OscOriginal
         | DashboardControl::OscMuteSync
         | DashboardControl::OscMuteToast
-        | DashboardControl::OscStrategy => Some(DashboardPage::Osc),
+        | DashboardControl::OscStrategy(_) => Some(DashboardPage::Osc),
         _ => Some(DashboardPage::Display),
     }
 }
@@ -688,6 +623,7 @@ fn control_page(control: DashboardControl) -> Option<DashboardPage> {
 #[derive(Debug)]
 pub struct DashboardState {
     interactive: bool,
+    capture_available: bool,
     ocr_available: bool,
     vision_available: bool,
     vision_enabled: bool,
@@ -701,12 +637,15 @@ pub struct DashboardState {
     language: DashboardLanguage,
     display_editor: Option<DisplayKind>,
     position: [Vec<DashboardNumberField>; 2],
+    choices: [DashboardChoice; 3],
+    confirmation: Option<(DashboardAction, String)>,
 }
 
 impl DashboardState {
     pub fn new() -> Self {
         Self {
             interactive: true,
+            capture_available: false,
             ocr_available: true,
             vision_available: false,
             vision_enabled: false,
@@ -720,13 +659,21 @@ impl DashboardState {
             language: DashboardLanguage::default(),
             display_editor: None,
             position: [Vec::new(), Vec::new()],
+            choices: std::array::from_fn(|_| DashboardChoice::default()),
+            confirmation: None,
         }
     }
 
     pub fn update_view(&mut self, view: &DashboardViewModel) {
         // The frontend serializes saves, so pending persistence must not block input.
         self.set_interactive(true);
-        self.ocr_available = view.ocr_available;
+        self.capture_available = view.capture.available;
+        self.choices = [
+            view.content.clone(),
+            view.wrist.hand.clone(),
+            view.osc.strategy.clone(),
+        ];
+        self.ocr_available = view.ocr_available && view.ocr.available;
         self.vision_available = view.vision_available;
         self.vision_enabled = view.vision.enabled;
         self.vision_configured = view.vision.configured;
@@ -738,6 +685,7 @@ impl DashboardState {
         }
         if self.language != view.language {
             self.language = view.language.clone();
+            self.confirmation = None;
             self.pressed = None;
             self.hovered = None;
             self.picker = None;
@@ -750,6 +698,12 @@ impl DashboardState {
                 self.hovered = None;
             }
         }
+    }
+
+    pub(super) fn confirmation(&self) -> Option<(&DashboardAction, &str)> {
+        self.confirmation
+            .as_ref()
+            .map(|(action, label)| (action, label.as_str()))
     }
 
     pub(super) fn page(&self) -> DashboardPage {
@@ -793,6 +747,31 @@ impl DashboardState {
     }
 
     fn control_at(&self, x: f32, y: f32) -> Option<DashboardControl> {
+        if self.confirmation.is_some() {
+            return [
+                DashboardControl::ConfirmDelete,
+                DashboardControl::CancelDelete,
+            ]
+            .into_iter()
+            .find(|&control| control_rect(control).contains(x, y));
+        }
+        if self.picker.is_none() && self.display_editor.is_none() {
+            for (choice_index, choice) in self.choices.iter().enumerate() {
+                for index in 0..choice.options.len() {
+                    let control = match choice_index {
+                        0 => DashboardControl::DisplayContent(index),
+                        1 => DashboardControl::WristHand(index),
+                        _ => DashboardControl::OscStrategy(index),
+                    };
+                    if control_page(control) == Some(self.page)
+                        && self.control_enabled(control)
+                        && control_rect(control).contains(x, y)
+                    {
+                        return Some(control);
+                    }
+                }
+            }
+        }
         if self.page == DashboardPage::Display && self.display_editor.is_some() {
             for field in self.position_fields() {
                 for direction in [-1, 1] {
@@ -866,6 +845,9 @@ impl DashboardState {
     }
 
     pub(super) fn control_enabled(&self, control: DashboardControl) -> bool {
+        if control == DashboardControl::Capture && !self.capture_available {
+            return false;
+        }
         if !self.ocr_available
             && matches!(
                 control,
@@ -899,6 +881,9 @@ impl DashboardState {
             return false;
         }
         match control {
+            DashboardControl::DisplayContent(index) => self.choices[0].options.get(index).is_some(),
+            DashboardControl::WristHand(index) => self.choices[1].options.get(index).is_some(),
+            DashboardControl::OscStrategy(index) => self.choices[2].options.get(index).is_some(),
             DashboardControl::PositionStep(field, direction) => self
                 .position_fields()
                 .iter()
@@ -949,6 +934,30 @@ impl DashboardState {
         let control = (released == self.pressed).then_some(released).flatten();
         self.pressed = None;
         match control? {
+            DashboardControl::ConfirmDelete => {
+                self.hovered = None;
+                self.confirmation.take().map(|(action, _)| action)
+            }
+            DashboardControl::CancelDelete => {
+                self.confirmation = None;
+                self.hovered = None;
+                None
+            }
+            DashboardControl::TargetDelete(group, index) => {
+                let label = self.language.targets(group).get(index)?.value.clone();
+                self.confirmation = Some((DashboardAction::DeleteTarget { group, index }, label));
+                self.hovered = None;
+                None
+            }
+            DashboardControl::DisplayContent(index) => Some(DashboardAction::SetDisplayContent(
+                self.choices[0].options.get(index)?.value.clone(),
+            )),
+            DashboardControl::WristHand(index) => Some(DashboardAction::SetWristHand(
+                self.choices[1].options.get(index)?.value.clone(),
+            )),
+            DashboardControl::OscStrategy(index) => Some(DashboardAction::SetOscStrategy(
+                self.choices[2].options.get(index)?.value.clone(),
+            )),
             tab @ (DashboardControl::DisplayTab
             | DashboardControl::LanguageTab
             | DashboardControl::OscTab) => {
@@ -1016,7 +1025,8 @@ impl DashboardState {
                 None
             }
             DashboardControl::PickerOption(index) => {
-                let value = self.picker_choice()?.options.get(index)?.value.clone();
+                let option = self.picker_choice()?.options.get(index)?.clone();
+                let value = option.value;
                 let action = match self.picker? {
                     DashboardControl::RecognitionLanguage => {
                         DashboardAction::SetRecognitionLanguage(value)
@@ -1035,7 +1045,12 @@ impl DashboardState {
                 };
                 self.picker = None;
                 self.hovered = None;
-                Some(action)
+                if matches!(action, DashboardAction::DeleteLanguagePreset(_)) {
+                    self.confirmation = Some((action, option.label));
+                    None
+                } else {
+                    Some(action)
+                }
             }
             control => action_for(control),
         }
@@ -1077,18 +1092,15 @@ fn action_for(control: DashboardControl) -> Option<DashboardAction> {
         DashboardControl::OscOriginal => DashboardAction::ToggleOscOriginal,
         DashboardControl::OscMuteSync => DashboardAction::ToggleOscMuteSync,
         DashboardControl::OscMuteToast => DashboardAction::ToggleOscMuteToast,
-        DashboardControl::OscStrategy => DashboardAction::CycleOscStrategy,
         DashboardControl::Master => DashboardAction::ToggleMaster,
+        DashboardControl::Capture => DashboardAction::ToggleCapture,
         DashboardControl::HeadsetEnabled => DashboardAction::ToggleHeadset,
-        DashboardControl::HeadsetContent => DashboardAction::CycleHeadsetContent,
         DashboardControl::HeadsetWidthDown => DashboardAction::HeadsetWidthDown,
         DashboardControl::HeadsetWidthUp => DashboardAction::HeadsetWidthUp,
         DashboardControl::HeadsetOpacityDown => DashboardAction::HeadsetOpacityDown,
         DashboardControl::HeadsetOpacityUp => DashboardAction::HeadsetOpacityUp,
         DashboardControl::HeadsetPreview => DashboardAction::PreviewHeadset,
         DashboardControl::WristEnabled => DashboardAction::ToggleWrist,
-        DashboardControl::WristHand => DashboardAction::CycleWristHand,
-        DashboardControl::WristContent => DashboardAction::CycleWristContent,
         DashboardControl::WristWidthDown => DashboardAction::WristWidthDown,
         DashboardControl::WristWidthUp => DashboardAction::WristWidthUp,
         DashboardControl::WristOpacityDown => DashboardAction::WristOpacityDown,
@@ -1118,10 +1130,10 @@ mod tests {
             vision_available: true,
             ..DashboardState::default()
         };
-        assert_eq!(click(&mut state, 920., 808.), None);
+        assert_eq!(click(&mut state, 1040., 778.), None);
         state.vision_configured = true;
         assert_eq!(
-            click(&mut state, 920., 808.),
+            click(&mut state, 1040., 778.),
             Some(DashboardAction::ToggleVision)
         );
         assert_eq!(
@@ -1131,7 +1143,7 @@ mod tests {
         state.vision_configured = false;
         state.vision_enabled = true;
         assert_eq!(
-            click(&mut state, 920., 808.),
+            click(&mut state, 1040., 778.),
             Some(DashboardAction::ToggleVision)
         );
         assert_eq!(
@@ -1147,13 +1159,13 @@ mod tests {
             osc_available: false,
             ..DashboardState::default()
         };
-        assert_eq!(click(&mut state, 380., 784.), None);
+        assert_eq!(click(&mut state, 340., 778.), None);
         assert_eq!(click(&mut state, 880., 168.), None);
         assert_eq!(state.page(), DashboardPage::Display);
         state.ocr_available = true;
         state.osc_available = true;
         assert_eq!(
-            click(&mut state, 380., 784.),
+            click(&mut state, 340., 778.),
             Some(DashboardAction::ToggleOcr)
         );
         click(&mut state, 880., 168.);
@@ -1312,11 +1324,18 @@ mod tests {
                 offset: -1
             })
         );
+        assert_eq!(click(&mut state, 1330., 528.), None);
+        // Clicking behind the confirmation must not delete or toggle anything.
+        assert_eq!(click(&mut state, 1330., 528.), None);
+        assert_eq!(click(&mut state, 800., 168.), None);
+        assert_eq!(state.page(), DashboardPage::Language);
+        assert_eq!(click(&mut state, 550., 620.), None);
+        assert_eq!(click(&mut state, 1330., 528.), None);
         assert_eq!(
-            click(&mut state, 1330., 528.),
+            click(&mut state, 900., 620.),
             Some(DashboardAction::DeleteTarget {
                 group: TargetGroup::Speaker,
-                index: 1
+                index: 1,
             })
         );
         click(&mut state, 800., 168.);
@@ -1341,8 +1360,9 @@ mod tests {
             Some(DashboardAction::ApplyLanguagePreset("preset-id".into()))
         );
         click(&mut state, 1250., 800.);
+        assert_eq!(click(&mut state, 100., 360.), None);
         assert_eq!(
-            click(&mut state, 100., 360.),
+            click(&mut state, 900., 620.),
             Some(DashboardAction::DeleteLanguagePreset("preset-id".into()))
         );
         state.language.can_save_preset = true;
@@ -1478,10 +1498,10 @@ mod tests {
     fn headset_step_buttons_have_distinct_actions() {
         let mut state = DashboardState::default();
 
-        state.pointer_down(108.0, 510.0);
-        let decrease = state.pointer_up(108.0, 510.0);
-        state.pointer_down(336.0, 510.0);
-        let increase = state.pointer_up(336.0, 510.0);
+        state.pointer_down(108.0, 550.0);
+        let decrease = state.pointer_up(108.0, 550.0);
+        state.pointer_down(336.0, 550.0);
+        let increase = state.pointer_up(336.0, 550.0);
 
         assert_eq!(decrease, Some(DashboardAction::HeadsetWidthDown));
         assert_eq!(increase, Some(DashboardAction::HeadsetWidthUp));
@@ -1499,18 +1519,51 @@ mod tests {
 
     #[test]
     fn openvr_pointer_origin_is_converted_to_top_left() {
-        assert_eq!(pointer_from_openvr(100.0, 200.0), (100.0, 700.0));
+        for height in [840, 872, DASHBOARD_HEIGHT] {
+            assert_eq!(
+                pointer_from_openvr(100.0, 200.0, height),
+                (100.0, height as f32 - 200.0)
+            );
+        }
     }
 
     #[test]
-    fn wide_dashboard_controls_use_the_expanded_card_area() {
-        let mut state = DashboardState::default();
-
-        state.pointer_down(500.0, 374.0);
-
+    fn segments_emit_direct_values_and_stay_on_their_page() {
+        let mut state = DashboardState {
+            choices: std::array::from_fn(|_| DashboardChoice {
+                value: "Preferred".into(),
+                options: vec![
+                    DashboardOption {
+                        value: "preferred_only".into(),
+                        label: "Preferred".into(),
+                    },
+                    DashboardOption {
+                        value: "all_languages".into(),
+                        label: "All".into(),
+                    },
+                ],
+            }),
+            ..DashboardState::default()
+        };
         assert_eq!(
-            state.pointer_up(500.0, 374.0),
-            Some(DashboardAction::CycleHeadsetContent)
+            click(&mut state, 1200., 278.),
+            Some(DashboardAction::SetDisplayContent("all_languages".into()))
+        );
+        assert_eq!(
+            serde_json::to_value(DashboardAction::SetDisplayContent("all_languages".into()))
+                .unwrap(),
+            serde_json::json!({ "set_display_content": "all_languages" })
+        );
+        state.choices[1].options[1].value = "right".into();
+        assert_eq!(
+            click(&mut state, 1140., 444.),
+            Some(DashboardAction::SetWristHand("right".into()))
+        );
+        click(&mut state, 800., 168.);
+        assert_eq!(click(&mut state, 1200., 278.), None);
+        assert_eq!(
+            click(&mut state, 700., 760.),
+            Some(DashboardAction::SetOscStrategy("all_languages".into()))
         );
     }
 

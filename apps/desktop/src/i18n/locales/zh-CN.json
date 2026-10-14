@@ -650,7 +650,7 @@
       },
       "vrDashboard": {
         "resetPosition": "恢复默认位置与旋转",
-        "displayTab": "显示与 OCR",
+        "displayTab": "显示",
         "languageTab": "语言",
         "oscHint": "请同时在 VRChat 中启用 OSC。端口可在桌面端设置。",
         "title": "VRCS 快捷设置",
@@ -664,13 +664,29 @@
         "width": "宽度",
         "opacity": "不透明度",
         "gesture": "相机框手势",
-        "preview": "切换预览",
+        "preview": "显示预览",
         "bindings": "控制器绑定",
         "saving": "正在保存…",
         "saved": "已保存",
         "connecting": "正在连接 SteamVR",
         "saveFailed": "设置保存失败，请在桌面端重试。",
-        "actionFailed": "SteamVR 操作失败，请检查连接。"
+        "actionFailed": "SteamVR 操作失败，请检查连接。",
+        "contentHint": "同时应用于头显和手腕",
+        "headsetHint": "调整字幕大小、透明度与空间位置",
+        "tools": "视觉工具",
+        "visionUnconfigured": "请先在桌面端配置模型",
+        "ocrUnavailable": "请先在桌面端启用 OCR",
+        "vision": "视觉问答",
+        "hands": {
+          "left": "左手",
+          "right": "右手",
+          "dominant": "主手"
+        },
+        "hidePreview": "关闭预览",
+        "confirmDelete": "确认删除",
+        "deleteHint": "删除后无法撤销。",
+        "positionHint": "左右 / 上下 / 远近 · 单位：米",
+        "rotationHint": "俯仰 / 偏航 / 翻滚 · 单位：度"
       },
       "ocr": {
         "enable": "启用 OCR",

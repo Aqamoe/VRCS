@@ -8,12 +8,18 @@ import { RuntimeWarningDialogs } from "./components/RuntimeNotices";
 import { useAppTheme } from "./useAppTheme";
 import { useAppWorkspace } from "./useAppWorkspace";
 import type { SettingsCategory } from "../settings/settings-types";
+import { useVrDashboardBridge } from "../vr-dashboard/useVrDashboardBridge";
 
 function App() {
   const [page, setPage] = useState<Page>("live");
   const [settingsInitialCategory, setSettingsInitialCategory] = useState<SettingsCategory>("system");
   useAppTheme();
   const workspace = useAppWorkspace({ page, setPage, setSettingsInitialCategory });
+  useVrDashboardBridge(workspace.settings.value, workspace.settings.save, workspace.providers.catalog.profiles, {
+    running: workspace.runtime.health?.capture_requested ?? false,
+    available: workspace.runtime.ready && !workspace.capture.pending && workspace.onboarding.status === "complete",
+    toggle: workspace.capture.toggleCapture,
+  });
 
   useEffect(() => {
     const preventBrowserContextMenu = (event: MouseEvent) => event.preventDefault();

@@ -15,7 +15,7 @@ mod platform {
         center_bounds, crop_projection, pose_within_translation_limit_m, projection_from_openvr,
         EyeCapture, StereoCapture, OCR_MOVEMENT_LIMIT_M,
     };
-    use crate::vr_overlay::renderer::Texture;
+    use crate::vr_overlay::renderer::{BgraTexture, Texture};
     use crate::vr_overlay::transform;
 
     const HEADSET_KEY: &str = "org.vrcs.overlay.headset\0";
@@ -41,6 +41,7 @@ mod platform {
         ocr_result: Option<OverlayHandle>,
         dashboard: Option<OverlayHandle>,
         dashboard_thumbnail: Option<OverlayHandle>,
+        dashboard_height: u32,
         headset_state: SubmittedState,
         wrist_state: SubmittedState,
         ocr_wrist_state: SubmittedState,
@@ -407,6 +408,7 @@ mod platform {
                 ocr_result: None,
                 dashboard: None,
                 dashboard_thumbnail: None,
+                dashboard_height: DASHBOARD_HEIGHT,
                 headset_state: SubmittedState::default(),
                 wrist_state: SubmittedState::default(),
                 ocr_wrist_state: SubmittedState::default(),
@@ -420,27 +422,28 @@ mod platform {
         }
 
         pub fn ensure_dashboard(&mut self) -> Result<(), String> {
-            if self.dashboard.is_none() {
-                let table = unsafe { &*self.raw_overlay };
-                let create = table
-                    .CreateDashboardOverlay
-                    .ok_or("SteamVR dashboard overlays unavailable")?;
-                let mut main = 0;
-                let mut thumbnail = 0;
-                let error = unsafe {
-                    create(
-                        DASHBOARD_KEY.as_ptr().cast_mut().cast(),
-                        DASHBOARD_NAME.as_ptr().cast_mut().cast(),
-                        &mut main,
-                        &mut thumbnail,
-                    )
-                };
-                if error != openvr_sys::EVROverlayError_VROverlayError_None {
-                    return Err(format!("Create dashboard overlay failed with code {error}"));
-                }
-                self.dashboard = Some(OverlayHandle(main));
-                self.dashboard_thumbnail = Some(OverlayHandle(thumbnail));
+            if self.dashboard.is_some() {
+                return Ok(());
             }
+            let table = unsafe { &*self.raw_overlay };
+            let create = table
+                .CreateDashboardOverlay
+                .ok_or("SteamVR dashboard overlays unavailable")?;
+            let mut main = 0;
+            let mut thumbnail = 0;
+            let error = unsafe {
+                create(
+                    DASHBOARD_KEY.as_ptr().cast_mut().cast(),
+                    DASHBOARD_NAME.as_ptr().cast_mut().cast(),
+                    &mut main,
+                    &mut thumbnail,
+                )
+            };
+            if error != openvr_sys::EVROverlayError_VROverlayError_None {
+                return Err(format!("Create dashboard overlay failed with code {error}"));
+            }
+            self.dashboard = Some(OverlayHandle(main));
+            self.dashboard_thumbnail = Some(OverlayHandle(thumbnail));
 
             let handle = self.dashboard.expect("dashboard overlay exists");
             self.overlay
@@ -456,8 +459,17 @@ mod platform {
                     "Configure dashboard input failed with code {error}"
                 ));
             }
+            self.configure_dashboard_pointer(handle, self.dashboard_height)
+        }
+
+        fn configure_dashboard_pointer(
+            &mut self,
+            handle: OverlayHandle,
+            height: u32,
+        ) -> Result<(), String> {
+            let table = unsafe { &*self.raw_overlay };
             let mut scale = openvr_sys::HmdVector2_t {
-                v: [DASHBOARD_WIDTH as f32, DASHBOARD_HEIGHT as f32],
+                v: [DASHBOARD_WIDTH as f32, height as f32],
             };
             let error = unsafe {
                 table
@@ -471,6 +483,7 @@ mod platform {
                     "Configure dashboard pointer failed with code {error}"
                 ));
             }
+            self.dashboard_height = height;
             Ok(())
         }
 
@@ -503,18 +516,18 @@ mod platform {
                 let pointer = match event.eventType as i32 {
                     openvr_sys::EVREventType_VREvent_MouseMove => {
                         let mouse = unsafe { event.data.mouse };
-                        let (x, y) = pointer_from_openvr(mouse.x, mouse.y);
+                        let (x, y) = pointer_from_openvr(mouse.x, mouse.y, self.dashboard_height);
                         Some(DashboardPointerEvent::Move { x, y })
                     }
                     openvr_sys::EVREventType_VREvent_MouseButtonDown => {
                         let mouse = unsafe { event.data.mouse };
-                        let (x, y) = pointer_from_openvr(mouse.x, mouse.y);
+                        let (x, y) = pointer_from_openvr(mouse.x, mouse.y, self.dashboard_height);
                         (mouse.button & openvr_sys::EVRMouseButton_VRMouseButton_Left as u32 != 0)
                             .then_some(DashboardPointerEvent::Down { x, y })
                     }
                     openvr_sys::EVREventType_VREvent_MouseButtonUp => {
                         let mouse = unsafe { event.data.mouse };
-                        let (x, y) = pointer_from_openvr(mouse.x, mouse.y);
+                        let (x, y) = pointer_from_openvr(mouse.x, mouse.y, self.dashboard_height);
                         (mouse.button & openvr_sys::EVRMouseButton_VRMouseButton_Left as u32 != 0)
                             .then_some(DashboardPointerEvent::Up { x, y })
                     }
@@ -852,31 +865,53 @@ mod platform {
         }
 
         pub fn upload(&mut self, kind: OverlayKind, texture: &Texture) -> Result<(), String> {
+            if kind != OverlayKind::DashboardThumbnail
+                && self.texture_device.is_some()
+                && !self.state(kind).d3d11_disabled
+            {
+                return self.upload_bgra(kind, BgraTexture::from_rgba(texture));
+            }
             let handle = self
                 .handle(kind)
                 .ok_or_else(|| "Overlay is not created".to_string())?;
             // SteamVR copies dashboard icons into its UI; provide RGBA bytes directly.
-            if kind == OverlayKind::DashboardThumbnail {
-                return self.upload_raw(handle, texture);
-            }
-            if self.texture_device.is_some() && !self.state(kind).d3d11_disabled {
-                if let Err(error) = self.upload_d3d11(kind, handle, texture) {
+            self.upload_raw(handle, texture)
+        }
+
+        pub fn upload_bgra(
+            &mut self,
+            kind: OverlayKind,
+            texture: BgraTexture,
+        ) -> Result<(), String> {
+            let handle = self
+                .handle(kind)
+                .ok_or_else(|| "Overlay is not created".to_string())?;
+            let height = texture.height;
+            if kind != OverlayKind::DashboardThumbnail
+                && self.texture_device.is_some()
+                && !self.state(kind).d3d11_disabled
+            {
+                if let Err(error) = self.upload_d3d11(kind, handle, &texture) {
                     tracing::warn!(error, "D3D11 overlay upload failed; using raw uploads");
-                    self.upload_raw(handle, texture)?;
+                    self.upload_raw(handle, &texture.into_rgba())?;
                     let state = self.state_mut(kind);
                     state.texture = None;
                     state.d3d11_disabled = true;
                 }
-                return Ok(());
+            } else {
+                self.upload_raw(handle, &texture.into_rgba())?;
             }
-            self.upload_raw(handle, texture)
+            if kind == OverlayKind::Dashboard && height != self.dashboard_height {
+                self.configure_dashboard_pointer(handle, height)?;
+            }
+            Ok(())
         }
 
         fn upload_d3d11(
             &mut self,
             kind: OverlayKind,
             handle: OverlayHandle,
-            source: &Texture,
+            source: &BgraTexture,
         ) -> Result<(), String> {
             let device = self.texture_device.as_ref().expect("D3D11 device exists");
             if let Some(texture) = self
@@ -1361,7 +1396,7 @@ mod platform {
     use vrcs_core::{VrOverlayHeadsetConfig, VrOverlayWristConfig};
 
     use super::{ControllerBinding, OverlayKind};
-    use crate::vr_overlay::renderer::Texture;
+    use crate::vr_overlay::renderer::{BgraTexture, Texture};
 
     pub struct OpenVrBackend;
 
@@ -1389,6 +1424,9 @@ mod platform {
             Err("VR Overlay is only supported on Windows".into())
         }
         pub fn upload(&mut self, _: OverlayKind, _: &Texture) -> Result<(), String> {
+            Err("VR Overlay is only supported on Windows".into())
+        }
+        pub fn upload_bgra(&mut self, _: OverlayKind, _: BgraTexture) -> Result<(), String> {
             Err("VR Overlay is only supported on Windows".into())
         }
         pub fn set_opacity(&mut self, _: OverlayKind, _: f32) -> Result<(), String> {

@@ -650,7 +650,7 @@
       },
       "vrDashboard": {
         "resetPosition": "位置と回転をリセット",
-        "displayTab": "表示と OCR",
+        "displayTab": "表示",
         "languageTab": "言語",
         "oscHint": "VRChat 側でも OSC を有効にしてください。ポートはデスクトップで設定できます。",
         "title": "VRCS クイック設定",
@@ -663,14 +663,30 @@
         "hand": "コントローラー",
         "width": "幅",
         "opacity": "不透明度",
-        "gesture": "カメラフレームジェスチャー",
-        "preview": "プレビュー切替",
+        "gesture": "枠選択ジェスチャー",
+        "preview": "プレビューを表示",
         "bindings": "コントローラー割り当て",
         "saving": "保存中…",
         "saved": "保存済み",
         "connecting": "SteamVR に接続中",
         "saveFailed": "設定を保存できませんでした。デスクトップアプリで再試行してください。",
-        "actionFailed": "SteamVR の操作に失敗しました。接続を確認してください。"
+        "actionFailed": "SteamVR の操作に失敗しました。接続を確認してください。",
+        "contentHint": "ヘッドセットと手首に共通",
+        "headsetHint": "字幕のサイズ・不透明度・位置を調整",
+        "tools": "視覚ツール",
+        "visionUnconfigured": "デスクトップでモデルを設定",
+        "ocrUnavailable": "デスクトップで OCR を有効化",
+        "vision": "視覚質問応答",
+        "hands": {
+          "left": "左手",
+          "right": "右手",
+          "dominant": "利き手"
+        },
+        "hidePreview": "プレビューを閉じる",
+        "confirmDelete": "削除の確認",
+        "deleteHint": "削除すると元に戻せません。",
+        "positionHint": "左右 / 上下 / 奥行き（m）",
+        "rotationHint": "ピッチ / ヨー / ロール（度）"
       },
       "ocr": {
         "enable": "OCR を有効にする",

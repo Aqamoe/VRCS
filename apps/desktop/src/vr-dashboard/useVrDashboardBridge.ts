@@ -27,11 +27,15 @@ export function useVrDashboardBridge(
   settings: Settings | null,
   save: (settings: Settings) => Promise<Settings>,
   profiles: ApiProfileView[],
+  capture: { running: boolean; available: boolean; toggle: () => Promise<boolean> },
 ): void {
   const { t, i18n } = useTranslation();
   const [status, setStatus] = useState<VrOverlayStatus | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const captureBusyRef = useRef(false);
+  const captureRef = useRef(capture);
   const settingsRef = useRef(settings);
   const statusRef = useRef(status);
   const saveRef = useRef(save);
@@ -42,6 +46,7 @@ export function useVrDashboardBridge(
   statusRef.current = status;
   saveRef.current = save;
   profilesRef.current = profiles;
+  captureRef.current = capture;
 
   useEffect(() => {
     let disposed = false;
@@ -65,6 +70,19 @@ export function useVrDashboardBridge(
     const handleAction = async (action: VrDashboardAction) => {
       const current = settingsRef.current;
       if (!current?.features.vr_overlay) return;
+      if (action === "toggle_capture") {
+        if (!captureRef.current.available || captureBusyRef.current) return;
+        captureBusyRef.current = true;
+        setCaptureBusy(true);
+        setSaveError(null);
+        try {
+          if (!await captureRef.current.toggle()) setSaveError(t("settings.vrDashboard.actionFailed"));
+        } finally {
+          captureBusyRef.current = false;
+          setCaptureBusy(false);
+        }
+        return;
+      }
       if (action === "open_ocr_bindings" && !current.features.ocr && !current.features.visual_question_answering) return;
       if (action === "preview_headset" || action === "preview_wrist") {
         const kind = action === "preview_headset" ? "headset" : "wrist";
@@ -76,7 +94,6 @@ export function useVrDashboardBridge(
         await openVrOcrBindings();
         return;
       }
-
 
       if (typeof action === "object" && "save_language_preset" in action) {
         action = { save_language_preset: t("settings.translation.presetDefaultName", { count: current.language_presets.length + 1 }) };
@@ -144,10 +161,12 @@ export function useVrDashboardBridge(
         title: t("settings.vrDashboard.title"),
         subtitle: t("settings.vrDashboard.subtitle"),
         master: t("settings.vrDashboard.master"),
+        capture_start: t("capture.start"),
+        capture_stop: t("capture.stop"),
         headset: t("settings.vrDashboard.headset"),
         wrist: t("settings.vrDashboard.wrist"),
         ocr: t("settings.vrDashboard.ocr"),
-        vision: t("settings.vision.title"),
+        vision: t("settings.vrDashboard.vision"),
         content: t("settings.vrOverlay.translationDisplay"),
         hand: t("settings.vrDashboard.hand"),
         width: t("settings.vrDashboard.width"),
@@ -180,26 +199,41 @@ export function useVrDashboardBridge(
         osc_strategy: t("settings.osc.translationStrategy"),
         osc_hint: t("settings.vrDashboard.oscHint"),
         close: t("common.close"),
+        content_hint: t("settings.vrDashboard.contentHint"),
+        headset_hint: t("settings.vrDashboard.headsetHint"),
+        tools: t("settings.vrDashboard.tools"),
+        vision_unconfigured: t("settings.vrDashboard.visionUnconfigured"),
+        ocr_unavailable: t("settings.vrDashboard.ocrUnavailable"),
+        hide_preview: t("settings.vrDashboard.hidePreview"),
+        confirm_delete: t("settings.vrDashboard.confirmDelete"),
+        delete_hint: t("settings.vrDashboard.deleteHint"),
+        cancel: t("common.cancel"),
+        position_hint: t("settings.vrDashboard.positionHint"),
+        rotation_hint: t("settings.vrDashboard.rotationHint"),
       },
       enabled: overlay.enabled,
-      ocr_available: settings.features.ocr && settings.ocr.master_enabled,
+      capture: { running: capture.running, available: capture.available && !captureBusy },
+      content: {
+        value: t(overlay.translation_display === "all_languages" ? "settings.vrOverlay.translationDisplays.allLanguages" : "settings.vrOverlay.translationDisplays.preferredOnly"),
+        options: ["preferred_only", "all_languages"].map((value) => ({ value, label: t(`settings.vrOverlay.translationDisplays.${value === "all_languages" ? "allLanguages" : "preferredOnly"}`) })),
+      },
+      ocr_available: settings.features.ocr,
       vision_available: settings.features.visual_question_answering,
       osc_available: settings.features.osc_chatbox,
       headset: {
         enabled: overlay.headset.enabled,
-        content: t(overlay.translation_display === "all_languages"
-          ? "settings.vrOverlay.translationDisplays.allLanguages"
-          : "settings.vrOverlay.translationDisplays.preferredOnly"),
+        preview_visible: status?.headset.sample_visible ?? false,
         width: `${overlay.headset.width_m.toFixed(2)} m`,
         opacity: `${Math.round(overlay.headset.opacity * 100)}%`,
         position: positionFields("headset"),
       },
       wrist: {
         enabled: overlay.wrist.enabled,
-        hand: t(`settings.vrOverlay.hands.${overlay.wrist.hand}`),
-        content: t(overlay.translation_display === "all_languages"
-          ? "settings.vrOverlay.translationDisplays.allLanguages"
-          : "settings.vrOverlay.translationDisplays.preferredOnly"),
+        preview_visible: status?.wrist.sample_visible ?? false,
+        hand: {
+          value: t(`settings.vrDashboard.hands.${overlay.wrist.hand}`),
+          options: ["left", "right", "dominant"].map((value) => ({ value, label: t(`settings.vrDashboard.hands.${value}`) })),
+        },
         width: `${overlay.wrist.width_m.toFixed(2)} m`,
         opacity: `${Math.round(overlay.wrist.opacity * 100)}%`,
         position: positionFields("wrist"),
@@ -207,6 +241,7 @@ export function useVrDashboardBridge(
       ocr: {
         enabled: settings.ocr.master_enabled && settings.ocr.enabled,
         backend: t(`settings.vrOcr.backends.${settings.ocr.backend}`),
+        available: settings.ocr.master_enabled,
         gesture: settings.ocr.hand_gesture_enabled,
       },
       vision: {
@@ -235,7 +270,10 @@ export function useVrDashboardBridge(
         original: settings.osc.preserve_original_text,
         mute_sync: settings.osc.mute_sync_enabled,
         mute_toast: settings.osc.mute_status_toast_enabled,
-        strategy: t(`settings.osc.translationStrategies.${strategyKeys[settings.osc.translation_strategy]}`),
+        strategy: {
+          value: t(`settings.osc.translationStrategies.${strategyKeys[settings.osc.translation_strategy]}`),
+          options: (Object.keys(strategyKeys) as Array<keyof typeof strategyKeys>).map((value) => ({ value, label: t(`settings.osc.translationStrategies.${strategyKeys[value]}`) })),
+        },
         endpoint: `127.0.0.1:${settings.osc.port}`,
       },
       status: status
@@ -245,5 +283,5 @@ export function useVrDashboardBridge(
       error: saveError,
     };
     void updateVrDashboardView(model);
-  }, [i18n.resolvedLanguage, profiles, saveError, saveState, settings, status, t]);
+  }, [capture.running, capture.available, captureBusy, i18n.resolvedLanguage, profiles, saveError, saveState, settings, status, t]);
 }

@@ -1,7 +1,7 @@
 use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 
-use super::renderer::Texture;
+use super::renderer::{BgraTexture, Texture};
 
 const D3D_DRIVER_TYPE_UNKNOWN: u32 = 0;
 const D3D11_SDK_VERSION: u32 = 7;
@@ -330,7 +330,7 @@ impl Device {
         })
     }
 
-    pub fn create_shared_texture(&self, source: &Texture) -> Result<OverlayTexture, String> {
+    pub fn create_shared_texture(&self, source: &BgraTexture) -> Result<OverlayTexture, String> {
         validate(source)?;
         let texture = self.create_texture_resource(source, D3D11_RESOURCE_MISC_SHARED)?;
         let resource = query_interface(texture.0, &IID_IDXGI_RESOURCE)?;
@@ -356,14 +356,13 @@ impl Device {
     pub fn copy_texture(
         &self,
         destination: &OverlayTexture,
-        source: &Texture,
+        source: &BgraTexture,
     ) -> Result<(), String> {
         validate(source)?;
         if !destination.matches_dimensions(source) {
             return Err("Overlay texture dimensions changed unexpectedly".into());
         }
 
-        let pixels = rgba_to_bgra(&source.pixels);
         let update: UpdateSubresource =
             unsafe { std::mem::transmute(method(self.context.0, UPDATE_SUBRESOURCE_INDEX)) };
         // Update the existing shared resource without allocating a temporary GPU texture.
@@ -374,7 +373,7 @@ impl Device {
                 destination.texture.0,
                 0,
                 null(),
-                pixels.as_ptr().cast(),
+                source.pixels.as_ptr().cast(),
                 source.width * 4,
                 0,
             )
@@ -383,9 +382,12 @@ impl Device {
         Ok(())
     }
 
-    fn create_texture_resource(&self, source: &Texture, misc_flags: u32) -> Result<ComPtr, String> {
+    fn create_texture_resource(
+        &self,
+        source: &BgraTexture,
+        misc_flags: u32,
+    ) -> Result<ComPtr, String> {
         let pitch = source.width * 4;
-        let pixels = rgba_to_bgra(&source.pixels);
         let desc = Texture2dDesc {
             width: source.width,
             height: source.height,
@@ -402,7 +404,7 @@ impl Device {
             misc_flags,
         };
         let initial = SubresourceData {
-            system_memory: pixels.as_ptr().cast(),
+            system_memory: source.pixels.as_ptr().cast(),
             system_memory_pitch: pitch,
             system_memory_slice_pitch: pitch * source.height,
         };
@@ -427,7 +429,7 @@ impl Device {
 }
 
 impl OverlayTexture {
-    pub fn matches_dimensions(&self, source: &Texture) -> bool {
+    pub fn matches_dimensions(&self, source: &BgraTexture) -> bool {
         self.width == source.width && self.height == source.height
     }
 
@@ -482,15 +484,7 @@ fn query_interface(object: *mut c_void, iid: &Guid) -> Result<ComPtr, String> {
     Ok(ComPtr(interface))
 }
 
-fn rgba_to_bgra(source: &[u8]) -> Vec<u8> {
-    let mut pixels = source.to_vec();
-    for pixel in pixels.as_chunks_mut::<4>().0 {
-        pixel.swap(0, 2);
-    }
-    pixels
-}
-
-fn validate(texture: &Texture) -> Result<(), String> {
+fn validate(texture: &BgraTexture) -> Result<(), String> {
     let expected = texture
         .width
         .checked_mul(texture.height)
@@ -534,7 +528,9 @@ mod tests {
                 150, 255, 160, 170, 180, 255,
             ],
         };
-        let texture = device.create_shared_texture(&source).unwrap();
+        let texture = device
+            .create_shared_texture(&BgraTexture::from_rgba(&source))
+            .unwrap();
         type CreateView = unsafe extern "system" fn(
             *mut c_void,
             *mut c_void,
@@ -563,7 +559,9 @@ mod tests {
         let shared_handle = texture.shared_handle();
         for value in [20, 180, 60] {
             source.pixels = [value, 90, 240, 255].repeat(6);
-            device.copy_texture(&texture, &source).unwrap();
+            device
+                .copy_texture(&texture, &BgraTexture::from_rgba(&source))
+                .unwrap();
             let (captured, _, _) = unsafe {
                 device
                     .read_shader_resource_region(view.0, |width, height| Ok([0, 0, width, height]))
@@ -575,7 +573,7 @@ mod tests {
         assert!(device
             .copy_texture(
                 &texture,
-                &Texture {
+                &BgraTexture {
                     width: 1,
                     height: 1,
                     pixels: vec![0; 4],
@@ -587,15 +585,34 @@ mod tests {
     #[test]
     fn dashboard_thumbnail_keeps_desktop_colors_after_bgra_upload_conversion() {
         let source = crate::vr_overlay::dashboard_renderer::render_thumbnail("VRCS").unwrap();
-        let uploaded = rgba_to_bgra(&source.pixels);
-        assert_eq!(&uploaded[..4], &[0xff, 0xfb, 0xf0, 255]);
+        let uploaded = BgraTexture::from_rgba(&source);
+        assert_eq!(&uploaded.pixels[..4], &[0xff, 0xfb, 0xf0, 255]);
     }
 
     #[test]
     fn converts_rgba_pixels_to_bgra_without_changing_alpha() {
+        let source = Texture {
+            width: 2,
+            height: 1,
+            pixels: vec![10, 20, 30, 40, 50, 60, 70, 80],
+        };
         assert_eq!(
-            rgba_to_bgra(&[10, 20, 30, 40, 50, 60, 70, 80]),
+            BgraTexture::from_rgba(&source).pixels,
             vec![30, 20, 10, 40, 70, 60, 50, 80]
         );
+    }
+
+    #[test]
+    fn raw_fallback_restores_rgba_in_the_existing_buffer() {
+        let bgra = BgraTexture {
+            width: 2,
+            height: 1,
+            pixels: vec![30, 20, 10, 40, 70, 60, 50, 80],
+        };
+        let buffer = bgra.pixels.as_ptr();
+        let rgba = bgra.into_rgba();
+        assert_eq!(rgba.pixels, [10, 20, 30, 40, 50, 60, 70, 80]);
+        assert_eq!((rgba.width, rgba.height), (2, 1));
+        assert_eq!(rgba.pixels.as_ptr(), buffer);
     }
 }

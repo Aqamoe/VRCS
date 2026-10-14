@@ -23,6 +23,7 @@ import { patchVision, supportsVision } from "../settings/vision-settings.ts";
 
 export type VrDashboardAction =
   | "toggle_master"
+  | "toggle_capture"
   | "toggle_headset"
   | "cycle_headset_content"
   | "headset_width_down"
@@ -47,6 +48,9 @@ export type VrDashboardAction =
   | "toggle_osc_mute_sync"
   | "toggle_osc_mute_toast"
   | "cycle_osc_strategy"
+  | { set_display_content: string }
+  | { set_wrist_hand: string }
+  | { set_osc_strategy: string }
   | { set_recognition_language: string }
   | { set_translation_mode: string }
   | { set_target_language: { group: "speaker" | "microphone"; index: number; value: string } }
@@ -98,6 +102,21 @@ export function applyVrDashboardAction(settings: Settings, action: VrDashboardAc
     if (action === "toggle_vision" && !settings.features.visual_question_answering) return settings;
   }
   if (typeof action === "object") {
+    if ("set_display_content" in action) {
+      const value = action.set_display_content as VrOverlayTranslationDisplay;
+      if (!TRANSLATION_DISPLAYS.includes(value) || settings.vr_overlay.translation_display === value) return settings;
+      return patchVrOverlay(settings, { translation_display: value });
+    }
+    if ("set_wrist_hand" in action) {
+      const value = action.set_wrist_hand as VrOverlayHand;
+      if (!HANDS.includes(value) || settings.vr_overlay.wrist.hand === value) return settings;
+      return patchVrOverlayWrist(settings, { hand: value });
+    }
+    if ("set_osc_strategy" in action) {
+      const value = action.set_osc_strategy as Settings["osc"]["translation_strategy"];
+      if (!settings.features.osc_chatbox || !OSC_STRATEGIES.includes(value) || settings.osc.translation_strategy === value) return settings;
+      return { ...settings, osc: { ...settings.osc, translation_strategy: value } };
+    }
     if ("adjust_display_position" in action) {
       const { kind, field, direction } = action.adjust_display_position;
       return adjustVrOverlayPosition(settings, kind, field, direction);
@@ -222,6 +241,7 @@ export function applyVrDashboardAction(settings: Settings, action: VrDashboardAc
     case "toggle_ocr_gesture":
       return patchOcr(settings, { hand_gesture_enabled: !settings.ocr.hand_gesture_enabled });
     case "preview_headset":
+    case "toggle_capture":
     case "preview_wrist":
     case "open_ocr_bindings":
       return settings;

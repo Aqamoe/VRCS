@@ -650,7 +650,7 @@
       },
       "vrDashboard": {
         "resetPosition": "Reset position and rotation",
-        "displayTab": "Display & OCR",
+        "displayTab": "Display",
         "languageTab": "Languages",
         "oscHint": "Enable OSC in VRChat as well. Set the port in the desktop app.",
         "title": "VRCS Quick Settings",
@@ -663,14 +663,30 @@
         "hand": "Controller",
         "width": "Width",
         "opacity": "Opacity",
-        "gesture": "Camera-frame gesture",
-        "preview": "Toggle preview",
+        "gesture": "Frame gesture",
+        "preview": "Show preview",
         "bindings": "Controller bindings",
         "saving": "Saving…",
         "saved": "Saved",
         "connecting": "Connecting to SteamVR",
         "saveFailed": "Could not save settings. Try again in the desktop app.",
-        "actionFailed": "The SteamVR action failed. Check the connection."
+        "actionFailed": "The SteamVR action failed. Check the connection.",
+        "contentHint": "Applies to headset and wrist",
+        "headsetHint": "Adjust subtitle size, opacity and position",
+        "tools": "Visual tools",
+        "visionUnconfigured": "Set up a model on desktop",
+        "ocrUnavailable": "Enable OCR on desktop first",
+        "vision": "Visual Q&A",
+        "hands": {
+          "left": "Left",
+          "right": "Right",
+          "dominant": "Dominant"
+        },
+        "hidePreview": "Hide preview",
+        "confirmDelete": "Confirm deletion",
+        "deleteHint": "This cannot be undone.",
+        "positionHint": "Left/right · Up/down · Depth (m)",
+        "rotationHint": "Pitch · Yaw · Roll (degrees)"
       },
       "ocr": {
         "enable": "Enable OCR",

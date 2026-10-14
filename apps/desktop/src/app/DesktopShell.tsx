@@ -17,7 +17,6 @@ import { LiveView, TopStatus } from "../subtitles/components/SubtitleViews";
 import { UpdateNotice } from "../updates/UpdateNotice";
 import { SelectionToolOverlays } from "./SelectionToolOverlays";
 import type { AppWorkspace } from "./useAppWorkspace";
-import { useVrDashboardBridge } from "../vr-dashboard/useVrDashboardBridge";
 import { openDesktopVision } from "../vision/api";
 
 let learningWorkspaceModule: Promise<typeof import("../learning/components/LearningWorkspace")> | undefined;
@@ -99,7 +98,6 @@ export function DesktopShell({
     void openDesktopVision().catch(() => setVisionOpenError(true));
   };
   const chatboxButtonRef = useRef<HTMLButtonElement | null>(null);
-  useVrDashboardBridge(settings.value, settings.save, providers.catalog.profiles);
 
   useEffect(() => {
     const preloadDeferredPages = () => {

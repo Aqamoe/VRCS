@@ -10,6 +10,38 @@ pub struct Texture {
     pub height: u32,
 }
 
+/// Native BGRA8 upload buffer, separate from RGBA capture and recognition images.
+pub struct BgraTexture {
+    pub pixels: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl BgraTexture {
+    pub fn from_rgba(source: &Texture) -> Self {
+        let mut pixels = source.pixels.clone();
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+        }
+        Self {
+            pixels,
+            width: source.width,
+            height: source.height,
+        }
+    }
+
+    pub fn into_rgba(mut self) -> Texture {
+        for pixel in self.pixels.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+        }
+        Texture {
+            pixels: self.pixels,
+            width: self.width,
+            height: self.height,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Layout {
     Headset { lines_per_language: u32 },

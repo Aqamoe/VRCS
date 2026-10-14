@@ -767,7 +767,7 @@ fn update_dashboard(
     }
     if state.dashboard_dirty {
         match dashboard_renderer::render(view, &state.dashboard, &mut state.dashboard_cache)
-            .and_then(|texture| backend.upload(OverlayKind::Dashboard, &texture))
+            .and_then(|texture| backend.upload_bgra(OverlayKind::Dashboard, texture))
         {
             Ok(()) => state.dashboard_dirty = false,
             Err(error) => {
