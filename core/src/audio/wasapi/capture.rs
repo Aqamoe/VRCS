@@ -35,9 +35,13 @@ fn is_out_of_memory(error: &::wasapi::WasapiError) -> bool {
     )
 }
 
-fn map_initialize_error(error: ::wasapi::WasapiError) -> AudioError {
+fn map_initialize_error(error: ::wasapi::WasapiError, follows_default: bool) -> AudioError {
     if is_out_of_memory(&error) {
-        AudioError::with_code("audio.unavailable", error.to_string())
+        if follows_default {
+            AudioError::retryable_with_code("audio.resource_exhausted", error.to_string())
+        } else {
+            AudioError::with_code("audio.resource_exhausted", error.to_string())
+        }
     } else {
         err(error)
     }
@@ -99,6 +103,7 @@ fn initialize_shared_client(
     wave_format: &WaveFormat,
     autoconvert: bool,
     raw_fallback: bool,
+    follows_default: bool,
 ) -> Result<(AudioClient, CaptureTiming), AudioError> {
     let plans = if raw_fallback {
         &INITIALIZE_PLANS[..]
@@ -118,7 +123,7 @@ fn initialize_shared_client(
             {
                 tracing::warn!(detail = %error, "WASAPI RAW fallback is unavailable");
                 let error = previous_oom.expect("RAW fallback follows an out-of-memory error");
-                return Err(map_initialize_error(error).at_stage(plan.stage()));
+                return Err(map_initialize_error(error, follows_default).at_stage(plan.stage()));
             }
         }
         let mode = plan.stream_mode(autoconvert);
@@ -136,7 +141,7 @@ fn initialize_shared_client(
                 previous_oom = Some(error);
             }
             Err(error) => {
-                return Err(map_initialize_error(error).at_stage(plan.stage()));
+                return Err(map_initialize_error(error, follows_default).at_stage(plan.stage()));
             }
         }
     }
@@ -145,6 +150,7 @@ fn initialize_shared_client(
 
 fn initialize_loopback_client(
     device: &Device,
+    follows_default: bool,
 ) -> Result<(AudioClient, NativeFormat, CaptureTiming), AudioError> {
     let client = device
         .get_iaudioclient()
@@ -163,12 +169,14 @@ fn initialize_loopback_client(
         &wave_format,
         false,
         true,
+        follows_default,
     )?;
     Ok((client, native, timing))
 }
 
 fn initialize_capture_mix_format(
     device: &Device,
+    follows_default: bool,
 ) -> Result<(AudioClient, NativeFormat, CaptureTiming), AudioError> {
     let client = device.get_iaudioclient().map_err(err)?;
     let mix_format = client.get_mixformat().map_err(err)?;
@@ -183,6 +191,7 @@ fn initialize_capture_mix_format(
         &wave_format,
         false,
         true,
+        follows_default,
     )?;
     Ok((client, native, timing))
 }
@@ -190,8 +199,9 @@ fn initialize_capture_mix_format(
 fn initialize_capture_client(
     device: &Device,
     output_rate: u32,
+    follows_default: bool,
 ) -> Result<(AudioClient, NativeFormat, CaptureTiming), AudioError> {
-    match initialize_capture_mix_format(device) {
+    match initialize_capture_mix_format(device, follows_default) {
         Ok(initialized) => Ok(initialized),
         Err(error) if error.code() == "audio.unsupported_format" => {
             tracing::warn!(
@@ -207,6 +217,7 @@ fn initialize_capture_client(
                 &wave_format,
                 true,
                 true,
+                follows_default,
             )?;
             Ok((
                 client,
@@ -290,6 +301,7 @@ fn open_stream(
                 &wave_format,
                 false,
                 false,
+                false,
             )
             .map_err(|error| error.with_default_code("audio.process_loopback_unavailable"))?;
             (client, device, native, timing, "process", endpoint_id, None)
@@ -302,6 +314,7 @@ fn open_stream(
                 DeviceDirection::Render => Direction::Render,
                 DeviceDirection::Capture => Direction::Capture,
             };
+            let follows_default = wasapi_id.is_none();
             let device = resolve_device(com, wasapi_id.as_deref(), &wasapi_direction)?;
             let endpoint_id = device.get_id().map_err(err)?;
             let info = endpoint_info(
@@ -309,7 +322,7 @@ fn open_stream(
                 wasapi_id.is_none(),
                 *direction == DeviceDirection::Render,
             )?;
-            let selection = match (wasapi_id.is_none(), direction) {
+            let selection = match (follows_default, direction) {
                 (true, DeviceDirection::Render) => "default-render",
                 (true, DeviceDirection::Capture) => "default-capture",
                 (false, DeviceDirection::Render) => "explicit-render",
@@ -322,10 +335,12 @@ fn open_stream(
                 "initializing WASAPI capture"
             );
             let (client, native, timing) = match direction {
-                DeviceDirection::Render => initialize_loopback_client(&device)?,
-                DeviceDirection::Capture => initialize_capture_client(&device, output_rate)?,
+                DeviceDirection::Render => initialize_loopback_client(&device, follows_default)?,
+                DeviceDirection::Capture => {
+                    initialize_capture_client(&device, output_rate, follows_default)?
+                }
             };
-            let default_direction = wasapi_id.is_none().then_some(wasapi_direction);
+            let default_direction = follows_default.then_some(wasapi_direction);
             (
                 client,
                 info,
@@ -693,13 +708,25 @@ mod tests {
     }
 
     #[test]
-    fn out_of_memory_does_not_repeat_identical_startup() {
+    fn out_of_memory_on_default_endpoint_is_retryable() {
         let windows_error = windows::core::Error::from_hresult(windows::core::HRESULT::from_win32(
             windows::Win32::Foundation::ERROR_OUTOFMEMORY.0,
         ));
-        let error = map_initialize_error(::wasapi::WasapiError::Windows(windows_error));
+        let error = map_initialize_error(::wasapi::WasapiError::Windows(windows_error), true);
+
+        assert!(error.is_retryable());
+        assert_eq!(error.code(), "audio.resource_exhausted");
+    }
+
+    #[test]
+    fn out_of_memory_on_explicit_endpoint_is_not_retryable() {
+        let windows_error = windows::core::Error::from_hresult(windows::core::HRESULT::from_win32(
+            windows::Win32::Foundation::ERROR_OUTOFMEMORY.0,
+        ));
+        let error = map_initialize_error(::wasapi::WasapiError::Windows(windows_error), false);
 
         assert!(!error.is_retryable());
+        assert_eq!(error.code(), "audio.resource_exhausted");
     }
 
     #[test]

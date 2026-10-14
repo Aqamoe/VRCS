@@ -24,6 +24,15 @@ const START_RETRY_DELAYS: [std::time::Duration; START_ATTEMPTS - 1] = [
     std::time::Duration::from_millis(150),
     std::time::Duration::from_millis(400),
 ];
+const RESOURCE_EXHAUSTED_START_ATTEMPTS: usize = 6;
+const RESOURCE_EXHAUSTED_RETRY_DELAYS: [std::time::Duration;
+    RESOURCE_EXHAUSTED_START_ATTEMPTS - 1] = [
+    std::time::Duration::from_millis(150),
+    std::time::Duration::from_millis(400),
+    std::time::Duration::from_secs(2),
+    std::time::Duration::from_secs(5),
+    std::time::Duration::from_secs(10),
+];
 
 #[derive(Debug, Clone)]
 pub struct AudioError {
@@ -284,11 +293,16 @@ fn start_with_retry<T>(
     source: CaptureSource,
     mut operation: impl FnMut() -> Result<T, AudioError>,
 ) -> Result<T, AudioError> {
-    for attempt in 1..=START_ATTEMPTS {
+    let mut max_attempts = START_ATTEMPTS;
+    for attempt in 1..=RESOURCE_EXHAUSTED_START_ATTEMPTS {
         match operation() {
             Ok(value) => return Ok(value),
             Err(error) => {
-                let retrying = error.is_retryable() && attempt < START_ATTEMPTS;
+                let resource_exhausted = error.code() == "audio.resource_exhausted";
+                if resource_exhausted {
+                    max_attempts = RESOURCE_EXHAUSTED_START_ATTEMPTS;
+                }
+                let retrying = error.is_retryable() && attempt < max_attempts;
                 tracing::warn!(
                     ?source,
                     attempt,
@@ -300,11 +314,15 @@ fn start_with_retry<T>(
                 if !retrying {
                     return Err(error);
                 }
-                std::thread::sleep(START_RETRY_DELAYS[attempt - 1]);
+                if resource_exhausted {
+                    std::thread::sleep(RESOURCE_EXHAUSTED_RETRY_DELAYS[attempt - 1]);
+                } else {
+                    std::thread::sleep(START_RETRY_DELAYS[attempt - 1]);
+                }
             }
         }
     }
-    unreachable!("audio startup attempts are non-zero")
+    unreachable!("audio startup retry limits are enforced inside the loop")
 }
 
 pub fn list_devices() -> Result<Vec<AudioDevice>, AudioError> {
@@ -379,6 +397,25 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(attempts, 1);
+    }
+
+    #[test]
+    fn retries_default_endpoint_resource_exhaustion_with_backoff() {
+        let mut attempts = 0;
+        let result = start_with_retry(CaptureSource::Speaker, || {
+            attempts += 1;
+            if attempts < START_ATTEMPTS {
+                Err(AudioError::retryable_with_code(
+                    "audio.resource_exhausted",
+                    "audio engine is out of resources",
+                ))
+            } else {
+                Ok(())
+            }
+        });
+
+        assert!(result.is_ok());
+        assert_eq!(attempts, START_ATTEMPTS);
     }
 
     #[cfg(windows)]
