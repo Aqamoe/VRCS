@@ -28,6 +28,7 @@ mod platform {
     pub struct OpenVrBackend {
         context: Context,
         system: System,
+        raw_system: *const openvr_sys::VR_IVRSystem_FnTable,
         overlay: Overlay,
         raw_overlay: *const openvr_sys::VR_IVROverlay_FnTable,
         texture_device: Option<Device>,
@@ -391,10 +392,12 @@ mod platform {
                 .overlay()
                 .map_err(|error| format!("OpenVR overlay interface failed: {error:?}"))?;
             let raw_overlay = load_raw_overlay()?;
+            let raw_system = load_raw_system()?;
             let texture_device = create_texture_device();
             Ok(Self {
                 context,
                 system,
+                raw_system,
                 overlay,
                 raw_overlay,
                 texture_device,
@@ -419,6 +422,10 @@ mod platform {
                 dashboard_thumbnail_state: SubmittedState::default(),
                 ocr_input: None,
             })
+        }
+
+        pub fn quit_requested(&self) -> bool {
+            poll_quit_requested(unsafe { &*self.raw_system })
         }
 
         pub fn ensure_dashboard(&mut self) -> Result<(), String> {
@@ -1097,7 +1104,28 @@ mod platform {
             self.destroy(OverlayKind::OcrResult);
             self.destroy(OverlayKind::Dashboard);
             self.destroy(OverlayKind::DashboardThumbnail);
-            let _ = &self.context;
+            // Detach while graphics resources are still alive; keep the desktop process running.
+            unsafe { self.context.shutdown() };
+        }
+    }
+
+    fn poll_quit_requested(system: &openvr_sys::VR_IVRSystem_FnTable) -> bool {
+        let poll = system
+            .PollNextEvent
+            .expect("OpenVR event polling available");
+        loop {
+            let mut event = openvr_sys::VREvent_t::default();
+            if !unsafe { poll(&mut event, std::mem::size_of_val(&event) as u32) } {
+                return false;
+            }
+            if event.eventType == openvr_sys::EVREventType_VREvent_Quit as u32 {
+                unsafe {
+                    system
+                        .AcknowledgeQuit_Exiting
+                        .expect("OpenVR quit acknowledgement available")();
+                }
+                return true;
+            }
         }
     }
 
@@ -1278,6 +1306,47 @@ mod platform {
         use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 
         #[test]
+        fn quit_is_acknowledged_but_another_process_quitting_is_not() {
+            use std::cell::{Cell, RefCell};
+            use std::collections::VecDeque;
+
+            thread_local! {
+                static EVENTS: RefCell<VecDeque<u32>> = const { RefCell::new(VecDeque::new()) };
+                static ACKNOWLEDGED: Cell<usize> = const { Cell::new(0) };
+            }
+            unsafe extern "C" fn poll(event: *mut openvr_sys::VREvent_t, size: u32) -> bool {
+                assert_eq!(size as usize, std::mem::size_of::<openvr_sys::VREvent_t>());
+                EVENTS.with_borrow_mut(|events| {
+                    let Some(kind) = events.pop_front() else {
+                        return false;
+                    };
+                    unsafe { (*event).eventType = kind };
+                    true
+                })
+            }
+            unsafe extern "C" fn acknowledge() {
+                ACKNOWLEDGED.set(ACKNOWLEDGED.get() + 1);
+            }
+
+            let mut api: openvr_sys::VR_IVRSystem_FnTable = unsafe { std::mem::zeroed() };
+            api.PollNextEvent = Some(poll);
+            api.AcknowledgeQuit_Exiting = Some(acknowledge);
+            EVENTS.with_borrow_mut(|events| {
+                events.push_back(openvr_sys::EVREventType_VREvent_ProcessQuit as u32);
+            });
+            assert!(!super::poll_quit_requested(&api));
+            assert_eq!(ACKNOWLEDGED.get(), 0);
+
+            EVENTS.with_borrow_mut(|events| {
+                events.push_back(openvr_sys::EVREventType_VREvent_TrackedDeviceUpdated as u32);
+                events.push_back(openvr_sys::EVREventType_VREvent_Quit as u32);
+            });
+            assert!(super::poll_quit_requested(&api));
+            assert_eq!(ACKNOWLEDGED.get(), 1);
+            assert!(!super::poll_quit_requested(&api));
+        }
+
+        #[test]
         fn ocr_wrist_configures_native_mouse_without_taking_focus() {
             static CONFIGURED: AtomicUsize = AtomicUsize::new(0);
             static METHOD: AtomicI32 = AtomicI32::new(-1);
@@ -1401,6 +1470,10 @@ mod platform {
     pub struct OpenVrBackend;
 
     impl OpenVrBackend {
+        pub fn quit_requested(&self) -> bool {
+            false
+        }
+
         pub fn runtime_installed() -> bool {
             false
         }

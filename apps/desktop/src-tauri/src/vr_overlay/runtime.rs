@@ -19,7 +19,7 @@ use super::presentation::{
     HeadsetPresentation, MessageSide, PresentationContent, PresentationFrame, WristMessage,
     WristPresentation,
 };
-use super::process::steamvr_running;
+use super::process::{steamvr_pid, SteamVrSession};
 use super::renderer::{self, Layout};
 
 pub const STATUS_EVENT: &str = "vr-overlay-status-changed";
@@ -359,6 +359,7 @@ struct WorkerState {
     headset_hash: Option<u64>,
     wrist_hash: Option<u64>,
     backend: Option<OpenVrBackend>,
+    session: SteamVrSession,
     dashboard_view: Option<DashboardViewModel>,
     dashboard: DashboardState,
     dashboard_cache: dashboard_renderer::RasterCache,
@@ -407,6 +408,7 @@ fn worker_loop(
         headset_hash: None,
         wrist_hash: None,
         backend: None,
+        session: SteamVrSession::default(),
         dashboard_view: None,
         dashboard: DashboardState::default(),
         dashboard_cache: dashboard_renderer::RasterCache::default(),
@@ -545,6 +547,45 @@ fn worker_loop(
 }
 
 fn tick(app: &AppHandle, state: &mut WorkerState, status: &mut VrOverlayStatus, available: bool) {
+    if state
+        .backend
+        .as_ref()
+        .is_some_and(OpenVrBackend::quit_requested)
+    {
+        tracing::info!("SteamVR requested quit; detaching OpenVR and keeping VRCS running");
+        state.session.quit();
+        drop(state.backend.take());
+        #[cfg(windows)]
+        state.ocr.unavailable(state.ocr_config.enabled);
+        state.headset_hash = None;
+        state.wrist_hash = None;
+        state.dashboard_dirty = true;
+        state.dashboard_thumbnail_uploaded = false;
+        state.next_reconnect = Instant::now() + RECONNECT_INTERVAL;
+        status.state = RuntimeState::WaitingRuntime;
+        status.hmd_present = false;
+        status.reconnect_attempt = 0;
+        status.last_error_detail = None;
+        status.headset.state = if state.config.enabled && state.config.headset.enabled {
+            ResourceState::ReadyHidden
+        } else {
+            ResourceState::Disabled
+        };
+        status.headset.last_error_code = None;
+        status.wrist.state = if state.config.enabled && state.config.wrist.enabled {
+            ResourceState::DeviceUnavailable
+        } else {
+            ResourceState::Disabled
+        };
+        status.wrist.last_error_code = None;
+        status.wrist.tracked_device_available = false;
+        status.wrist.bound_role = None;
+        status.dashboard.state = ResourceState::DeviceUnavailable;
+        status.dashboard.visible = false;
+        status.dashboard.last_error_code = None;
+        return;
+    }
+
     if !available {
         #[cfg(windows)]
         state.ocr.unavailable(false);
@@ -614,7 +655,8 @@ fn tick(app: &AppHandle, state: &mut WorkerState, status: &mut VrOverlayStatus, 
     if state.backend.is_none() && Instant::now() >= state.next_reconnect {
         #[cfg(windows)]
         state.ocr.unavailable(ocr_enabled);
-        if !steamvr_running() {
+        let pid = steamvr_pid();
+        if !state.session.can_connect(pid) {
             status.state = RuntimeState::WaitingRuntime;
             status.reconnect_attempt = 0;
             status.last_error_detail = None;
@@ -628,6 +670,9 @@ fn tick(app: &AppHandle, state: &mut WorkerState, status: &mut VrOverlayStatus, 
         };
         match OpenVrBackend::connect() {
             Ok(backend) => {
+                state
+                    .session
+                    .connected(pid.expect("SteamVR process checked"));
                 state.backend = Some(backend);
                 status.state = RuntimeState::Ready;
                 status.last_connected_at = Some(unix_timestamp());
