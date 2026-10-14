@@ -288,8 +288,6 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: savin
               <RangeField label={t("settings.vrOcr.background")} value={config.background_opacity} min={0} max={1} step={0.05}
                 disabled={disabled} formatValue={(value) => `${Math.round(value * 100)}%`} onCommit={(background_opacity) => onChange({ background_opacity })} />
             </div>
-            <PreferenceToggle title={t("settings.vrOcr.gesture")} checked={config.hand_gesture_enabled}
-              disabled={disabled} onChange={(hand_gesture_enabled) => onChange({ hand_gesture_enabled })} />
             {config.display_mode === "wrist" && <section className="ocr-settings-group" aria-labelledby="ocr-wrist-heading">
               <header className="vr-overlay-card-heading">
                 <div><Glasses size={18} /><span><strong id="ocr-wrist-heading">{t("settings.vrOcr.wristTitle")}</strong>

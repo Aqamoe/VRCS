@@ -12,6 +12,7 @@ import { patchOcr } from "../vr-overlay-settings";
 import { OcrSettingsCard } from "./OcrSettingsCard";
 import { VisionSettingsCard } from "./VisionSettingsCard";
 import { patchVision, selectVisionProfile } from "../vision-settings";
+import { PreferenceToggle } from "../SettingsControls";
 
 export function OcrSettingsSection({ vrAvailable, draft, profiles, applySettings }: {
   vrAvailable: boolean; draft: Settings; profiles: ApiProfileView[]; applySettings: ApplySettings;
@@ -53,5 +54,10 @@ export function OcrSettingsSection({ vrAvailable, draft, profiles, applySettings
       vrAvailable={vrAvailable} disabled={false}
       onChange={(patch) => applySettings((current) => patchVision(current, patch))}
       onSelectProfile={(profileId) => applySettings((current) => selectVisionProfile(current, profileId))} />}
+    {vrAvailable && <section className="vr-overlay-card" aria-label={t("settings.vrOcr.gesture")}>
+      <PreferenceToggle title={t("settings.vrOcr.gesture")} checked={draft.ocr.hand_gesture_enabled}
+        description={t("settings.vrOcr.gestureDescription")}
+        disabled={false} onChange={(hand_gesture_enabled) => applySettings((current) => patchOcr(current, { hand_gesture_enabled }))} />
+    </section>}
   </div>;
 }

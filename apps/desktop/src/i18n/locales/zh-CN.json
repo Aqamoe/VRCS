@@ -776,6 +776,7 @@
         "lifetime": "VR 结果显示时长",
         "background": "VR 结果背景不透明度",
         "gesture": "启用双手握持键框选",
+        "gestureDescription": "默认同时按下双手握持键启动框选。长按左扳机触发视觉问答，直接说出问题；长按右扳机触发 OCR 翻译。",
         "gestureReady": "保持拍照手势或同时按住双握持键 0.65 秒，待选框出现后移动双手调整范围，再长按右扳机确认。若此前已按住扳机，需先松开再按。确认前松开手势或握持键可取消。",
         "gestureUnavailable": "当前未取得双手或手柄选框追踪，无法启动 VR OCR。请检查追踪与 SteamVR 选框绑定。",
         "bindings": "打开 SteamVR OCR 绑定设置",
