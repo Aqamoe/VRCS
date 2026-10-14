@@ -97,6 +97,7 @@ pub struct OcrRuntime {
     pipeline: Option<watch::Receiver<Option<PipelineProgress>>>,
     feedback: Option<Feedback>,
     pub progress_labels: ProgressLabels,
+    reader_labels: super::wrist_labels::WristLabels,
     feedback_view: Option<(ProgressView, u8)>,
     configuration: Option<Arc<ScanConfiguration>>,
     selecting: bool,
@@ -135,6 +136,7 @@ impl OcrRuntime {
             pipeline: None,
             feedback: None,
             progress_labels: ProgressLabels::default(),
+            reader_labels: super::wrist_labels::WristLabels::default(),
             feedback_view: None,
             configuration: None,
             selecting: false,
@@ -184,6 +186,14 @@ impl OcrRuntime {
             && self.displayed_at.is_some_and(|started| {
                 now.saturating_duration_since(started).as_secs_f32() > seconds
             })
+    }
+
+    pub fn set_reader_labels(&mut self, labels: super::wrist_labels::WristLabels) {
+        if self.reader_labels != labels {
+            self.reader_labels = labels.clone();
+            self.wrist_view = None;
+            self.vision.set_labels(labels);
+        }
     }
 
     pub fn clear(&mut self) {
@@ -684,10 +694,11 @@ impl OcrRuntime {
         config: &VrOcrConfig,
         subtitle_wrist: &vrcs_core::VrOverlayWristConfig,
     ) -> Result<(), String> {
-        let mut view = self.reader.view(
+        let mut view = self.reader.view_with_labels(
             self.status.state,
             source_view(config),
             config.display_mode == VrOcrDisplayMode::Stereo,
+            &self.reader_labels,
         );
         let visible = match config.display_mode {
             VrOcrDisplayMode::Stereo => view.block_count > 0,
@@ -732,6 +743,7 @@ impl OcrRuntime {
                 &view,
                 config_wrist.font_size_px,
                 config.background_opacity,
+                &self.reader_labels,
             )?;
             self.reader.clamp_page(rendered.page_count);
             self.wrist_pages = rendered.page_count;

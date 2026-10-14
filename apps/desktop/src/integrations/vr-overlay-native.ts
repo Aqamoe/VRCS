@@ -26,6 +26,7 @@ export interface VrDashboardNumberField {
 export interface VrDashboardViewModel {
   labels: {
     ocr_progress: Record<string, string>;
+    wrist_reader: Record<string, string>;
     title: string;
     subtitle: string;
     master: string;

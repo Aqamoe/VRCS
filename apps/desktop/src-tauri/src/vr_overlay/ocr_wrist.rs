@@ -1,6 +1,7 @@
 use vrcs_core::ocr::TranslatedBlock;
 
 use super::ocr_status::OcrState;
+use super::wrist_labels::WristLabels;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Action {
@@ -9,6 +10,7 @@ pub enum Action {
     PreviousPage,
     NextPage,
     NextLanguage,
+    ToggleQuestion,
     TogglePin,
     Close,
 }
@@ -27,6 +29,7 @@ pub struct View {
     pub translation_label: String,
     pub title: String,
     pub status: String,
+    pub detail: String,
     pub block_index: usize,
     pub block_count: usize,
     pub page: usize,
@@ -34,6 +37,16 @@ pub struct View {
     pub source_only: bool,
     pub language_count: usize,
     pub hovered: Option<Action>,
+}
+
+impl View {
+    pub fn busy(&self) -> bool {
+        self.mode == ViewMode::Vision
+            && matches!(
+                self.status.as_str(),
+                "listening" | "finalizing" | "requesting"
+            )
+    }
 }
 
 #[derive(Default)]
@@ -77,7 +90,18 @@ impl Reader {
             .unwrap_or(0)
     }
 
+    #[cfg(test)]
     pub fn view(&self, state: OcrState, source_only: bool, fallback: bool) -> View {
+        self.view_with_labels(state, source_only, fallback, &WristLabels::default())
+    }
+
+    pub fn view_with_labels(
+        &self,
+        state: OcrState,
+        source_only: bool,
+        fallback: bool,
+        labels: &WristLabels,
+    ) -> View {
         let block = self.blocks.get(self.index());
         let translation = block.and_then(|block| {
             block
@@ -99,29 +123,30 @@ impl Reader {
                     .unwrap_or_else(|| {
                         let error = translation.and_then(|item| item.error_code.as_deref());
                         if error == Some("translation.not_configured") {
-                            "Translation is not configured"
+                            labels.text("translationNotConfigured")
                         } else if state == OcrState::Translating || state == OcrState::Recognized {
-                            "Translating…"
+                            labels.text("translating")
                         } else if state == OcrState::TimedOut
                             || error == Some("translation.timeout")
                         {
-                            "Translation timed out"
+                            labels.text("translationTimeout")
                         } else {
-                            "Translation unavailable"
+                            labels.text("translationUnavailable")
                         }
                         .into()
                     })
             },
             translation_label: translation
-                .map(|item| item.target_language.clone())
+                .map(|item| labels.text(&item.target_language).to_owned())
                 .unwrap_or_default(),
             title: if fallback {
-                "OCR · Additional text"
+                "ocrAdditional"
             } else {
-                "OCR"
+                "ocrTitle"
             }
             .into(),
             status: state_label(state).into(),
+            detail: String::new(),
             block_index: self.index(),
             block_count: self.blocks.len(),
             page: self.page,
@@ -158,7 +183,7 @@ impl Reader {
                 self.page = 0;
             }
             Action::TogglePin => self.pinned = !self.pinned,
-            Action::Close => {}
+            Action::Close | Action::ToggleQuestion => {}
         }
     }
 
@@ -169,21 +194,21 @@ impl Reader {
 
 pub fn state_label(state: OcrState) -> &'static str {
     match state {
-        OcrState::Capturing => "Capturing…",
-        OcrState::Submitting => "Uploading image…",
-        OcrState::Pending => "Waiting for cloud OCR…",
-        OcrState::Downloading => "Fetching OCR results…",
-        OcrState::LoadingModel => "Loading local models…",
-        OcrState::Running | OcrState::Recognizing => "Recognizing…",
-        OcrState::Recognized | OcrState::Translating => "Translating…",
-        OcrState::NoText => "No text detected",
-        OcrState::LowConfidence => "No readable text detected",
-        OcrState::PartialVisible => "Some translations are unavailable",
-        OcrState::TimedOut => "Processing timed out",
-        OcrState::TranslationFailed => "Translation failed",
-        OcrState::Error => "OCR unavailable",
-        OcrState::SourceVisible => "Original text",
-        _ => "Ready",
+        OcrState::Capturing => "capturing",
+        OcrState::Submitting => "submitting",
+        OcrState::Pending => "pending",
+        OcrState::Downloading => "downloading",
+        OcrState::LoadingModel => "loading_model",
+        OcrState::Running | OcrState::Recognizing => "recognizing",
+        OcrState::Recognized | OcrState::Translating => "translating",
+        OcrState::NoText => "no_text",
+        OcrState::LowConfidence => "low_confidence",
+        OcrState::PartialVisible => "partial_visible",
+        OcrState::TimedOut => "timed_out",
+        OcrState::TranslationFailed => "translation_failed",
+        OcrState::Error => "error",
+        OcrState::SourceVisible => "source_visible",
+        _ => "complete",
     }
 }
 
@@ -407,7 +432,7 @@ mod tests {
         reader.sync(1, &[item]);
         assert_eq!(
             reader.view(OcrState::Translating, false, false).translation,
-            "Translating…"
+            WristLabels::default().text("translating")
         );
         assert_eq!(
             reader.view(OcrState::TimedOut, false, false).translation,

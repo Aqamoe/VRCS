@@ -37,6 +37,8 @@ fn available_by_default() -> bool {
 pub struct DashboardLabels {
     #[serde(default)]
     pub ocr_progress: super::ocr_progress::ProgressLabels,
+    #[serde(default)]
+    pub wrist_reader: super::wrist_labels::WristLabels,
     pub title: String,
     pub subtitle: String,
     pub master: String,

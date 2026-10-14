@@ -136,6 +136,11 @@ export function useVrDashboardBridge(
     const model: VrDashboardViewModel = {
       labels: {
         ocr_progress: i18n.t("settings.vrOcr.progress", { returnObjects: true }) as Record<string, string>,
+        wrist_reader: {
+          ...i18n.t("settings.vrOcr.states", { returnObjects: true }) as Record<string, string>,
+          ...i18n.t("wristReader", { returnObjects: true }) as Record<string, string>,
+          ...Object.fromEntries(settings.ocr.targets.map((target) => [target.target_language, languageName(target.target_language)])),
+        },
         title: t("settings.vrDashboard.title"),
         subtitle: t("settings.vrDashboard.subtitle"),
         master: t("settings.vrDashboard.master"),

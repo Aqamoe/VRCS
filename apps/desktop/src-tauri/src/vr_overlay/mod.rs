@@ -45,6 +45,7 @@ mod process;
 pub(crate) mod renderer;
 mod runtime;
 mod transform;
+mod wrist_labels;
 #[cfg(any(windows, test))]
 mod wrist_layout;
 #[cfg(windows)]

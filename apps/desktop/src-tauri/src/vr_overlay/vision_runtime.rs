@@ -34,6 +34,7 @@ pub struct VisionRuntime {
     rendered: Option<View>,
     buttons: Vec<Button>,
     pages: usize,
+    labels: super::wrist_labels::WristLabels,
     pointer: Pointer,
 }
 
@@ -55,12 +56,20 @@ impl VisionRuntime {
             rendered: None,
             buttons: Vec::new(),
             pages: 1,
+            labels: super::wrist_labels::WristLabels::default(),
             pointer: Pointer::default(),
         }
     }
 
     pub fn set_service(&mut self, service: VisionService) {
         self.service = Some(service);
+    }
+
+    pub fn set_labels(&mut self, labels: super::wrist_labels::WristLabels) {
+        if self.labels != labels {
+            self.labels = labels;
+            self.invalidate_render();
+        }
     }
 
     pub fn enabled(&self) -> bool {
@@ -109,7 +118,7 @@ impl VisionRuntime {
         let pinned = self.view.as_ref().is_some_and(|view| view.pinned);
         self.clear();
         self.configuration = config;
-        let mut view = Self::view("Error", &question, &error);
+        let mut view = Self::view("visionError", &question, &error);
         view.pinned = pinned;
         self.view = Some(view);
         self.finished = Some(Instant::now());
@@ -120,9 +129,10 @@ impl VisionRuntime {
             mode: ViewMode::Vision,
             source: question.into(),
             translation: answer.into(),
-            translation_label: "Answer".into(),
-            title: "Visual assistant".into(),
+            translation_label: "answer".into(),
+            title: "visionTitle".into(),
             status: status.into(),
+            detail: String::new(),
             block_index: 0,
             block_count: 0,
             page: 0,
@@ -161,23 +171,23 @@ impl VisionRuntime {
         while let Ok(update) = self.receiver.try_recv() {
             match update {
                 Update::Progress(id, progress) if id == self.id => {
-                    let (status, question) = match progress {
-                        VisionProgress::FinalizingAsr => ("Finalizing speech", String::new()),
-                        VisionProgress::Requesting { question } => ("Requesting answer", question),
-                    };
                     if let Some(view) = &mut self.view {
-                        view.status = status.into();
-                        view.source = question;
+                        match progress {
+                            VisionProgress::FinalizingAsr => view.status = "finalizing".into(),
+                            VisionProgress::Requesting { question } => {
+                                view.status = "requesting".into();
+                                view.source = question;
+                            }
+                        }
                     }
                 }
                 Update::Finished(id, result) if id == self.id => {
                     self.task = None;
                     match result {
                         Ok(answer) => {
-                            let mut view = Self::view("Ready", &answer.question, &answer.answer);
+                            let mut view = Self::view("complete", &answer.question, &answer.answer);
                             if let Some(previous) = &self.view {
                                 view.pinned = previous.pinned;
-                                view.page = previous.page;
                             }
                             self.view = Some(view);
                             self.finished = Some(Instant::now());
@@ -187,6 +197,30 @@ impl VisionRuntime {
                 }
                 _ => {}
             }
+        }
+        if let Some(view) = &mut self.view {
+            view.detail = if let (Some(started), Some(config)) = (self.started, &self.configuration)
+            {
+                format!(
+                    "{} / {} s",
+                    started.elapsed().as_secs(),
+                    config.max_capture_seconds
+                )
+            } else if let (Some(finished), Some(config)) = (self.finished, &self.configuration) {
+                if view.pinned {
+                    self.labels.text("pinned").into()
+                } else {
+                    self.labels.text("hideAfter").replace(
+                        "{{seconds}}",
+                        &((config.display_seconds - finished.elapsed().as_secs_f32())
+                            .max(0.)
+                            .ceil() as u32)
+                            .to_string(),
+                    )
+                }
+            } else {
+                String::new()
+            };
         }
         if self
             .finished
@@ -241,7 +275,7 @@ impl VisionRuntime {
         };
         self.session = Some(session);
         self.started = Some(Instant::now());
-        self.view = Some(Self::view("Listening · release trigger to ask", "", ""));
+        self.view = Some(Self::view("listening", "", ""));
         let selection = selection.clone();
         self.image = Some(tauri::async_runtime::spawn(async move {
             tauri::async_runtime::spawn_blocking(move || {
@@ -265,6 +299,9 @@ impl VisionRuntime {
             return;
         };
         // This must happen on the VR worker, before spawning or waiting for encoding.
+        if let Some(view) = &mut self.view {
+            view.source = session.draft();
+        }
         session.release();
         self.started = None;
         let Some(image) = self.image.take() else {
@@ -272,7 +309,7 @@ impl VisionRuntime {
             return;
         };
         if let Some(view) = &mut self.view {
-            view.status = "Finalizing speech".into();
+            view.status = "finalizing".into();
         }
         let id = self.id;
         let sender = self.sender.clone();
@@ -298,10 +335,22 @@ impl VisionRuntime {
             return;
         }
         if let Some(view) = &mut self.view {
+            if view.busy()
+                && matches!(
+                    action,
+                    Action::PreviousPage | Action::NextPage | Action::ToggleQuestion
+                )
+            {
+                return;
+            }
             match action {
                 Action::PreviousPage => view.page = view.page.saturating_sub(1),
                 Action::NextPage => view.page = (view.page + 1).min(self.pages.saturating_sub(1)),
                 Action::TogglePin => view.pinned = !view.pinned,
+                Action::ToggleQuestion => {
+                    view.source_only = !view.source_only;
+                    view.page = 0;
+                }
                 _ => {}
             }
             if self.finished.is_some() {
@@ -356,7 +405,7 @@ impl VisionRuntime {
             return Ok(false);
         }
         if self.rendered.as_ref() != Some(view) {
-            let rendered = ocr_wrist_renderer::render(view, wrist.font_size_px, 0.9)?;
+            let rendered = ocr_wrist_renderer::render(view, wrist.font_size_px, 0.9, &self.labels)?;
             view.page = view.page.min(rendered.page_count.saturating_sub(1));
             self.pages = rendered.page_count;
             self.buttons = rendered.buttons;
@@ -390,7 +439,7 @@ mod tests {
         assert_eq!(result.pixels, vec![0, 1, 2, 3, 8, 9, 10, 11]);
     }
     #[test]
-    fn completed_answer_keeps_the_readers_pin_and_page() {
+    fn completed_answer_keeps_pin_and_starts_at_the_first_page() {
         let mut runtime = VisionRuntime::new();
         let mut view = VisionRuntime::view("Requesting answer", "question", "");
         view.pinned = true;
@@ -409,8 +458,39 @@ mod tests {
         runtime.tick();
         let view = runtime.view.as_ref().unwrap();
         assert!(view.pinned);
-        assert_eq!(view.page, 2);
+        assert_eq!(view.page, 0);
         assert_eq!(view.translation, "answer");
+    }
+
+    #[test]
+    fn finalizing_speech_preserves_the_recognized_question() {
+        let mut runtime = VisionRuntime::new();
+        runtime.view = Some(VisionRuntime::view("Listening", "recognized question", ""));
+        runtime
+            .sender
+            .send(Update::Progress(runtime.id, VisionProgress::FinalizingAsr))
+            .unwrap();
+        runtime.tick();
+        assert_eq!(runtime.view.as_ref().unwrap().source, "recognized question");
+    }
+
+    #[test]
+    fn question_expansion_resets_paging_and_is_disabled_while_busy() {
+        let mut runtime = VisionRuntime::new();
+        runtime.view = Some(VisionRuntime::view("complete", "question", "answer"));
+        runtime.action(Action::ToggleQuestion);
+        assert!(runtime.view.as_ref().unwrap().source_only);
+        runtime.action(Action::ToggleQuestion);
+        assert!(!runtime.view.as_ref().unwrap().source_only);
+        runtime.pages = 3;
+        runtime.view.as_mut().unwrap().status = "requesting".into();
+        runtime.action(Action::NextPage);
+        runtime.action(Action::ToggleQuestion);
+        let view = runtime.view.as_ref().unwrap();
+        assert_eq!(view.page, 0);
+        assert!(!view.source_only);
+        runtime.action(Action::Close);
+        assert!(!runtime.visible());
     }
 
     #[test]

@@ -459,6 +459,9 @@ fn worker_loop(
                     #[cfg(windows)]
                     {
                         state.ocr.progress_labels = view.labels.ocr_progress.clone();
+                        state
+                            .ocr
+                            .set_reader_labels(view.labels.wrist_reader.clone());
                     }
                     state.dashboard.update_view(&view);
                     state.dashboard_view = Some(view);

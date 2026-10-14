@@ -6,6 +6,7 @@ use super::ocr_wrist::{Action, View, ViewMode};
 use super::ocr_wrist_layout::Pages;
 use super::renderer::Texture;
 use super::text_raster::{fill_rounded_rect, Rect, TextMask};
+use super::wrist_labels::WristLabels;
 
 pub(super) const SIZE: u32 = 1024;
 const TEXT_FLAGS: u32 = DT_SINGLELINE | DT_NOPREFIX | DT_EXPANDTABS;
@@ -24,7 +25,12 @@ pub struct Rendered {
     pub buttons: Vec<Button>,
 }
 
-pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Rendered, String> {
+pub fn render(
+    view: &View,
+    font_size: u32,
+    background_opacity: f32,
+    copy: &WristLabels,
+) -> Result<Rendered, String> {
     let alpha = (background_opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
     let mut pixels = vec![0; (SIZE * SIZE * 4) as usize];
     fill_rounded_rect(
@@ -37,11 +43,25 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
     );
     let mut body = TextMask::new(SIZE, SIZE, font_size.max(1) as i32)?;
     let mut labels = TextMask::new(SIZE, SIZE, 24)?;
+    let vision = view.mode == ViewMode::Vision;
+    let busy = view.busy();
+    let error = vision && view.status == "visionError";
     let line_height = (body.line_height() * 135 + 99) / 100;
     let source_rect = if view.source_only {
-        FULL_CARD
+        if vision {
+            Rect::new(48, 164, 976, 868)
+        } else {
+            FULL_CARD
+        }
+    } else if vision {
+        Rect::new(48, 164, 976, 324)
     } else {
         SOURCE_CARD
+    };
+    let translation_rect = if vision {
+        Rect::new(48, 340, 976, 868)
+    } else {
+        TRANSLATION_CARD
     };
     let text_rect = |card: Rect| {
         Rect::new(
@@ -51,34 +71,68 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
             card.bottom - 24,
         )
     };
-    let source_content = text_rect(source_rect);
+    let summary = vision && !view.source_only;
+    let source_content = if summary {
+        Rect::new(72, 216, 952, 308)
+    } else {
+        text_rect(source_rect)
+    };
+    let source_line_height = if summary {
+        (labels.line_height() * 120 + 99) / 100
+    } else {
+        line_height
+    };
     let source = Pages::new(
         &view.source,
         source_content.right - source_content.left,
         source_content.bottom - source_content.top,
-        line_height,
-        |text| body.measure_size(text, 32767, TEXT_FLAGS).0,
+        source_line_height,
+        |text| {
+            if summary {
+                labels.measure_size(text, 32767, TEXT_FLAGS).0
+            } else {
+                body.measure_size(text, 32767, TEXT_FLAGS).0
+            }
+        },
     );
-    let translated_content = text_rect(TRANSLATION_CARD);
+    let translated_content = text_rect(translation_rect);
+    let translation_text = if busy {
+        copy.text(if view.status == "listening" {
+            "listeningHint"
+        } else {
+            "requestingHint"
+        })
+        .to_owned()
+    } else if error {
+        format!("{}\n\n{}", copy.text("retryHint"), view.translation)
+    } else {
+        view.translation.clone()
+    };
     let translation = Pages::new(
-        &view.translation,
+        &translation_text,
         translated_content.right - translated_content.left,
         translated_content.bottom - translated_content.top,
         line_height,
         |text| body.measure_size(text, 32767, TEXT_FLAGS).0,
     );
-    let page_count = source.lines.len().max(if view.source_only {
+    let page_count = if busy {
         1
-    } else {
+    } else if summary {
         translation.lines.len()
-    });
+    } else {
+        source.lines.len().max(if view.source_only {
+            1
+        } else {
+            translation.lines.len()
+        })
+    };
     let page = view.page.min(page_count - 1);
 
     draw_text(
         &mut pixels,
         &mut labels,
-        &view.title,
-        Rect::new(56, 56, 700, 92),
+        copy.text(&view.title),
+        Rect::new(56, 56, 460, 92),
         [255; 3],
         false,
     )?;
@@ -88,8 +142,16 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
             draw_text(
                 &mut pixels,
                 &mut labels,
-                &format!("{} / {}", view.block_index + 1, view.block_count),
-                Rect::new(744, 56, 968, 92),
+                &format!(
+                    "{} {} / {} · {} {} / {}",
+                    copy.text("block"),
+                    view.block_index + 1,
+                    view.block_count,
+                    copy.text("page"),
+                    page + 1,
+                    page_count
+                ),
+                Rect::new(460, 56, 968, 92),
                 [200, 210, 220],
                 true,
             )?;
@@ -97,21 +159,33 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
         draw_text(
             &mut pixels,
             &mut labels,
-            &view.status,
-            Rect::new(56, 108, 968, 140),
-            [180, 195, 210],
+            copy.text(&view.status),
+            Rect::new(56, 108, 700, 140),
+            if error {
+                [255, 178, 168]
+            } else {
+                [180, 195, 210]
+            },
             false,
         )?;
     } else {
         draw_text(
             &mut pixels,
             &mut body,
-            &view.status,
+            copy.text(&view.status),
             FULL_CARD,
             [210, 217, 225],
             true,
         )?;
     }
+    draw_text(
+        &mut pixels,
+        &mut labels,
+        &view.detail,
+        Rect::new(708, 108, 968, 140),
+        [180, 195, 210],
+        true,
+    )?;
 
     for (card, content, pages, label, color) in [
         (
@@ -119,18 +193,22 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
             source_content,
             &source,
             if view.mode == ViewMode::Vision {
-                "Question"
+                copy.text("question")
             } else {
-                "Source"
+                copy.text("source")
             },
             [210, 217, 225],
         ),
         (
-            TRANSLATION_CARD,
+            translation_rect,
             translated_content,
             &translation,
-            view.translation_label.as_str(),
-            [255; 3],
+            copy.text(if error {
+                "visionError"
+            } else {
+                &view.translation_label
+            }),
+            if error { [255, 195, 186] } else { [255; 3] },
         ),
     ]
     .into_iter()
@@ -141,7 +219,18 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
     } else {
         2
     }) {
-        fill_rounded_rect(&mut pixels, SIZE, SIZE, card, 16, [34, 38, 44, alpha]);
+        fill_rounded_rect(
+            &mut pixels,
+            SIZE,
+            SIZE,
+            card,
+            16,
+            if error && card.top == translation_rect.top {
+                [50, 34, 38, alpha]
+            } else {
+                [34, 38, 44, alpha]
+            },
+        );
         draw_text(
             &mut pixels,
             &mut labels,
@@ -149,18 +238,19 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
             Rect::new(
                 card.left + 24,
                 card.top + 16,
-                card.right - 120,
+                card.right - if vision { 260 } else { 120 },
                 card.top + 48,
             ),
             [140, 193, 225],
             false,
         )?;
-        let (lines, ended) = pages.at(page);
+        let is_summary = summary && card.top == source_rect.top;
+        let (lines, ended) = pages.at(if is_summary { 0 } else { page });
         if ended {
             draw_text(
                 &mut pixels,
                 &mut labels,
-                "End",
+                copy.text("end"),
                 Rect::new(
                     card.right - 100,
                     card.top + 16,
@@ -172,12 +262,22 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
             )?;
         }
         for (index, line) in lines.iter().enumerate() {
-            let top = content.top + index as i32 * line_height;
+            let height = if is_summary {
+                source_line_height
+            } else {
+                line_height
+            };
+            let top = content.top + index as i32 * height;
+            let line = if is_summary && index + 1 == lines.len() && pages.lines.len() > 1 {
+                format!("{line}…")
+            } else {
+                line.clone()
+            };
             draw_text(
                 &mut pixels,
-                &mut body,
-                line,
-                Rect::new(content.left, top, content.right, top + line_height),
+                if is_summary { &mut labels } else { &mut body },
+                &line,
+                Rect::new(content.left, top, content.right, top + height),
                 color,
                 false,
             )?;
@@ -185,60 +285,95 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
     }
 
     let mut buttons = Vec::new();
-    let controls = [
-        (
-            Action::PreviousBlock,
-            "Prev block",
-            view.block_count > 1 && view.block_index > 0,
-            Rect::new(48, 848, 262, 910),
-        ),
-        (
-            Action::NextBlock,
-            "Next block",
-            view.block_count > 1 && view.block_index + 1 < view.block_count,
-            Rect::new(278, 848, 492, 910),
-        ),
-        (
-            Action::PreviousPage,
-            "Prev page",
-            page > 0,
-            Rect::new(508, 848, 722, 910),
-        ),
-        (
-            Action::NextPage,
-            "Next page",
-            page + 1 < page_count,
-            Rect::new(738, 848, 976, 910),
-        ),
-        (
-            Action::NextLanguage,
-            "Language",
-            !view.source_only && view.language_count > 1,
-            Rect::new(48, 924, 288, 980),
-        ),
-        (
-            Action::TogglePin,
-            if view.pinned { "Unpin" } else { "Pin" },
+    let mut controls = if vision {
+        vec![
+            (
+                Action::PreviousPage,
+                "previousPage",
+                !busy && page > 0,
+                Rect::new(48, 892, 224, 976),
+            ),
+            (
+                Action::NextPage,
+                "nextPage",
+                !busy && page + 1 < page_count,
+                Rect::new(400, 892, 576, 976),
+            ),
+            (
+                Action::TogglePin,
+                if view.pinned { "unpin" } else { "pin" },
+                true,
+                Rect::new(596, 892, 780, 976),
+            ),
+            (
+                Action::Close,
+                if busy { "cancel" } else { "close" },
+                true,
+                Rect::new(800, 892, 976, 976),
+            ),
+        ]
+    } else {
+        vec![
+            (
+                Action::PreviousBlock,
+                "previousBlock",
+                view.block_count > 1 && view.block_index > 0,
+                Rect::new(48, 848, 262, 910),
+            ),
+            (
+                Action::NextBlock,
+                "nextBlock",
+                view.block_count > 1 && view.block_index + 1 < view.block_count,
+                Rect::new(278, 848, 492, 910),
+            ),
+            (
+                Action::PreviousPage,
+                "previousPage",
+                !busy && page > 0,
+                Rect::new(508, 848, 722, 910),
+            ),
+            (
+                Action::NextPage,
+                "nextPage",
+                !busy && page + 1 < page_count,
+                Rect::new(738, 848, 976, 910),
+            ),
+            (
+                Action::NextLanguage,
+                "language",
+                !view.source_only && view.language_count > 1,
+                Rect::new(48, 924, 528, 980),
+            ),
+            (
+                Action::TogglePin,
+                if view.pinned { "unpin" } else { "pin" },
+                true,
+                Rect::new(544, 924, 748, 980),
+            ),
+            (Action::Close, "close", true, Rect::new(764, 924, 976, 980)),
+        ]
+    };
+    if vision && !busy && !view.source.is_empty() {
+        controls.push((
+            Action::ToggleQuestion,
+            if view.source_only {
+                "backToAnswer"
+            } else {
+                "expand"
+            },
             true,
-            Rect::new(544, 924, 748, 980),
-        ),
-        (Action::Close, "Close", true, Rect::new(764, 924, 976, 980)),
-    ];
+            Rect::new(732, 48, 976, 104),
+        ));
+    }
     for (action, label, enabled, rect) in controls {
-        if view.mode == ViewMode::Vision
-            && matches!(
-                action,
-                Action::PreviousBlock | Action::NextBlock | Action::NextLanguage
-            )
-        {
-            continue;
-        }
         if !has_content && !matches!(action, Action::TogglePin | Action::Close) {
             continue;
         }
         let hovered = enabled && view.hovered == Some(action);
         let color = if hovered {
             [82, 133, 157, alpha]
+        } else if action == Action::TogglePin && view.pinned {
+            [61, 103, 123, alpha]
         } else if enabled {
             [49, 61, 73, alpha]
         } else {
@@ -248,7 +383,7 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
         draw_text(
             &mut pixels,
             &mut labels,
-            label,
+            copy.text(label),
             rect,
             if enabled { [255; 3] } else { [96, 108, 120] },
             true,
@@ -265,12 +400,12 @@ pub fn render(view: &View, font_size: u32, background_opacity: f32) -> Result<Re
             });
         }
     }
-    if has_content {
+    if has_content && vision {
         draw_text(
             &mut pixels,
             &mut labels,
             &format!("{} / {}", page + 1, page_count),
-            Rect::new(304, 924, 528, 980),
+            Rect::new(236, 892, 388, 976),
             [200, 210, 220],
             true,
         )?;
@@ -334,6 +469,24 @@ fn draw_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn localized_labels(resource: &str) -> WristLabels {
+        let resource: serde_json::Value = serde_json::from_str(resource).unwrap();
+        let mut labels = resource["translation"]["settings"]["vrOcr"]["states"]
+            .as_object()
+            .unwrap()
+            .clone();
+        labels.extend(
+            resource["translation"]["wristReader"]
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        serde_json::from_value(serde_json::Value::Object(labels)).unwrap()
+    }
+    fn render(view: &View, font_size: u32, opacity: f32) -> Result<Rendered, String> {
+        super::render(view, font_size, opacity, &WristLabels::default())
+    }
     fn view() -> View {
         View {
             mode: ViewMode::Ocr,
@@ -342,6 +495,7 @@ mod tests {
             translation_label: "English".into(),
             title: "OCR".into(),
             status: "Ready".into(),
+            detail: String::new(),
             block_index: 0,
             block_count: 2,
             page: 0,
@@ -374,6 +528,162 @@ mod tests {
             button.action,
             Action::PreviousBlock | Action::NextBlock | Action::NextLanguage
         )));
+    }
+
+    #[test]
+    fn vision_answer_uses_most_of_the_reading_area() {
+        let mut view = view();
+        view.mode = ViewMode::Vision;
+        view.source = "What does this sign say?".into();
+        view.translation = "One short answer line.\n".repeat(12);
+        let rendered = render(&view, 32, 0.94).unwrap();
+        assert!(
+            rendered.page_count <= 2,
+            "answer needs {} pages",
+            rendered.page_count
+        );
+    }
+
+    #[test]
+    fn pending_questions_cannot_page_or_expand_and_summary_stays_on_answer_pages() {
+        let mut view = view();
+        view.mode = ViewMode::Vision;
+        view.status = "requesting".into();
+        view.source = "Long question\n".repeat(30);
+        view.translation.clear();
+        let pending = render(&view, 32, 1.).unwrap();
+        assert_eq!(pending.page_count, 1);
+        assert!(pending
+            .buttons
+            .iter()
+            .all(|button| matches!(button.action, Action::TogglePin | Action::Close)));
+        view.status = "complete".into();
+        view.translation = "Long answer\n".repeat(30);
+        let first = render(&view, 32, 1.).unwrap();
+        view.page = 1;
+        let second = render(&view, 32, 1.).unwrap();
+        let summary_rows = (164 * SIZE * 4) as usize..(324 * SIZE * 4) as usize;
+        assert_eq!(
+            first.texture.pixels[summary_rows.clone()],
+            second.texture.pixels[summary_rows]
+        );
+        assert!(first
+            .buttons
+            .iter()
+            .any(|button| button.action == Action::ToggleQuestion));
+    }
+
+    #[test]
+    fn localized_states_render_and_export_review_preview() {
+        let mut ocr = view();
+        ocr.title = "ocrTitle".into();
+        ocr.status = "complete".into();
+        ocr.source =
+            "PHOTOGRAPHY AREA\nPlease ask before taking photos.\nKeep the walkway clear.".into();
+        ocr.translation = "摄影区域\n拍照前，请先征得对方同意。\n请保持通道畅通。".into();
+        ocr.translation_label = "简体中文".into();
+        ocr.block_count = 3;
+        let mut vision = ocr.clone();
+        vision.mode = ViewMode::Vision;
+        vision.title = "visionTitle".into();
+        vision.translation_label = "answer".into();
+        vision.source = "这张告示在提醒什么？我需要注意哪些事？".into();
+        vision.translation = "这是一张摄影区域的告示。\n\n1. 拍摄前，请先征得对方同意。\n2. 不要遮挡通道或长时间占位。\n3. 不要公开他人的个人信息。\n\n可以先询问：“现在方便合影吗？”".into();
+        vision.detail = "28 秒后隐藏".into();
+        let mut listening = vision.clone();
+        listening.status = "listening".into();
+        listening.source = "我想知道这个告示在提醒什么".into();
+        listening.translation.clear();
+        listening.detail = "4 / 30 s".into();
+        let mut requesting = listening.clone();
+        requesting.status = "requesting".into();
+        requesting.detail.clear();
+        let mut error = vision.clone();
+        error.status = "visionError".into();
+        error.translation = "Request timed out".into();
+        let mut expanded = vision.clone();
+        expanded.source_only = true;
+        expanded.source =
+            "这张告示在提醒什么？\n\n请解释拍照前需要确认的事项，以及为什么要保持通道畅通。".into();
+        let mut original = ocr.clone();
+        original.source_only = true;
+        original.status = "source_visible".into();
+        let samples = [
+            ocr, vision, listening, requesting, error, expanded, original,
+        ];
+        for resource in [
+            include_str!("../../../src/i18n/locales/en-US.json"),
+            include_str!("../../../src/i18n/locales/zh-CN.json"),
+            include_str!("../../../src/i18n/locales/zh-Hant.json"),
+            include_str!("../../../src/i18n/locales/ja-JP.json"),
+        ] {
+            let labels = localized_labels(resource);
+            let mask = TextMask::new(SIZE, SIZE, 24).unwrap();
+            for key in [
+                "previousPage",
+                "nextPage",
+                "pin",
+                "unpin",
+                "close",
+                "cancel",
+            ] {
+                assert!(
+                    mask.measure_size(labels.text(key), 32767, TEXT_FLAGS).0 <= 176,
+                    "button label is too wide: {}",
+                    labels.text(key)
+                );
+            }
+            for view in &samples {
+                let rendered = super::render(view, 32, 0.94, &labels).unwrap();
+                assert!(rendered.page_count > 0);
+                for button in &rendered.buttons {
+                    assert!(
+                        button.bounds[0] < button.bounds[2] && button.bounds[1] < button.bounds[3]
+                    );
+                }
+            }
+        }
+        let Ok(directory) = std::env::var("VRCS_WRIST_PREVIEW_DIR") else {
+            return;
+        };
+        let labels = localized_labels(include_str!("../../../src/i18n/locales/zh-CN.json"));
+        let mut sheet = Texture {
+            width: SIZE * 2,
+            height: SIZE + SIZE / 2,
+            pixels: [16, 19, 24, 255].repeat((SIZE * SIZE * 3) as usize),
+        };
+        for (index, view) in samples.iter().enumerate() {
+            let texture = super::render(view, 32, 0.94, &labels).unwrap().texture;
+            std::fs::write(
+                std::path::Path::new(&directory).join(format!("wrist-{index}.png")),
+                super::super::ocr_capture::encode_png(texture.clone()).unwrap(),
+            )
+            .unwrap();
+            if index >= 6 {
+                continue;
+            }
+            let scale = if index < 2 { 1 } else { 2 };
+            let size = SIZE / scale;
+            let left = if index < 2 {
+                index as u32 * SIZE
+            } else {
+                (index as u32 - 2) * size
+            };
+            let top = if index < 2 { 0 } else { SIZE };
+            for y in 0..size {
+                for x in 0..size {
+                    let source = ((y * scale * SIZE + x * scale) * 4) as usize;
+                    let target = (((top + y) * sheet.width + left + x) * 4) as usize;
+                    sheet.pixels[target..target + 4]
+                        .copy_from_slice(&texture.pixels[source..source + 4]);
+                }
+            }
+        }
+        std::fs::write(
+            std::path::Path::new(&directory).join("wrist-review.png"),
+            super::super::ocr_capture::encode_png(sheet).unwrap(),
+        )
+        .unwrap();
     }
 
     #[test]
