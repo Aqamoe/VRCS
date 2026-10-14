@@ -137,6 +137,8 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: savin
   const wrist = config.wrist ?? DEFAULT_OCR_WRIST_SETTINGS;
   const updateWrist = (patch: Partial<VrOcrWristSettings>) => onChange({ wrist: { ...wrist, ...patch } });
   const modelProgress = models?.total_bytes ? Math.min(1, Math.max(0, models.downloaded_bytes / models.total_bytes)) : 0;
+  const vrState = runtime?.state ?? "disabled";
+  const gestureUnavailable = config.hand_gesture_enabled && !runtime?.gesture_available;
   return (
     <section className="vr-overlay-card" aria-labelledby="ocr-heading">
       <header className="vr-overlay-card-heading vr-overlay-feature-heading">
@@ -260,12 +262,10 @@ export function OcrSettingsCard({ vrAvailable, config, profiles, disabled: savin
                 { value: "stereo", label: t("settings.vrOcr.displayModes.stereo") },
               ]}
               disabled={disabled} onChange={(display_mode) => onChange({ display_mode: display_mode as VrOcrSettings["display_mode"] })} />
-            <div className="vr-overlay-runtime-facts" role="status" aria-live="polite">
-              <span>{t(`settings.vrOcr.states.${runtime?.state ?? "disabled"}`)}</span>
-              {runtime?.controller_bound && <span>{t("settings.vrOcr.controls")}</span>}
-              {config.hand_gesture_enabled && <span>{t(runtime?.gesture_available
-                ? "settings.vrOcr.gestureReady" : "settings.vrOcr.gestureUnavailable")}</span>}
-            </div>
+            {(vrState !== "ready" || gestureUnavailable) && <div className="vr-overlay-runtime-facts" role="status" aria-live="polite">
+              {vrState !== "ready" && <span>{t(`settings.vrOcr.states.${vrState}`)}</span>}
+              {gestureUnavailable && <span>{t("settings.vrOcr.gestureUnavailable")}</span>}
+            </div>}
             {(runtime?.last_error_code || runtime?.last_error) && <p className="vr-overlay-native-error" role="alert">
               {t(`settings.vrOcr.errors.${runtime.last_error_code ?? "unavailable"}`, { defaultValue: t("settings.vrOcr.errors.unavailable") })}
             </p>}
