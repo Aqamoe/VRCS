@@ -34,6 +34,7 @@ unicode-segmentation = "1"
 vrcs-core = { path = "../../../core", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
+pulldown-cmark = { version = "0.13.4", default-features = false }
 openvr = "0.9.0"
 openvr_sys = "2.1.4"
 windows-sys = { version = "0.61", features = [

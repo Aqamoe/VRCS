@@ -19,7 +19,24 @@ pub fn render(
     if blocks.iter().any(|eye| eye.len() > 256) {
         return Err("OCR render exceeds the block limit".into());
     }
-    let eye = &eyes[0];
+    // Use the more complete recognition without copying the captured images.
+    let completeness = blocks.each_ref().map(|groups| {
+        (
+            groups
+                .iter()
+                .map(|group| group.fragments().len())
+                .sum::<usize>(),
+            groups
+                .iter()
+                .map(|group| group.fragments().len())
+                .max()
+                .unwrap_or(0),
+        )
+    });
+    let primary = usize::from(completeness[1] > completeness[0]);
+    let eyes = &[&eyes[primary], &eyes[1 - primary]];
+    let blocks = &[&blocks[primary], &blocks[1 - primary]];
+    let eye = eyes[0];
     let eye_pose = transform::compose(eye.head_pose, eye.eye_to_head);
     let to_reference = transform::inverse(eye_pose);
     let fragments: [Vec<_>; 2] = blocks.each_ref().map(|groups| {
@@ -56,7 +73,7 @@ pub fn render(
     let Some((center, normal)) = fit_plane(&points, error_per_m2) else {
         tracing::debug!(
             matches = points.len(),
-            fallback_groups = blocks.iter().map(Vec::len).sum::<usize>(),
+            fallback_groups = blocks.iter().map(|groups| groups.len()).sum::<usize>(),
             "OCR source plane could not be estimated"
         );
         let fallback = blocks
@@ -81,25 +98,34 @@ pub fn render(
             .iter()
             .filter(|(member, _, _)| fragments[0][*member].0 == left)
             .collect();
-        let other = member_matches
-            .first()
-            .map(|(_, right, _)| fragments[1][*right].0);
-        let complete = other.is_some_and(|right| {
-            member_matches.len() == group.fragments().len()
-                && blocks[1][right].fragments().len() == group.fragments().len()
-                && member_matches
+        let related: Vec<_> = blocks[1]
+            .iter()
+            .enumerate()
+            .filter(|(right, other)| {
+                member_matches
                     .iter()
-                    .all(|(_, member, _)| fragments[1][*member].0 == right)
-                && normalized_text(&group.source.text)
-                    == normalized_text(&blocks[1][right].source.text)
-        });
-        if !complete {
+                    .any(|(_, member, _)| fragments[1][*member].0 == *right)
+                    && (normalized_text(&group.source.text) == normalized_text(&other.source.text)
+                        || member_matches
+                            .iter()
+                            .filter(|(_, member, _)| fragments[1][*member].0 == *right)
+                            .count()
+                            == other.fragments().len())
+            })
+            .map(|(right, _)| right)
+            .collect();
+        if related.is_empty() {
             fallback.push(group.clone());
             continue;
         }
-        let other = other.unwrap();
-        paired_right[other] = true;
+        for &right in &related {
+            paired_right[right] = true;
+        }
         let mut block = group.clone();
+        let other = related.iter().find_map(|&right| {
+            (normalized_text(&group.source.text) == normalized_text(&blocks[1][right].source.text))
+                .then_some(&blocks[1][right])
+        });
         for (target, translation) in block.translations.iter_mut().enumerate() {
             if translation
                 .text
@@ -108,10 +134,13 @@ pub fn render(
             {
                 continue;
             }
-            if let Some(ready) = blocks[1][other].translations.get(target).filter(|t| {
-                t.target_language == translation.target_language
-                    && t.text.as_deref().is_some_and(|s| !s.trim().is_empty())
-            }) {
+            if let Some(ready) = other
+                .and_then(|other| other.translations.get(target))
+                .filter(|t| {
+                    t.target_language == translation.target_language
+                        && t.text.as_deref().is_some_and(|s| !s.trim().is_empty())
+                })
+            {
                 *translation = ready.clone();
             }
         }
@@ -170,7 +199,7 @@ pub fn render(
 }
 
 fn match_blocks(
-    eyes: &[EyeCapture; 2],
+    eyes: &[&EyeCapture; 2],
     blocks: &[Vec<(usize, &TextBlock)>; 2],
     to_reference: [[f32; 4]; 3],
 ) -> Vec<(usize, usize, [f32; 3])> {
@@ -269,7 +298,7 @@ fn ray(eye: &EyeCapture, pixel: [f32; 2]) -> Option<[f32; 3]> {
 }
 
 fn triangulate(
-    eyes: &[EyeCapture; 2],
+    eyes: &[&EyeCapture; 2],
     pixels: [[f32; 2]; 2],
     to_reference: [[f32; 4]; 3],
 ) -> Option<([f32; 3], f32)> {
@@ -280,7 +309,7 @@ fn triangulate(
             to_reference,
             transform::compose(eyes[index].head_pose, eyes[index].eye_to_head),
         );
-        let local = ray(&eyes[index], pixels[index])?;
+        let local = ray(eyes[index], pixels[index])?;
         origins[index] = pose.map(|row| row[3]);
         directions[index] = normalize(std::array::from_fn(|r| {
             (0..3).map(|c| pose[r][c] * local[c]).sum()
@@ -613,7 +642,7 @@ mod tests {
     }
 
     #[test]
-    fn partially_matched_groups_fall_back_as_whole_translations() {
+    fn partially_matched_groups_stay_on_the_source_plane() {
         let (eyes, blocks) = fixture(2., transform::matrix(0., 0., 0., [0.; 3]));
         let mut groups = blocks.each_ref().map(|blocks| {
             let mut group = blocks[0].clone();
@@ -625,11 +654,53 @@ mod tests {
             vec![group, blocks[2].clone()]
         });
         groups[1][0].fragments[1].text = "unmatched fragment".into();
-        let (_, fallback) = render(&eyes, &groups, 0.8, false).unwrap();
-        assert!(!fallback.is_empty());
-        assert!(fallback
-            .iter()
-            .all(|block| block.source.text == "first complete group"));
+        let (plane, fallback) = render(&eyes, &groups, 0.8, false).unwrap();
+        assert!(plane.is_some());
+        assert!(
+            fallback.is_empty(),
+            "one OCR mismatch must not discard a paragraph"
+        );
+    }
+
+    #[test]
+    fn different_eye_grouping_does_not_discard_a_complete_paragraph() {
+        let (eyes, mut blocks) = fixture(2., transform::matrix(0., 0., 0., [0.; 3]));
+        let mut group = blocks[0][0].clone();
+        group.fragments = blocks[0].iter().map(|block| block.source.clone()).collect();
+        group.source.text = "word 0 word 1 word 2".into();
+        group.source.polygon = [[100., 100.], [230., 100.], [230., 160.], [100., 160.]];
+        blocks[0] = vec![group];
+        let (plane, fallback) = render(&eyes, &blocks, 0.8, false).unwrap();
+        assert!(plane.is_some());
+        assert!(
+            fallback.is_empty(),
+            "right-eye lines are already represented by the paragraph"
+        );
+    }
+
+    #[test]
+    fn a_missing_line_in_one_eye_keeps_the_complete_eye_paragraph() {
+        let (eyes, blocks) = fixture(2., transform::matrix(0., 0., 0., [0.; 3]));
+        let mut groups = blocks.map(|blocks| {
+            let mut group = blocks[0].clone();
+            group.fragments = blocks.iter().map(|block| block.source.clone()).collect();
+            group.source.text = "word 0 word 1 word 2".into();
+            group.source.polygon = [[100., 100.], [230., 100.], [230., 160.], [100., 160.]];
+            vec![group]
+        });
+        groups[1][0].fragments.pop();
+        groups[1][0].source.text = "word 0 word 1".into();
+        for (eyes, groups) in [
+            (&eyes, &groups),
+            (
+                &[eyes[1].clone(), eyes[0].clone()],
+                &[groups[1].clone(), groups[0].clone()],
+            ),
+        ] {
+            let (plane, fallback) = render(eyes, groups, 0.8, false).unwrap();
+            assert!((plane.expect("source plane").pose[2][3] + 2.).abs() < 0.01);
+            assert!(fallback.is_empty());
+        }
     }
 
     #[test]

@@ -603,7 +603,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn desktop_layout_keeps_other_columns_labels_and_finished_sentences_separate() {
+    async fn desktop_layout_keeps_other_columns_labels_and_paragraphs_separate() {
         for texts in [
             ("This sentence ends.", "another sentence"),
             ("Alice", "hello from another player"),
@@ -611,7 +611,13 @@ mod tests {
         ] {
             let result = layout_scan(vec![vec![
                 positioned(0, texts.0, 10., 10., 220.),
-                positioned(1, texts.1, 10., 34., 180.),
+                positioned(
+                    1,
+                    texts.1,
+                    10.,
+                    if texts.0.ends_with('.') { 60. } else { 34. },
+                    180.,
+                ),
             ]])
             .await;
             assert_eq!(result.blocks[0].len(), 2, "{texts:?}");

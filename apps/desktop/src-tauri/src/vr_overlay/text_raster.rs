@@ -5,10 +5,32 @@ use std::ptr::null_mut;
 use windows_sys::Win32::Foundation::RECT;
 use windows_sys::Win32::Graphics::Gdi::{
     CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateSolidBrush, DeleteDC, DeleteObject,
-    DrawTextW, FillRect, SelectObject, SetBkMode, SetTextColor, BITMAPINFO, BITMAPINFOHEADER,
-    BI_RGB, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, DIB_RGB_COLORS, DT_CALCRECT,
-    FF_DONTCARE, FW_SEMIBOLD, OUT_DEFAULT_PRECIS, PROOF_QUALITY, TRANSPARENT,
+    DrawTextW, FillRect, GetTextMetricsW, SelectObject, SetBkMode, SetTextColor, BITMAPINFO,
+    BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, DIB_RGB_COLORS,
+    DT_CALCRECT, FF_DONTCARE, FW_SEMIBOLD, OUT_DEFAULT_PRECIS, PROOF_QUALITY, TEXTMETRICW,
+    TRANSPARENT,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct FontSpec {
+    pub size: i32,
+    pub weight: i32,
+    pub italic: bool,
+    pub strike: bool,
+    pub monospace: bool,
+}
+
+impl FontSpec {
+    pub fn body(size: u32) -> Self {
+        Self {
+            size: size.max(1) as i32,
+            weight: 400,
+            italic: false,
+            strike: false,
+            monospace: false,
+        }
+    }
+}
 
 pub(super) struct TextMask {
     dc: *mut c_void,
@@ -20,10 +42,22 @@ pub(super) struct TextMask {
     width: u32,
     height: u32,
     black: *mut c_void,
+    metrics: TEXTMETRICW,
 }
 
 impl TextMask {
     pub fn new(width: u32, height: u32, font_size_px: i32) -> Result<Self, String> {
+        Self::new_with_style(
+            width,
+            height,
+            FontSpec {
+                weight: FW_SEMIBOLD as i32,
+                ..FontSpec::body(font_size_px.max(1) as u32)
+            },
+        )
+    }
+
+    pub fn new_with_style(width: u32, height: u32, spec: FontSpec) -> Result<Self, String> {
         unsafe {
             let dc = CreateCompatibleDC(null_mut());
             if dc.is_null() {
@@ -48,16 +82,22 @@ impl TextMask {
             }
             let old_bitmap = SelectObject(dc, bitmap);
 
-            let face: Vec<u16> = "Segoe UI\0".encode_utf16().collect();
+            let face: Vec<u16> = if spec.monospace {
+                "Consolas\0"
+            } else {
+                "Segoe UI\0"
+            }
+            .encode_utf16()
+            .collect();
             let font = CreateFontW(
-                -font_size_px,
+                -spec.size,
                 0,
                 0,
                 0,
-                FW_SEMIBOLD as i32,
+                spec.weight,
+                u32::from(spec.italic),
                 0,
-                0,
-                0,
+                u32::from(spec.strike),
                 DEFAULT_CHARSET.into(),
                 OUT_DEFAULT_PRECIS.into(),
                 CLIP_DEFAULT_PRECIS.into(),
@@ -83,6 +123,8 @@ impl TextMask {
             }
             SetBkMode(dc, TRANSPARENT as i32);
             SetTextColor(dc, 0x00ff_ffff);
+            let mut metrics = zeroed();
+            GetTextMetricsW(dc, &mut metrics);
 
             Ok(Self {
                 dc,
@@ -94,6 +136,7 @@ impl TextMask {
                 width,
                 height,
                 black,
+                metrics,
             })
         }
     }
@@ -103,6 +146,9 @@ impl TextMask {
     }
 
     pub fn measure_size(&self, text: &str, width: i32, flags: u32) -> (i32, i32) {
+        if text.is_empty() {
+            return (0, 0);
+        }
         unsafe {
             let mut wide: Vec<u16> = text.encode_utf16().collect();
             let mut measured = RECT {
@@ -162,11 +208,11 @@ impl TextMask {
     }
 
     pub fn line_height(&self) -> i32 {
-        let mut metrics: windows_sys::Win32::Graphics::Gdi::TEXTMETRICW = unsafe { zeroed() };
-        unsafe {
-            windows_sys::Win32::Graphics::Gdi::GetTextMetricsW(self.dc, &mut metrics);
-        }
-        metrics.tmHeight.max(1)
+        self.metrics.tmHeight.max(1)
+    }
+
+    pub fn ascent(&self) -> i32 {
+        self.metrics.tmAscent.max(1)
     }
 
     pub fn pixels(&self) -> &[u8] {
@@ -175,6 +221,47 @@ impl TextMask {
                 self.bits.cast::<u8>(),
                 (self.width * self.height * 4) as usize,
             )
+        }
+    }
+
+    pub fn blend_into(
+        &self,
+        pixels: &mut [u8],
+        target_width: u32,
+        rect: Rect,
+        offset_x: i32,
+        offset_y: i32,
+        color: [u8; 3],
+    ) {
+        let target_height = pixels.len() / 4 / target_width as usize;
+        for y in rect.top.max(0)..rect.bottom.min(self.height as i32) {
+            for x in rect.left.max(0)..rect.right.min(self.width as i32) {
+                let (target_x, target_y) = (x + offset_x, y + offset_y);
+                if target_x < 0
+                    || target_y < 0
+                    || target_x >= target_width as i32
+                    || target_y >= target_height as i32
+                {
+                    continue;
+                }
+                let source = ((y as u32 * self.width + x as u32) * 4) as usize;
+                let target = ((target_y as u32 * target_width + target_x as u32) * 4) as usize;
+                let coverage = self.pixels()[source..source + 3]
+                    .iter()
+                    .copied()
+                    .max()
+                    .unwrap_or(0) as u16;
+                if coverage == 0 {
+                    continue;
+                }
+                for channel in 0..3 {
+                    pixels[target + channel] = ((color[channel] as u16 * coverage
+                        + pixels[target + channel] as u16 * (255 - coverage))
+                        / 255) as u8;
+                }
+                pixels[target + 3] = pixels[target + 3]
+                    .saturating_add(((255 - pixels[target + 3]) as u16 * coverage / 255) as u8);
+            }
         }
     }
 }

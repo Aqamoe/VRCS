@@ -6,6 +6,7 @@ use super::ocr_wrist::{Action, View, ViewMode};
 use super::ocr_wrist_layout::Pages;
 use super::renderer::Texture;
 use super::text_raster::{fill_rounded_rect, Rect, TextMask};
+use super::vision_markdown_renderer::AnswerCache;
 use super::wrist_labels::WristLabels;
 
 pub(super) const SIZE: u32 = 1024;
@@ -30,6 +31,22 @@ pub fn render(
     font_size: u32,
     background_opacity: f32,
     copy: &WristLabels,
+) -> Result<Rendered, String> {
+    render_with_answer_cache(
+        view,
+        font_size,
+        background_opacity,
+        copy,
+        &mut AnswerCache::default(),
+    )
+}
+
+pub(super) fn render_with_answer_cache(
+    view: &View,
+    font_size: u32,
+    background_opacity: f32,
+    copy: &WristLabels,
+    answer_cache: &mut AnswerCache,
 ) -> Result<Rendered, String> {
     let alpha = (background_opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
     let mut pixels = vec![0; (SIZE * SIZE * 4) as usize];
@@ -96,6 +113,15 @@ pub fn render(
         },
     );
     let translated_content = text_rect(translation_rect);
+    let markdown = vision
+        && view.status == "complete"
+        && !view.source_only
+        && answer_cache.prepare(
+            &view.translation,
+            font_size,
+            translated_content.right - translated_content.left,
+            translated_content.bottom - translated_content.top,
+        );
     let translation_text = if busy {
         copy.text(if view.status == "listening" {
             "listeningHint"
@@ -109,7 +135,7 @@ pub fn render(
         view.translation.clone()
     };
     let translation = Pages::new(
-        &translation_text,
+        if markdown { "" } else { &translation_text },
         translated_content.right - translated_content.left,
         translated_content.bottom - translated_content.top,
         line_height,
@@ -118,7 +144,11 @@ pub fn render(
     let page_count = if busy {
         1
     } else if summary {
-        translation.lines.len()
+        if markdown {
+            answer_cache.page_count().unwrap()
+        } else {
+            translation.lines.len()
+        }
     } else {
         source.lines.len().max(if view.source_only {
             1
@@ -244,6 +274,20 @@ pub fn render(
             [140, 193, 225],
             false,
         )?;
+        if markdown && card.top == translation_rect.top {
+            if let Err(error) = answer_cache.draw(&mut pixels, SIZE, content, page, alpha) {
+                tracing::warn!(error, "VR answer Markdown draw fallback");
+                answer_cache.disable();
+                return render_with_answer_cache(
+                    view,
+                    font_size,
+                    background_opacity,
+                    copy,
+                    answer_cache,
+                );
+            }
+            continue;
+        }
         let is_summary = summary && card.top == source_rect.top;
         let (lines, ended) = pages.at(if is_summary { 0 } else { page });
         if ended {
@@ -443,26 +487,7 @@ fn draw_text(
             },
         center,
     )?;
-    for y in rect.top.max(0)..rect.bottom.min(SIZE as i32) {
-        for x in rect.left.max(0)..rect.right.min(SIZE as i32) {
-            let offset = ((y as u32 * SIZE + x as u32) * 4) as usize;
-            let coverage = mask.pixels()[offset..offset + 3]
-                .iter()
-                .copied()
-                .max()
-                .unwrap_or(0) as u16;
-            if coverage == 0 {
-                continue;
-            }
-            for channel in 0..3 {
-                pixels[offset + channel] = ((color[channel] as u16 * coverage
-                    + pixels[offset + channel] as u16 * (255 - coverage))
-                    / 255) as u8;
-            }
-            pixels[offset + 3] = pixels[offset + 3]
-                .saturating_add(((255 - pixels[offset + 3]) as u16 * coverage / 255) as u8);
-        }
-    }
+    mask.blend_into(pixels, SIZE, rect, 0, 0, color);
     Ok(())
 }
 
@@ -503,6 +528,126 @@ mod tests {
             source_only: false,
             language_count: 2,
             hovered: None,
+        }
+    }
+
+    #[test]
+    fn only_completed_vision_answers_use_markdown() {
+        for (mode, status, source_only) in [
+            (ViewMode::Ocr, "complete", false),
+            (ViewMode::Vision, "listening", false),
+            (ViewMode::Vision, "finalizing", false),
+            (ViewMode::Vision, "requesting", false),
+            (ViewMode::Vision, "visionError", false),
+            (ViewMode::Vision, "complete", true),
+            (ViewMode::Vision, "complete", false),
+        ] {
+            let mut view = view();
+            view.mode = mode;
+            view.status = status.into();
+            view.source_only = source_only;
+            view.translation = "## Heading\n\n**answer**".into();
+            let mut cache = AnswerCache::default();
+            super::render_with_answer_cache(&view, 32, 0.9, &WristLabels::default(), &mut cache)
+                .unwrap();
+            assert_eq!(
+                cache.page_count().is_some(),
+                mode == ViewMode::Vision && status == "complete" && !source_only
+            );
+        }
+    }
+
+    #[test]
+    fn markdown_failure_keeps_original_answer_reachable() {
+        let mut view = view();
+        view.mode = ViewMode::Vision;
+        view.status = "complete".into();
+        view.translation = format!("{}\nLAST ANSWER LINE", "original answer\n".repeat(4500));
+        let original = view.translation.clone();
+        let mut cache = AnswerCache::default();
+        let first =
+            super::render_with_answer_cache(&view, 32, 0.9, &WristLabels::default(), &mut cache)
+                .unwrap();
+        assert!(cache.page_count().is_none());
+        let mask = TextMask::new(SIZE, SIZE, 32).unwrap();
+        let pages = Pages::new(
+            &original,
+            880,
+            444,
+            (mask.line_height() * 135 + 99) / 100,
+            |text| mask.measure_size(text, 32767, TEXT_FLAGS).0,
+        );
+        assert_eq!(first.page_count, pages.lines.len());
+        assert_eq!(
+            pages.lines.last().unwrap().last().unwrap(),
+            "LAST ANSWER LINE"
+        );
+        view.page = first.page_count - 1;
+        let last =
+            super::render_with_answer_cache(&view, 32, 0.9, &WristLabels::default(), &mut cache)
+                .unwrap();
+        assert_ne!(first.texture.pixels, last.texture.pixels);
+        assert!(!last
+            .buttons
+            .iter()
+            .any(|button| button.action == Action::NextPage));
+        assert_eq!(view.translation, original);
+    }
+
+    #[test]
+    fn markdown_fixture_renders_all_sizes_and_exports_preview() {
+        let mut view = view();
+        view.mode = ViewMode::Vision;
+        view.status = "complete".into();
+        view.source = "What does this sign say? / 这张告示说了什么？".into();
+        view.title = "visionTitle".into();
+        view.translation_label = "answer".into();
+        view.translation = include_str!("../../tests/fixtures/vr_vision_markdown.md").into();
+        let labels = localized_labels(include_str!("../../../src/i18n/locales/zh-CN.json"));
+        let directory = std::env::var("VRCS_WRIST_PREVIEW_DIR").ok();
+        for font_size in [18, 32, 72] {
+            let mut cache = AnswerCache::default();
+            view.page = 0;
+            let first =
+                super::render_with_answer_cache(&view, font_size, 0.94, &labels, &mut cache)
+                    .unwrap();
+            assert!(
+                cache.page_count().is_some(),
+                "font size {font_size} fell back to plain text"
+            );
+            assert!(first.page_count > 1);
+            let pages = first.page_count;
+            for page in [0, pages / 2, pages - 1] {
+                view.page = page;
+                let rendered =
+                    super::render_with_answer_cache(&view, font_size, 0.94, &labels, &mut cache)
+                        .unwrap();
+                assert_eq!(rendered.page_count, pages);
+                if let Some(directory) = &directory {
+                    std::fs::write(
+                        std::path::Path::new(directory)
+                            .join(format!("markdown-{font_size}-{page}.png")),
+                        super::super::ocr_capture::encode_png(rendered.texture).unwrap(),
+                    )
+                    .unwrap();
+                }
+            }
+            view.source_only = true;
+            let question =
+                super::render_with_answer_cache(&view, font_size, 0.94, &labels, &mut cache)
+                    .unwrap();
+            assert_eq!(question.page_count, 1);
+            view.source_only = false;
+            view.page = 0;
+            view.hovered = Some(Action::Close);
+            view.pinned = true;
+            view.detail = "10s".into();
+            let answer =
+                super::render_with_answer_cache(&view, font_size, 0.94, &labels, &mut cache)
+                    .unwrap();
+            assert_eq!(answer.page_count, pages);
+            assert!(cache.page_count().is_some());
+            assert_eq!(cache.preparations, 1);
         }
     }
     #[test]

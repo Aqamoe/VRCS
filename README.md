@@ -44,7 +44,7 @@ Open **Settings › System › Features** to turn off optional features. The fea
 - VR OCR: select text with hand gestures or controllers and display translations on a wrist panel or over the source in both eyes.
 - PaddleOCR cloud recognition or local PP-OCRv6 for OCR. Download local models in Settings and use CPU or a DirectML GPU.
 - Desktop visual question answering: enable visual question answering and desktop mode in Settings → Vision, then select an image-capable API profile and model. Press `Ctrl+Alt+V` (configurable) to drag-select visible content on the desktop or in other apps, including across monitors. Screen snapshots are used only for local selection, with no full-screen selection action. Type a question or recognize speech and edit the result, then explicitly send only the selected image and question from the question window. VR Overlay and OCR are not required.
-- VR visual question answering: select a region, then hold the left trigger to start temporary microphone capture and ask a question.
+- VR visual question answering: select a region, then hold the left trigger to start temporary microphone capture and ask a question. Answers support Markdown headings, emphasis, lists, quotes, and code on the wrist panel. Tables appear as entries with column labels; images display only their alternative text.
 - Import Yomitan dictionaries, look up subtitle text or Ask AI, collect learning material, and review definitions, sentence patterns, and conversations. Edit vocabulary, sentence-pattern, or cloze card drafts and create cards through AnkiConnect.
 
 ## Privacy

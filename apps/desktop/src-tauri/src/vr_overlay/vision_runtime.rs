@@ -36,6 +36,7 @@ pub struct VisionRuntime {
     pages: usize,
     labels: super::wrist_labels::WristLabels,
     pointer: Pointer,
+    answer_cache: super::vision_markdown_renderer::AnswerCache,
 }
 
 impl VisionRuntime {
@@ -58,6 +59,7 @@ impl VisionRuntime {
             pages: 1,
             labels: super::wrist_labels::WristLabels::default(),
             pointer: Pointer::default(),
+            answer_cache: super::vision_markdown_renderer::AnswerCache::default(),
         }
     }
 
@@ -105,6 +107,7 @@ impl VisionRuntime {
         self.rendered = None;
         self.buttons.clear();
         self.pages = 1;
+        self.answer_cache.clear();
         self.pointer = Pointer::default();
     }
 
@@ -405,7 +408,13 @@ impl VisionRuntime {
             return Ok(false);
         }
         if self.rendered.as_ref() != Some(view) {
-            let rendered = ocr_wrist_renderer::render(view, wrist.font_size_px, 0.9, &self.labels)?;
+            let rendered = ocr_wrist_renderer::render_with_answer_cache(
+                view,
+                wrist.font_size_px,
+                0.9,
+                &self.labels,
+                &mut self.answer_cache,
+            )?;
             view.page = view.page.min(rendered.page_count.saturating_sub(1));
             self.pages = rendered.page_count;
             self.buttons = rendered.buttons;
@@ -499,6 +508,7 @@ mod tests {
         let view = VisionRuntime::view("Ready", "question", "answer");
         runtime.view = Some(view.clone());
         runtime.rendered = Some(view.clone());
+        assert!(runtime.answer_cache.prepare("**answer**", 32, 880, 444));
         runtime.buttons.push(Button {
             action: Action::Close,
             bounds: [0.0, 0.0, 1.0, 1.0],
@@ -507,6 +517,9 @@ mod tests {
         assert_eq!(runtime.view.as_ref(), Some(&view));
         assert!(runtime.rendered.is_none());
         assert!(runtime.buttons.is_empty());
+        assert!(runtime.answer_cache.page_count().is_some());
+        runtime.clear();
+        assert!(runtime.answer_cache.page_count().is_none());
     }
 
     #[test]

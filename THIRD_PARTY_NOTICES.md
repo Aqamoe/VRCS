@@ -6,6 +6,7 @@ notices and license terms remain applicable.
 - Tauri — MIT OR Apache-2.0
 - React and React DOM — MIT
 - react-markdown and remark-gfm — MIT
+- pulldown-cmark — MIT
 - Axum and Tokio — MIT
 - rusqlite and SQLite — MIT / Public Domain
 - Vulkan Loader — Apache-2.0

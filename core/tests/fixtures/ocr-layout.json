@@ -1,4 +1,11 @@
 [
+  {"name":"title-case-continuation","blocks":[["Thank You",10,10,150],["for your help.",10,34,180]],"groups":[[0,1]],"texts":["Thank You for your help."]},
+  {"name":"one-word-continuation","blocks":[["Please",10,10,70],["follow the instructions below.",10,34,280]],"groups":[[0,1]],"texts":["Please follow the instructions below."]},
+  {"name":"semicolon-continuation","blocks":[["We waited for the train;",10,10,250],["it arrived a little later.",10,34,250]],"groups":[[0,1]],"texts":["We waited for the train; it arrived a little later."]},
+  {"name":"colon-continuation","blocks":[["Please remember the following:",10,10,250],["keep the door closed.",10,34,220]],"groups":[[0,1]],"texts":["Please remember the following: keep the door closed."]},
+  {"name":"indented-short-first-line","blocks":[["This paragraph",40,10,150],["continues across a much wider line",10,44,350],["and ends here.",10,78,180]],"groups":[[0,1,2]],"texts":["This paragraph continues across a much wider line and ends here."]},
+  {"name":"short-final-sentence","blocks":[["We have arrived at the station.",10,10,280],["Please wait.",10,34,100]],"groups":[[0,1]],"texts":["We have arrived at the station. Please wait."]},
+  {"name":"separate-paragraphs","blocks":[["This sentence continues",10,10,250],["and ends right here.",10,34,250],["Another paragraph begins",10,90,250],["and ends over here.",10,114,250]],"groups":[[0,1],[2,3]],"texts":["This sentence continues and ends right here.","Another paragraph begins and ends over here."]},
   {"name":"short-continuation","blocks":[["I think",10,10,150],["I know the way.",10,34,180]],"groups":[[0,1]],"texts":["I think I know the way."]},
   {"name":"capitalized-place","blocks":[["Meet me at",10,10,150],["Central Station.",10,34,180]],"groups":[[0,1]],"texts":["Meet me at Central Station."]},
   {"name":"japanese-continuation","blocks":[["どこに",10,10,150],["行きますか？",10,34,180]],"groups":[[0,1]],"texts":["どこに行きますか？"]},

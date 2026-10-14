@@ -36,6 +36,12 @@ mod ocr_wrist_renderer;
 #[cfg(windows)]
 mod text_raster;
 #[cfg(windows)]
+mod vision_markdown;
+#[cfg(windows)]
+mod vision_markdown_layout;
+#[cfg(windows)]
+mod vision_markdown_renderer;
+#[cfg(windows)]
 mod vision_runtime;
 // Keep the image verifier covered without enabling scan cancellation.
 #[cfg(all(windows, test))]

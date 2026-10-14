@@ -147,23 +147,28 @@ fn separate_labels(left: &str, right: &str) -> bool {
 }
 
 fn continuation(first: &str, next: &str, a: Bounds, b: Bounds) -> bool {
-    if label(first) || label(next) {
+    let boundary = |text: &str| {
+        text.starts_with(['•', '●', '-', '*'])
+            || text.chars().next().is_some_and(|c| c.is_ascii_digit())
+            || text.ends_with([':', '：']) && text.split_whitespace().count() == 1
+    };
+    if boundary(first) || boundary(next) || label(first) && label(next) {
         return false;
     }
     let first = first.trim_end_matches(['"', '\'', '”', '’', ')', '）']);
-    if first.ends_with([';', ':', '；', '：']) {
-        return false;
-    }
     let (first_cjk, next_cjk) = (
         first.chars().filter(|c| cjk(*c)).count(),
         next.chars().filter(|c| cjk(*c)).count(),
     );
     if first.ends_with(['.', '!', '?', '。', '！', '？']) {
-        return (first.split_whitespace().count() >= 4 && next.split_whitespace().count() >= 4
-            || first_cjk >= 8 && next_cjk >= 8)
-            && a.overlap(b) >= a.width().max(b.width()) * 0.85;
+        return (first.split_whitespace().count() >= 2 && next.split_whitespace().count() >= 2
+            || first_cjk >= 4 && next_cjk >= 4)
+            && a.overlap(b) >= a.width().min(b.width()) * 0.85;
     }
     first.split_whitespace().count() >= 2
+        || first.chars().count() >= 4
+            && next.split_whitespace().count() >= 3
+            && b.width() >= a.width() * 1.5
         || first_cjk >= 2 && (first_cjk + next_cjk >= 10 || next.ends_with(['。', '！', '？']))
 }
 
@@ -253,10 +258,6 @@ pub(super) fn group_blocks(mut blocks: Vec<TextBlock>, minimum: f32) -> Vec<Text
     });
     let mut regions: Vec<Vec<Line>> = Vec::new();
     for line in lines {
-        if label(&line.text) {
-            regions.push(vec![line]);
-            continue;
-        }
         let candidate = regions.iter_mut().rev().find(|region| {
             let first = &region[0];
             let last = region.last().unwrap();
@@ -273,14 +274,22 @@ pub(super) fn group_blocks(mut blocks: Vec<TextBlock>, minimum: f32) -> Vec<Text
                 .reduce(Bounds::union)
                 .unwrap();
             let gap = b.top - a.bottom;
+            // The second line establishes the body margin after a possible first-line indent.
+            let body = region.get(1).unwrap_or(first).bounds;
+            let height = a.height().min(b.height());
+            let consistent_gap = region.len() < 2
+                || (gap - (last.bounds.top - region[region.len() - 2].bounds.bottom)).abs()
+                    <= height * 0.4;
             aligned(first.axis, line.axis)
                 && a.similar_height(b)
                 && first.bounds.similar_height(b)
                 && gap >= -0.01
-                && gap <= a.height().min(b.height()) * 0.6
-                && (b.left - first.bounds.left).abs() <= b.height() * 0.6
-                && b.right
-                    <= first.bounds.right + (b.height() * 0.6).max(first.bounds.width() * 0.35)
+                && gap <= height
+                && consistent_gap
+                && a.overlap(b) >= a.width().min(b.width()) * 0.65
+                && ((b.left - body.left).abs() <= height * 1.5
+                    || (b.right - body.right).abs() <= height * 0.6
+                    || (b.left + b.right - body.left - body.right).abs() <= height)
                 && continuation(&last.text, &line.text, a, b)
                 && !barrier_between(a, b, first.axis, &barriers)
         });
