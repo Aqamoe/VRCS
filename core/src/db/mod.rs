@@ -146,6 +146,7 @@ impl Database {
             subtitle_history_max_bytes: u64::MAX,
         };
         database.initialize()?;
+        database.remove_staged_dictionary_sources()?;
         Ok(database)
     }
 

@@ -13,6 +13,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use super::{
     api_error, api_error_with_params, db_call, dictionary_import_error, ApiResult, ContentState,
 };
+use crate::db::Database;
+use crate::error::AppError;
 
 const IMPORT_ID_HEADER: &str = "x-vrcs-import-id";
 const IMPORT_PROGRESS_SCALE: u32 = 10_000;
@@ -209,9 +211,11 @@ pub(super) async fn dictionary_import(
     };
     let features = context.config.features_tx.subscribe();
     let worker_progress = progress.clone();
-    let result = db_call(Arc::clone(&state.db), move |db| {
+    let db = Arc::clone(&state.db);
+    let result = tokio::task::spawn_blocking(move || {
         let _import_permit = import_permit;
-        db.import_yomitan_with_progress(
+        Database::import_yomitan_with_progress(
+            &db,
             &body,
             |value| {
                 if let Some(progress) = &worker_progress {
@@ -223,7 +227,13 @@ pub(super) async fn dictionary_import(
             || !features.borrow().learning,
         )
     })
-    .await;
+    .await
+    .map_err(|error| {
+        AppError::internal(format!(
+            "Dictionary import task exited unexpectedly: {error}"
+        ))
+    })
+    .and_then(|result| result);
     match result {
         Ok(imported) => {
             if let Some(progress) = progress {

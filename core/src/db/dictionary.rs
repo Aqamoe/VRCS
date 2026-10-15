@@ -2,12 +2,15 @@ use std::collections::HashSet;
 
 use rusqlite::{params, params_from_iter, Statement, ToSql};
 
+use std::sync::Mutex;
+
 use super::Database;
 use crate::error::{AppError, AppResult};
 use crate::models::{DictionaryEntry, DictionarySource};
-use crate::yomitan::{DictionaryRecord, YomitanImporter};
+use crate::yomitan::{DictionaryMetadata, DictionaryRecord, YomitanImporter};
 
 pub(super) const INSERT_BATCH_SIZE: usize = 500;
+const STAGED_TITLE_PREFIX: &str = "\0importing:";
 
 pub(super) fn like_prefix(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len() + 1);
@@ -107,7 +110,7 @@ impl Database {
                     sources.title AS dictionary
              FROM dictionary_entries AS entries
              JOIN dictionary_sources AS sources ON sources.id = entries.source_id
-             WHERE {predicate}
+             WHERE sources.entry_count > 0 AND ({predicate})
              GROUP BY entries.source_id, entries.term, entries.reading,
                       entries.language, entries.definition, sources.title
              ORDER BY MAX(entries.score) DESC, MIN(entries.id)
@@ -171,13 +174,9 @@ impl Database {
     }
 
     /// 导入 Yomitan 词典包；同名词典整体替换。
-    #[cfg(test)]
-    pub fn import_yomitan(&mut self, archive: &[u8]) -> AppResult<DictionarySource> {
-        self.import_yomitan_with_progress(archive, |_| {}, || false)
-    }
-
+    /// 词条分批写入隐藏的暂存来源，每批只短暂持锁，避免长时间阻塞字幕写入。
     pub fn import_yomitan_with_progress(
-        &mut self,
+        db: &Mutex<Database>,
         archive: &[u8],
         mut report_progress: impl FnMut(f64),
         should_cancel: impl Fn() -> bool,
@@ -189,73 +188,99 @@ impl Database {
                 Ok(())
             }
         };
+        let lock = || {
+            db.lock()
+                .map_err(|_| AppError::internal("Database lock is unavailable"))
+        };
         check_cancelled()?;
         report_progress(0.0);
         let importer = YomitanImporter::new(archive).map_err(AppError::validation)?;
-        let imported_at = crate::models::now_iso8601();
-        let transaction = self.conn.transaction()?;
-        transaction.execute(
-            "INSERT INTO dictionary_sources(
-                 title, revision, source_language, target_language, entry_count, imported_at
-             ) VALUES (?, ?, ?, ?, 0, ?)
-             ON CONFLICT(title) DO UPDATE SET
-                 revision = excluded.revision,
-                 source_language = excluded.source_language,
-                 target_language = excluded.target_language,
-                 entry_count = 0,
-                 imported_at = excluded.imported_at",
-            params![
-                importer.metadata.title,
-                importer.metadata.revision,
-                importer.metadata.source_language,
-                importer.metadata.target_language,
-                imported_at,
-            ],
-        )?;
-        let source_id: i64 = transaction.query_row(
-            "SELECT id FROM dictionary_sources WHERE title = ?",
-            params![importer.metadata.title],
-            |row| row.get(0),
-        )?;
-        transaction.execute(
-            "DELETE FROM dictionary_entries WHERE source_id = ?",
-            params![source_id],
-        )?;
-
-        let mut records = Vec::with_capacity(INSERT_BATCH_SIZE);
-        let count = {
-            let sql = insert_sql(INSERT_BATCH_SIZE);
-            let mut statement = transaction.prepare(&sql)?;
-            importer.for_each_entry_with_progress(
+        let staged_id = lock()?.stage_dictionary_source(&importer.metadata)?;
+        let result = (|| {
+            let mut records = Vec::with_capacity(INSERT_BATCH_SIZE);
+            let count = importer.for_each_entry_with_progress(
                 |record| {
                     check_cancelled()?;
                     records.push(record);
                     if records.len() == INSERT_BATCH_SIZE {
-                        insert_batch(&mut statement, source_id, &mut records)?;
+                        lock()?.insert_dictionary_records(staged_id, &mut records)?;
                     }
                     Ok(())
                 },
                 |progress| report_progress(progress * 0.99),
-            )? as i64
-        };
-        if !records.is_empty() {
-            let sql = insert_sql(records.len());
-            let mut statement = transaction.prepare(&sql)?;
-            insert_batch(&mut statement, source_id, &mut records)?;
+            )? as i64;
+            if !records.is_empty() {
+                lock()?.insert_dictionary_records(staged_id, &mut records)?;
+            }
+            if count == 0 {
+                return Err(AppError::validation(
+                    "The Yomitan dictionary contains no importable text entries",
+                ));
+            }
+            check_cancelled()?;
+            lock()?.publish_dictionary_source(staged_id, &importer.metadata.title, count)
+        })();
+        match &result {
+            Ok(_) => report_progress(1.0),
+            Err(_) => {
+                if let Ok(db) = lock() {
+                    let _ = db.delete_dictionary_source(staged_id);
+                }
+            }
         }
-        if count == 0 {
-            return Err(AppError::validation(
-                "The Yomitan dictionary contains no importable text entries",
-            ));
-        }
-        transaction.execute(
-            "UPDATE dictionary_sources SET entry_count = ? WHERE id = ?",
-            params![count, source_id],
+        result
+    }
+
+    /// 暂存来源的 entry_count 为 0，对查询和列表不可见。
+    fn stage_dictionary_source(&self, metadata: &DictionaryMetadata) -> AppResult<i64> {
+        self.conn.execute(
+            "INSERT INTO dictionary_sources(
+                 title, revision, source_language, target_language, entry_count, imported_at
+             ) VALUES (?, ?, ?, ?, 0, ?)",
+            params![
+                format!("{STAGED_TITLE_PREFIX}{}", uuid::Uuid::new_v4()),
+                metadata.revision,
+                metadata.source_language,
+                metadata.target_language,
+                crate::models::now_iso8601(),
+            ],
         )?;
-        check_cancelled()?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    fn insert_dictionary_records(
+        &self,
+        source_id: i64,
+        records: &mut Vec<DictionaryRecord>,
+    ) -> AppResult<()> {
+        let mut statement = self.conn.prepare_cached(&insert_sql(records.len()))?;
+        insert_batch(&mut statement, source_id, records)
+    }
+
+    fn publish_dictionary_source(
+        &mut self,
+        staged_id: i64,
+        title: &str,
+        entry_count: i64,
+    ) -> AppResult<DictionarySource> {
+        let transaction = self.conn.transaction()?;
+        transaction.execute(
+            "DELETE FROM dictionary_sources WHERE title = ?",
+            params![title],
+        )?;
+        transaction.execute(
+            "UPDATE dictionary_sources SET title = ?, entry_count = ? WHERE id = ?",
+            params![title, entry_count, staged_id],
+        )?;
         transaction.commit()?;
-        report_progress(1.0);
-        self.dictionary_source(source_id)
+        self.dictionary_source(staged_id)
+    }
+
+    /// 清理进程中断时遗留的暂存来源。
+    pub(super) fn remove_staged_dictionary_sources(&self) -> AppResult<()> {
+        self.conn
+            .execute("DELETE FROM dictionary_sources WHERE entry_count = 0", [])?;
+        Ok(())
     }
 
     pub fn dictionary_source(&self, source_id: i64) -> AppResult<DictionarySource> {
@@ -280,7 +305,8 @@ impl Database {
     pub fn dictionary_sources(&self) -> AppResult<Vec<DictionarySource>> {
         let mut statement = self.conn.prepare(
             "SELECT id, title, revision, source_language, target_language, entry_count, imported_at
-                 FROM dictionary_sources ORDER BY imported_at DESC, id DESC",
+                 FROM dictionary_sources WHERE entry_count > 0
+                 ORDER BY imported_at DESC, id DESC",
         )?;
         let rows = statement.query_map([], |row| {
             Ok(DictionarySource {

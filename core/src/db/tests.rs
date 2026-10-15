@@ -1,6 +1,6 @@
 use super::dictionary::{like_prefix, INSERT_BATCH_SIZE};
 use super::*;
-use crate::models::{now_iso8601, Subtitle, SubtitleTranslation};
+use crate::models::{now_iso8601, DictionarySource, Subtitle, SubtitleTranslation};
 use std::io::{Cursor, Write};
 
 fn open_temp_db(name: &str) -> (std::path::PathBuf, Database) {
@@ -24,6 +24,10 @@ fn subtitle(text: &str) -> Subtitle {
         created_at: now_iso8601(),
         translations: Vec::new(),
     }
+}
+
+fn import_yomitan(db: &std::sync::Mutex<Database>, archive: &[u8]) -> DictionarySource {
+    Database::import_yomitan_with_progress(db, archive, |_| {}, || false).unwrap()
 }
 
 fn dictionary_archive(count: usize) -> Vec<u8> {
@@ -343,6 +347,33 @@ fn subtitle_history_deletes_only_the_requested_time_range() {
 }
 
 #[test]
+fn subtitle_quota_ignores_dictionary_data() {
+    let (_path, mut database) = open_temp_db("history-dictionary");
+    database
+        .conn
+        .execute(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000)
+             INSERT INTO dictionary (term, language, definition)
+             SELECT 'term-' || i, 'ja', printf('%.2000c', 'x') FROM n",
+            [],
+        )
+        .unwrap();
+    let quota = 512 * 1024;
+    assert!(database.storage_stats().unwrap().allocated_bytes > quota);
+    database.set_subtitle_history_max_bytes(quota).unwrap();
+    for index in 0..5 {
+        database
+            .add_subtitle(&subtitle(&format!("line {index}")))
+            .unwrap();
+    }
+
+    let stats = database.storage_stats().unwrap();
+    assert_eq!(database.subtitle_history(10).unwrap().len(), 5);
+    assert!(!stats.over_limit);
+    assert!(stats.used_bytes < quota);
+}
+
+#[test]
 fn subtitle_history_clear_reclaims_database_pages() {
     let (_path, mut database) = open_temp_db("history-clear");
     for index in 0..4 {
@@ -641,11 +672,13 @@ fn escaped_prefix_lookup_uses_the_term_index() {
 
 #[test]
 fn feature_switches_cancel_dictionary_replacement_without_losing_existing_entries() {
-    let (_path, mut database) = open_temp_db("cancel-import");
+    let (_path, database) = open_temp_db("cancel-import");
+    let db = std::sync::Mutex::new(database);
     let archive = dictionary_archive(INSERT_BATCH_SIZE + 1);
-    let original = database.import_yomitan(&archive).unwrap();
+    let original = import_yomitan(&db, &archive);
     let cancelled = std::cell::Cell::new(false);
-    let result = database.import_yomitan_with_progress(
+    let result = Database::import_yomitan_with_progress(
+        &db,
         &archive,
         |progress| {
             if progress > 0.0 {
@@ -655,6 +688,7 @@ fn feature_switches_cancel_dictionary_replacement_without_losing_existing_entrie
         || cancelled.get(),
     );
     assert!(matches!(result, Err(crate::error::AppError::Conflict(_))));
+    let database = db.into_inner().unwrap();
     let sources = database.dictionary_sources().unwrap();
     assert_eq!(sources.len(), 1);
     assert_eq!(sources[0].id, original.id);
@@ -670,20 +704,51 @@ fn feature_switches_cancel_dictionary_replacement_without_losing_existing_entrie
 }
 
 #[test]
+fn subtitles_can_be_saved_while_a_dictionary_imports() {
+    let (_path, database) = open_temp_db("import-concurrency");
+    let db = std::sync::Mutex::new(database);
+    let archive = dictionary_archive(INSERT_BATCH_SIZE * 3);
+    Database::import_yomitan_with_progress(
+        &db,
+        &archive,
+        |progress| {
+            let database = db
+                .try_lock()
+                .expect("import must not hold the database lock");
+            database.add_subtitle(&subtitle("during import")).unwrap();
+            if progress < 1.0 {
+                assert!(database.dictionary_sources().unwrap().is_empty());
+            }
+        },
+        || false,
+    )
+    .unwrap();
+    let database = db.into_inner().unwrap();
+    assert!(!database.subtitle_history(100).unwrap().is_empty());
+    assert_eq!(database.dictionary_sources().unwrap().len(), 1);
+}
+
+#[test]
 fn dictionary_import_flushes_full_and_partial_batches() {
-    let (_path, mut database) = open_temp_db("batch-import");
+    let (_path, database) = open_temp_db("batch-import");
+    let db = std::sync::Mutex::new(database);
     let archive = dictionary_archive(INSERT_BATCH_SIZE + 1);
 
     let mut progress = Vec::new();
-    let imported = database
-        .import_yomitan_with_progress(&archive, |value| progress.push(value), || false)
-        .unwrap();
+    let imported = Database::import_yomitan_with_progress(
+        &db,
+        &archive,
+        |value| progress.push(value),
+        || false,
+    )
+    .unwrap();
     assert_eq!(imported.entry_count, 501);
     assert_eq!(progress.first(), Some(&0.0));
     assert_eq!(progress.last(), Some(&1.0));
     assert!(progress.windows(2).all(|pair| pair[0] <= pair[1]));
     assert_eq!(
-        database
+        db.lock()
+            .unwrap()
             .conn
             .query_row("SELECT COUNT(*) FROM dictionary_entries", [], |row| row
                 .get::<_, i64>(0))
@@ -691,9 +756,12 @@ fn dictionary_import_flushes_full_and_partial_batches() {
         501
     );
 
-    database.import_yomitan(&archive).unwrap();
+    let reimported = import_yomitan(&db, &archive);
+    assert_eq!(reimported.title, imported.title);
+    assert_eq!(db.lock().unwrap().dictionary_sources().unwrap().len(), 1);
     assert_eq!(
-        database
+        db.lock()
+            .unwrap()
             .conn
             .query_row("SELECT COUNT(*) FROM dictionary_entries", [], |row| row
                 .get::<_, i64>(0))
