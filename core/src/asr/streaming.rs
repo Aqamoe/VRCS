@@ -23,6 +23,7 @@ use super::{read_credential, SharedAudio};
 mod alignment;
 mod idle;
 mod provider;
+mod reconnect;
 
 pub use provider::SegmentationMode;
 use provider::{InitializationEvent, NormalizationState, Provider};
@@ -509,34 +510,44 @@ async fn run_with_reconnect(
                 detail,
             })
             .await;
-        tokio::select! {
-            _ = tokio::time::sleep(backoff) => {}
-            _ = stop.changed() => break,
-        }
-        match connect_initialized(provider, &config, &profile, silence_seconds, &key).await {
-            Ok((next_socket, next_task_id)) => {
-                if provider == Provider::OpenAiLiveTranslate {
-                    while let Ok(input) = audio.try_recv() {
-                        if let StreamingInput::Commit(result) = input {
-                            let _ = result.send(Err("Translation session reconnected".into()));
-                        }
-                    }
+        // Retry on a fresh socket only; keep draining input so the pipeline never stalls.
+        let mut pending = reconnect::ReconnectBuffer::default();
+        let connection = loop {
+            let attempt = async {
+                tokio::time::sleep(backoff).await;
+                connect_initialized(provider, &config, &profile, silence_seconds, &key).await
+            };
+            let result = tokio::select! {
+                result = reconnect::buffer_until(attempt, &mut audio, &mut pending) => result,
+                _ = stop.changed() => break None,
+            };
+            match result {
+                Ok(connection) => break Some(connection),
+                Err(error) => {
+                    let _ = events
+                        .send(CloudEvent::Failed {
+                            utterance_id: None,
+                            reset_session: true,
+                            code: "asr.cloud_reconnect_failed".into(),
+                            detail: error,
+                        })
+                        .await;
+                    backoff = (backoff * 2).min(Duration::from_secs(8));
                 }
-                socket = next_socket;
-                task_id = next_task_id;
-                backoff = Duration::from_millis(500);
             }
-            Err(error) => {
-                let _ = events
-                    .send(CloudEvent::Failed {
-                        utterance_id: None,
-                        reset_session: true,
-                        code: "asr.cloud_reconnect_failed".into(),
-                        detail: error,
-                    })
-                    .await;
-                backoff = (backoff * 2).min(Duration::from_secs(8));
+            if pending.closed {
+                break None;
             }
+        };
+        let Some((next_socket, next_task_id)) = connection else {
+            break;
+        };
+        socket = next_socket;
+        task_id = next_task_id;
+        backoff = Duration::from_millis(500);
+        // OpenAI translation restarts from live speech rather than stale audio.
+        if provider != Provider::OpenAiLiveTranslate {
+            replay.extend(pending.inputs);
         }
     }
 }
@@ -642,20 +653,19 @@ async fn run_session_inner(
                 }
             }
             _ = async { if provider.segmentation_mode() != SegmentationMode::Continuous || !*stop.borrow() { let _ = stop.changed().await; } } => {
-                if matches!(provider, Provider::OpenAiLiveTranslate | Provider::GeminiLiveTranslate | Provider::QwenLiveTranslate) {
-                    audio.close();
-                    while let Some(input) = match replay.pop_front() { Some(input) => Some(input), None => audio.recv().await } {
-                        match input {
-                            StreamingInput::Audio(samples) | StreamingInput::AudioActivity(samples, _) => {
-                                pending_audio = true;
-                                audio_buffer.extend_from_slice(&samples);
-                                while let Some(packet) = take_audio_packet(&mut audio_buffer, provider.audio_packet_samples()) {
-                                    send_audio(provider, socket, packet).await?;
-                                }
+                // Send speech queued before stop; remaining commits fold into the final segment.
+                audio.close();
+                while let Some(input) = match replay.pop_front() { Some(input) => Some(input), None => audio.recv().await } {
+                    match input {
+                        StreamingInput::Audio(samples) | StreamingInput::AudioActivity(samples, _) => {
+                            pending_audio = true;
+                            audio_buffer.extend_from_slice(&samples);
+                            while let Some(packet) = take_audio_packet(&mut audio_buffer, provider.audio_packet_samples()) {
+                                send_audio(provider, socket, packet).await?;
                             }
-                            StreamingInput::Commit(result) => { let _ = result.send(Ok(())); }
-                            StreamingInput::FinishQuestion(result) => { let _ = result.send(Err("Question session was stopped".into())); }
                         }
+                        StreamingInput::Commit(result) => { let _ = result.send(Ok(())); }
+                        StreamingInput::FinishQuestion(result) => { let _ = result.send(Err("Question session was stopped".into())); }
                     }
                 }
                 flush_audio_buffer(provider, socket, &mut audio_buffer).await?;
@@ -749,12 +759,24 @@ async fn run_session_inner(
     }
 }
 
+#[cfg(test)]
+tokio::task_local! {
+    static TEST_CONNECT_URL: String;
+}
+
 async fn connect(
     provider: Provider,
     config: &AsrConfig,
     profile: &ApiProfile,
     key: &str,
 ) -> Result<Socket, String> {
+    #[cfg(test)]
+    if let Ok(url) = TEST_CONNECT_URL.try_with(Clone::clone) {
+        return tokio_tungstenite::connect_async(url)
+            .await
+            .map(|(socket, _)| socket)
+            .map_err(|error| error.to_string());
+    }
     let request = provider.build_request(config, profile, key)?;
     tokio_tungstenite::connect_async(request)
         .await
@@ -1483,6 +1505,113 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn reconnect_replays_audio_and_commits_received_while_disconnected() {
+        async fn accept_initialized(
+            listener: &tokio::net::TcpListener,
+        ) -> WebSocketStream<TcpStream> {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut server = tokio_tungstenite::accept_async(stream).await.unwrap();
+            server.next().await.unwrap().unwrap();
+            server
+                .send(json_frame(
+                    serde_json::json!({"type": "session.updated"}),
+                    false,
+                ))
+                .await
+                .unwrap();
+            server
+        }
+        async fn next_type(server: &mut WebSocketStream<TcpStream>) -> String {
+            let message = server.next().await.unwrap().unwrap();
+            let value: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+            value["type"].as_str().unwrap().to_owned()
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let (acked_tx, acked_rx) = oneshot::channel::<()>();
+        let server_task = tokio::spawn(async move {
+            let mut first = accept_initialized(&listener).await;
+            assert_eq!(next_type(&mut first).await, "input_audio_buffer.append");
+            drop(first);
+            // The pipeline must not wait for the new connection.
+            acked_rx.await.unwrap();
+            let mut second = accept_initialized(&listener).await;
+            let mut received = Vec::new();
+            for _ in 0..3 {
+                received.push(next_type(&mut second).await);
+            }
+            received
+        });
+
+        let config = AsrConfig {
+            backend: "qwen_realtime".into(),
+            ..AsrConfig::default()
+        };
+        let profile = ApiProfile::default();
+        TEST_CONNECT_URL
+            .scope(url, async move {
+                let (socket, task_id) =
+                    connect_initialized(Provider::Qwen, &config, &profile, 0.4, "key")
+                        .await
+                        .unwrap();
+                let (audio_tx, audio_rx) = mpsc::channel(32);
+                let (event_tx, mut event_rx) = mpsc::channel(32);
+                let (stop_tx, stop_rx) = watch::channel(false);
+                let worker = run_with_reconnect(
+                    Provider::Qwen,
+                    config.clone(),
+                    profile.clone(),
+                    0.4,
+                    "key".into(),
+                    socket,
+                    task_id,
+                    audio_rx,
+                    event_tx,
+                    stop_rx,
+                );
+                let driver = async {
+                    let audio =
+                        || StreamingInput::Audio(super::super::share_audio(vec![0.1; 1600]));
+                    audio_tx.send(audio()).await.unwrap();
+                    loop {
+                        if let Some(CloudEvent::Failed { code, .. }) = event_rx.recv().await {
+                            if code == "asr.cloud_disconnected" {
+                                break;
+                            }
+                        }
+                    }
+                    // Sent during reconnect backoff: must be acknowledged without waiting.
+                    audio_tx.send(audio()).await.unwrap();
+                    let (commit_tx, commit_rx) = oneshot::channel();
+                    audio_tx
+                        .send(StreamingInput::Commit(commit_tx))
+                        .await
+                        .unwrap();
+                    assert_eq!(commit_rx.await.unwrap(), Ok(()));
+                    acked_tx.send(()).unwrap();
+                    audio_tx.send(audio()).await.unwrap();
+                    let received = server_task.await.unwrap();
+                    assert_eq!(
+                        received,
+                        [
+                            "input_audio_buffer.append",
+                            "input_audio_buffer.commit",
+                            "input_audio_buffer.append"
+                        ]
+                    );
+                    stop_tx.send(true).unwrap();
+                };
+                let ((), ()) = tokio::time::timeout(Duration::from_secs(5), async {
+                    tokio::join!(worker, driver)
+                })
+                .await
+                .unwrap();
+            })
+            .await;
     }
 
     async fn socket_pair() -> (Socket, WebSocketStream<TcpStream>) {

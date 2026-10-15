@@ -779,11 +779,23 @@ impl PipelineEffectRunner<'_> {
                 }
             }
             PipelineEffect::CommitCloud { has_segment } => {
-                let utterance_id = match self.cloud.as_ref() {
-                    Some(session) => session.commit(has_segment).await?,
-                    None => None,
+                let commit = match self.cloud.as_ref() {
+                    Some(session) => session.commit(has_segment).await,
+                    None => Ok(None),
                 };
-                return Ok(Some(PipelineEvent::CloudCommitted(utterance_id)));
+                // A lost segment is recoverable; a closed session fails the next send.
+                return Ok(Some(match commit {
+                    Ok(utterance_id) => PipelineEvent::CloudCommitted(utterance_id),
+                    Err(detail) => PipelineEvent::Cloud {
+                        event: CloudEvent::Failed {
+                            utterance_id: None,
+                            reset_session: false,
+                            code: "asr.cloud_transcription_failed".into(),
+                            detail,
+                        },
+                        partial_publication: PartialPublication::Immediate,
+                    },
+                }));
             }
         }
         Ok(None)
