@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-vision-capture"
+description = "Enables the desktop_vision_capture command without any pre-configured scope."
+commands.allow = ["desktop_vision_capture"]
+
+[[permission]]
+identifier = "deny-desktop-vision-capture"
+description = "Denies the desktop_vision_capture command without any pre-configured scope."
+commands.deny = ["desktop_vision_capture"]

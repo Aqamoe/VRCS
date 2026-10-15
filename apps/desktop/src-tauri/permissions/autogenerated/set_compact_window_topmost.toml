@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-compact-window-topmost"
+description = "Enables the set_compact_window_topmost command without any pre-configured scope."
+commands.allow = ["set_compact_window_topmost"]
+
+[[permission]]
+identifier = "deny-set-compact-window-topmost"
+description = "Denies the set_compact_window_topmost command without any pre-configured scope."
+commands.deny = ["set_compact_window_topmost"]

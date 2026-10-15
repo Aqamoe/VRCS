@@ -3,5 +3,5 @@
   "identifier": "ocr",
   "description": "Desktop OCR result window",
   "windows": ["ocr"],
-  "permissions": ["core:default", "core:window:allow-start-dragging", "store:allow-load", "store:allow-get"]
+  "permissions": ["core:default", "core:window:allow-start-dragging", "store:allow-load", "store:allow-get", "allow-report-frontend-error", "allow-desktop-ocr-status", "allow-desktop-ocr-scan", "allow-desktop-ocr-close"]
 }

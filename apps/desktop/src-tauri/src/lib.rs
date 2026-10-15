@@ -686,6 +686,26 @@ mod tests {
     }
 
     #[test]
+    fn content_windows_cannot_reach_privileged_commands() {
+        for capabilities in [
+            include_str!("../capabilities/ocr.json"),
+            include_str!("../capabilities/vision.json"),
+        ] {
+            for permission in [
+                "allow-core-connection",
+                "allow-write-glossary-file",
+                "allow-export-error-report",
+                "allow-download-and-install-update",
+            ] {
+                assert!(
+                    !capabilities.contains(permission),
+                    "unexpected {permission}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn development_core_port_avoids_anki_and_vrchat_osc_defaults() {
         assert_eq!(DEFAULT_CORE_PORT, 8766);
         assert!(![8765, 9000, 9001].contains(&DEFAULT_CORE_PORT));

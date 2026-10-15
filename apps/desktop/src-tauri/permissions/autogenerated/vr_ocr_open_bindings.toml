@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vr-ocr-open-bindings"
+description = "Enables the vr_ocr_open_bindings command without any pre-configured scope."
+commands.allow = ["vr_ocr_open_bindings"]
+
+[[permission]]
+identifier = "deny-vr-ocr-open-bindings"
+description = "Denies the vr_ocr_open_bindings command without any pre-configured scope."
+commands.deny = ["vr_ocr_open_bindings"]

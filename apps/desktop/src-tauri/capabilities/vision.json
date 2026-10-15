@@ -3,5 +3,5 @@
   "identifier": "vision",
   "description": "Desktop visual question window",
   "windows": ["vision"],
-  "permissions": ["core:default", "core:window:allow-start-dragging", "store:allow-load", "store:allow-get"]
+  "permissions": ["core:default", "core:window:allow-start-dragging", "store:allow-load", "store:allow-get", "allow-report-frontend-error", "allow-desktop-vision-status", "allow-desktop-vision-open", "allow-desktop-vision-capture", "allow-desktop-vision-image", "allow-desktop-vision-start-recording", "allow-desktop-vision-finish-recording", "allow-desktop-vision-ask", "allow-desktop-vision-cancel", "allow-desktop-vision-close"]
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-export-error-report"
+description = "Enables the export_error_report command without any pre-configured scope."
+commands.allow = ["export_error_report"]
+
+[[permission]]
+identifier = "deny-export-error-report"
+description = "Denies the export_error_report command without any pre-configured scope."
+commands.deny = ["export_error_report"]

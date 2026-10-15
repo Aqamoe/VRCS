@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-vision-status"
+description = "Enables the desktop_vision_status command without any pre-configured scope."
+commands.allow = ["desktop_vision_status"]
+
+[[permission]]
+identifier = "deny-desktop-vision-status"
+description = "Denies the desktop_vision_status command without any pre-configured scope."
+commands.deny = ["desktop_vision_status"]
