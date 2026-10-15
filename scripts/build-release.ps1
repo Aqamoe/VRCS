@@ -146,6 +146,9 @@ $previousReleaseCargoTargetDir = [Environment]::GetEnvironmentVariable("CARGO_TA
 Push-Location $repoRoot
 try {
     $env:CARGO_TARGET_DIR = $defaultTargetRoot
+    # OpenVR's CMake cache cannot be reused after a generator or toolchain change.
+    & cargo clean --manifest-path $cargoManifestPath -p openvr_sys
+    if ($LASTEXITCODE -ne 0) { throw "OpenVR build cache cleanup failed" }
     & (Join-Path $PSScriptRoot "prepare-vulkan-runtime.ps1")
     Write-ReleaseTauriConfig `
         -TemplatePath $tauriReleaseConfigTemplatePath `
