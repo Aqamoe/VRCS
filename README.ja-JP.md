@@ -2,15 +2,25 @@
     <img src="apps/desktop/public/logos/VRCS_Logo.svg" width="50%" alt="logo" />
 </p>
 
-# VRCS
+<p align="center">
+    VRCSはVRChat向けの字幕・翻訳・言語学習・AIツールです。
+</p>
 
-[English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-Hant.md) | **日本語**
+<p align="center">
+    <img src="https://img.shields.io/github/v/release/Dreaminko/VRCS" alt="GitHub Release" />
+    <img src="https://img.shields.io/github/license/Dreaminko/VRCS" alt="GitHub License" />
+    <img src="https://img.shields.io/github/stars/Dreaminko/VRCS?style=flat" alt="GitHub Repo stars" />
+</p>
+
+<p align="center">
+    <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.zh-Hant.md">繁體中文</a> | <strong>日本語</strong>
+</p>
+
+<p align="center">
+    <a href="https://github.com/Dreaminko/VRCS/releases/latest">ダウンロード</a> · <a href="https://github.com/Dreaminko/VRCS/issues">問題を報告</a> · <a href="CONTRIBUTING.md">コントリビュート</a> · <a href="https://discord.gg/53H872eYq">Discord</a> · <a href="https://qm.qq.com/q/i9kOOxFn44">QQグループ</a>
+</p>
 
 ![](./screenshots/01.png)
-
-VRCSはVRChat向けのWindowsリアルタイム字幕・翻訳・言語学習ツールです。システム音声とマイク入力を取り込み、デスクトップやSteamVRに字幕を表示します。OCRで画面内の文字を翻訳し、字幕を辞書検索、学習分析、Ankiカード作成に使えます。
-
-[ダウンロード](https://github.com/Dreaminko/VRCS/releases/latest) · [問題を報告](https://github.com/Dreaminko/VRCS/issues) · [コントリビュート](CONTRIBUTING.md) · [Discord](https://discord.gg/53H872eYq) · [QQグループ](https://qm.qq.com/q/i9kOOxFn44)
 
 ## インストール
 
@@ -30,29 +40,28 @@ VRCSはVRChat向けのWindowsリアルタイム字幕・翻訳・言語学習ツ
 
 ウィザードは「設定 › システム」から再実行できます。
 
-「設定 › システム › 機能の選択」で使わない機能をオフにできます。機能が停止し、関連する設定と操作が非表示になります。設定とデータは保持され、再度オンにすると元の設定に戻ります。
+「設定 › システム › 機能の選択」で使わない機能をオフにすると、設定とデータを保持したまま、関連する設定と操作を非表示にできます。
 
 ## 主な機能
 
-- システム音声またはVRChatプロセス音声と、マイク入力のリアルタイム字幕。2系統の音声ソースの個別制御、コンパクトウィンドウ、ローカルのセッション履歴に対応。
-- CPUまたはVulkanで動作するローカルQwen3 ASRと、Qwen3 ASR、Fun-ASR、OpenAI Realtime、Gemini、Groqによるクラウド認識。Silero VADと任意のSmart Turnによる音声区間の分割。
-- DeepL、Microsoft Translator、OpenAI、Gemini、Alibaba Cloud LLM、OpenAI互換サービスによる手動・自動翻訳。システム音声とマイクにそれぞれ最大3つの翻訳先言語を設定し、言語ごとにサービスとモデルを選択可能。
-- Qwen Live Translate、Gemini Live Translate（プレビュー）、OpenAI Realtime Translationによるリアルタイムの原文・訳文表示。各音声ソースの最初の翻訳先言語を使用し、Qwenは話者の区別にも対応。
-- カスタムプロンプト、ローカル用語集、オンライン用語集の購読、直近の字幕コンテキスト。任意で [VRCX-0](https://vrcx-0.dev/) のワールド・メンバー情報を利用可能。言語プリセットで認識言語、翻訳先、Chatbox送信方法を保存・切り替え。
-- 確定したマイク字幕と訳文のVRChat OSC Chatbox出力。クイック入力、翻訳プレビュー、多言語送信に対応。OSCQueryによるミュート同期を有効にすると、ミュート中や状態不明の場合は自動送信を停止。
-- SteamVRのヘッドセット字幕と手首の会話ビュー。原文、訳文、多言語表示に対応し、ダッシュボードから言語、字幕の位置・サイズ・透明度、Chatbox設定を調整可能。
-- デスクトップOCR：設定可能なショートカットで、デスクトップや他のアプリに表示された文字をドラッグで選択。複数のモニターにまたがる範囲にも対応。画面のスナップショットはローカルでの範囲選択にのみ使い、選択した範囲だけをOCRで処理。画面全体を選択する操作はありません。結果ウィンドウに原文と多言語の訳文を表示し、コピーや再認識が可能。
-- VR OCR：ハンドジェスチャーやコントローラーで文字範囲を選び、手首パネルまたは両眼の原文位置に訳文を表示。
-- PaddleOCRクラウド認識とローカルPP-OCRv6に対応。ローカルモデルは設定からダウンロードし、CPUまたはDirectML GPUで実行。
-- デスクトップ画像質問応答：「設定 → ビジョン」で画像質問応答とデスクトップモードを有効にし、画像入力に対応したAPIプロファイルとモデルを選択します。`Ctrl+Alt+V`（変更可能）で、デスクトップや他のアプリに表示された内容をドラッグで選択します。複数のモニターにまたがる範囲にも対応します。画面のスナップショットはローカルでの範囲選択にのみ使い、画面全体を選択する操作はありません。専用ウィンドウで質問を入力するか、音声認識の結果を編集し、送信操作で選択範囲の画像と質問だけを送ります。VR OverlayやOCRは不要です。
-- VR画像質問応答：範囲を選択し、左トリガーを押し続けると一時的なマイク入力の取り込みが始まります。手首パネルの回答はMarkdownの見出し、強調、リスト、引用、コードに対応します。表は列名付きの項目として表示し、画像は代替テキストのみ表示します。
-- Yomitan辞書のインポート、字幕の辞書検索、「AIに質問」、学習素材の収集、語義説明、文型分析、会話レビュー。単語・文型・穴埋めカードの下書きを編集し、AnkiConnect経由でカードを作成。
+- システム音声またはVRChatプロセス音声とマイクから、2系統のリアルタイム字幕を生成。音声ソースの個別制御、コンパクトウィンドウ、ローカルのセッション履歴に対応。
+- CPUまたはVulkanで動作するローカルQwen3 ASRと、Qwen3 ASR、Fun-ASR、OpenAI Realtime、Gemini、Groq、OpenRouterなどのクラウド認識に対応。Silero VADと任意のSmart Turnで音声区間を分割。
+- 音声ソースごとに最大3言語へ手動・自動翻訳し、言語ごとにサービスとモデルを選択可能。DeepL、Microsoft Translator、OpenAI、Gemini、Alibaba Cloud LLM、OpenAI互換サービスに対応。
+- Qwen Live Translate、Gemini Live Translate、OpenAI Realtime Translationでリアルタイムの原文と訳文を表示。
+- プロンプト、ローカル・購読用語集、字幕コンテキストをカスタマイズ。[VRCX-0](https://vrcx-0.dev/) のワールド・メンバー情報も利用でき、言語プリセットで認識・翻訳・Chatbox設定を切り替え可能。
+- マイク字幕と訳文をVRChat OSC Chatboxに送信。クイック入力、翻訳プレビュー、多言語出力、任意のOSCQueryミュート同期に対応。
+- SteamVRのヘッドセットや手首に多言語字幕を表示。ダッシュボードから字幕のレイアウト、言語、Chatbox設定を調整可能。
+- デスクトップやVRで文字を範囲選択してOCR翻訳。PaddleOCRクラウドまたはローカルPP-OCRv6（CPU / DirectML GPU）を使い、結果をデスクトップウィンドウ、手首パネル、VRの原文位置に表示可能。
+- デスクトップやVRで選択した画像について質問。デスクトップでは文字・音声入力、VRでは左トリガーを押しながら音声入力。回答は専用ウィンドウやMarkdown対応の手首パネルに表示され、OCRは不要。
+- Yomitan辞書をインポートし、字幕から辞書検索や「AIに質問」、語義説明、文型分析、会話レビューを利用可能。単語・文型・穴埋めカードを編集し、AnkiConnect経由でAnkiに送信。
 
 ## プライバシー
 
 VRCSは元の音声を保存しません。字幕履歴、学習項目、辞書、設定はデフォルトでローカルに保存されます。ローカルQwen ASRとローカルOCRは端末上で音声と画像を処理し、クラウド認識は音声区間や選択した画像をプロバイダーに送信します。
 
 翻訳、学習分析、「AIに質問」は、関連テキスト、明示的に選択したコンテキスト、送信した質問を設定済みのサービスに送ります。ローカル認識後のテキストがクラウドに送られるかどうかは、選択した翻訳・AIサービスによります。
+
+デスクトップOCRと画像質問応答は、選択範囲のみを処理します。画像質問応答は選択した画像と質問文を設定済みのモデルサービスに送信し、クラウド音声認識を使う場合は質問の音声も送信します。画像と問答はデフォルトでディスクや問答履歴に保存されません。音声認識と画像リクエストは個別に課金される場合があります。
 
 ## 開発
 

@@ -2,15 +2,25 @@
     <img src="apps/desktop/public/logos/VRCS_Logo.svg" width="50%" alt="logo" />
 </p>
 
-# VRCS
+<p align="center">
+    VRCS 是面向 VRChat 的字幕、翻译、语言学习与 AI 工具。
+</p>
 
-[English](README.md) | **简体中文** | [繁體中文](README.zh-Hant.md) | [日本語](README.ja-JP.md)
+<p align="center">
+    <img src="https://img.shields.io/github/v/release/Dreaminko/VRCS" alt="GitHub Release" />
+    <img src="https://img.shields.io/github/license/Dreaminko/VRCS" alt="GitHub License" />
+    <img src="https://img.shields.io/github/stars/Dreaminko/VRCS?style=flat" alt="GitHub Repo stars" />
+</p>
+
+<p align="center">
+    <a href="README.md">English</a> | <strong>简体中文</strong> | <a href="README.zh-Hant.md">繁體中文</a> | <a href="README.ja-JP.md">日本語</a>
+</p>
+
+<p align="center">
+    <a href="https://github.com/Dreaminko/VRCS/releases/latest">下载</a> · <a href="https://github.com/Dreaminko/VRCS/issues">问题反馈</a> · <a href="CONTRIBUTING.md">参与贡献</a> · <a href="https://discord.gg/53H872eYq">Discord</a> · <a href="https://qm.qq.com/q/i9kOOxFn44">QQ 群</a>
+</p>
 
 ![](./screenshots/01.png)
-
-VRCS 是面向 VRChat 的 Windows 实时字幕、翻译与语言学习工具。采集系统音频和麦克风，在桌面或 SteamVR 中显示字幕；通过 OCR 翻译画面中的文字，并将字幕用于查词、学习分析和 Anki 制卡。
-
-[下载](https://github.com/Dreaminko/VRCS/releases/latest) · [问题反馈](https://github.com/Dreaminko/VRCS/issues) · [参与贡献](CONTRIBUTING.md) · [Discord](https://discord.gg/53H872eYq) · [QQ 群](https://qm.qq.com/q/i9kOOxFn44)
 
 ## 安装
 
@@ -30,23 +40,20 @@ VRCS 是面向 VRChat 的 Windows 实时字幕、翻译与语言学习工具。�
 
 可从“设置 › 系统”重新运行向导。
 
-可在“设置 › 系统 › 功能选项”关闭不使用的可选功能。关闭后功能停止，相关设置和入口隐藏，已有配置和数据保留；重新开启后恢复原设置。
+可在“设置 › 系统 › 功能选项”关闭不使用的功能，隐藏相关设置和入口，保留已有配置与数据。
 
 ## 主要功能
 
-- 系统或 VRChat 进程音频与麦克风双路实时字幕，支持独立音源控制、紧凑窗口和本地会话历史。
-- 本地 Qwen3 ASR 支持 CPU 或 Vulkan；云端识别支持 Qwen3 ASR、Fun-ASR、OpenAI Realtime、Gemini 和 Groq。Silero VAD 与可选 Smart Turn 用于语音分段。
-- 手动或自动翻译，支持 DeepL、Microsoft Translator、OpenAI、Gemini、Alibaba Cloud LLM 及 OpenAI 兼容服务。系统音频和麦克风可分别配置最多三种目标语言，并为各语言选择服务与模型。
-- Qwen Live Translate、Gemini Live Translate（预览）和 OpenAI Realtime Translation 可直接生成实时原文与译文，翻译每路音源的第一目标语言；Qwen 还支持讲话人区分。
-- 自定义提示词、本地术语表、在线术语订阅和最近字幕上下文；可选读取 [VRCX-0](https://vrcx-0.dev/) 的世界与成员信息。语言预设可保存并切换识别语言、翻译目标和 Chatbox 发送策略。
-- 将麦克风最终字幕和译文发送到 VRChat OSC Chatbox，支持快速输入、翻译预览和多语言发送。启用 OSCQuery 静音同步后，静音或状态未知时停止自动发送。
-- SteamVR 头显字幕与手腕对话视图，支持原文、译文和多语言显示。可在仪表盘中调整语言、字幕位置、尺寸、透明度和 Chatbox 设置。
-- 桌面 OCR：使用可自定义的快捷键拖动框选桌面或其他应用中的可见文字，支持跨屏。屏幕快照仅用于本地框选，只有选区进入 OCR 流程，无整屏选取入口。结果窗口显示原文与多语言译文，支持复制和重新识别。
-- VR OCR：通过手势或控制器选择文字区域，译文可显示在手腕面板或原文位置的双眼叠加层。
-- OCR 支持 PaddleOCR 云端和本地 PP-OCRv6；本地模型可在设置中下载，使用 CPU 或 DirectML GPU。
-- 桌面视觉问答：在“视觉”设置中启用视觉问答及桌面模式，选择图像理解档案与模型。按 `Ctrl+Alt+V`（可修改）拖动框选桌面或其他应用的可见内容，支持跨屏。屏幕快照仅用于本地框选，无整屏选取入口；在独立窗口键入问题，或完成语音识别后编辑，再明确发送选区图片与问题。无需启用 VR Overlay 或 OCR。
-- VR 视觉问答：画出选框后，按住左扳机讲话，松开后将选区图片与识别的问题发送给支持图片输入的模型，回答显示在可翻页、固定或关闭的手腕面板上。回答支持 Markdown 标题、强调、列表、引用和代码；表格按带列名的条目显示，图片仅显示替代文本。OCR 与视觉问答统一放在“视觉”设置中，各自独立启用。
-- 导入 Yomitan 词典包，在字幕中查词或“问 AI”，收集学习素材并进行词义解释、句型分析和会话回顾。编辑词汇、句型或完形填空卡草稿，通过 AnkiConnect 制卡。
+- 采集系统或 VRChat 进程音频与麦克风，生成双路实时字幕，支持独立音源控制、紧凑窗口和本地会话历史。
+- 本地 Qwen3 ASR 支持 CPU 或 Vulkan；云端识别支持 Qwen3 ASR、Fun-ASR、OpenAI Realtime、Gemini、Groq 和 OpenRouter 等服务，配合 Silero VAD 与可选 Smart Turn 进行语音分段。
+- 每路音源最多翻译为三种语言，可分别选择服务与模型，支持手动或自动翻译，以及 DeepL、Microsoft Translator、OpenAI、Gemini、Alibaba Cloud LLM 和 OpenAI 兼容服务。
+- Qwen Live Translate、Gemini Live Translate和 OpenAI Realtime Translation 直接生成实时原文与译文。
+- 自定义提示词、本地与订阅术语表、字幕上下文，可接入 [VRCX-0](https://vrcx-0.dev/) 的世界与成员信息，通过语言预设切换识别、翻译和 Chatbox 设置。
+- 将麦克风字幕和译文发送到 VRChat OSC Chatbox，支持快速输入、翻译预览、多语言输出和可选的 OSCQuery 静音同步。
+- 在 SteamVR 头显或手腕上阅读多语言字幕，通过仪表盘调整字幕布局、语言和 Chatbox 设置。
+- 在桌面或 VR 中框选文字进行 OCR 翻译，支持 PaddleOCR 云端和本地 PP-OCRv6（CPU / DirectML GPU），结果可显示在桌面窗口、手腕面板或 VR 原文位置。
+- 对桌面或 VR 中的选区图片提问：桌面支持键入或语音输入，VR 中按住左扳机讲话。回答显示在独立窗口或支持 Markdown 的手腕面板上，无需启用 OCR。
+- 导入 Yomitan 词典，在字幕中查词或“问 AI”，进行词义解释、句型分析和会话回顾；编辑词汇、句型或完形填空卡，通过 AnkiConnect 发送到 Anki。
 
 ## 隐私
 
@@ -54,7 +61,7 @@ VRCS 不保存原始音频，字幕历史、学习项目、词典和设置默认
 
 翻译、学习分析和“问 AI”会将相关文本、明确选择的上下文及提交的问题发送给配置的服务。本地识别后的文本是否发送到云端，取决于所选翻译和 AI 服务。
 
-视觉问答将选区图片和问题文本发送给配置的模型服务；使用云 ASR 时，还会发送本次问题的语音。图片和问答不默认保存到磁盘或问答历史，独立 ASR 请求与图像请求可能产生额外费用。
+桌面 OCR 和视觉问答仅处理框选区域。视觉问答将选区图片和问题文本发送给配置的模型服务；使用云端语音识别时，还会发送本次问题的语音。图片和问答默认不保存到磁盘或问答历史，语音识别与图像请求可能分别计费。
 
 ## 开发
 

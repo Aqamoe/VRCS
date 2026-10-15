@@ -2,15 +2,25 @@
     <img src="apps/desktop/public/logos/VRCS_Logo.svg" width="50%" alt="logo" />
 </p>
 
-# VRCS
+<p align="center">
+    VRCS is a subtitle, translation, language learning, and AI tool for VRChat.
+</p>
 
-**English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja-JP.md)
+<p align="center">
+    <img src="https://img.shields.io/github/v/release/Dreaminko/VRCS" alt="GitHub Release" />
+    <img src="https://img.shields.io/github/license/Dreaminko/VRCS" alt="GitHub License" />
+    <img src="https://img.shields.io/github/stars/Dreaminko/VRCS?style=flat" alt="GitHub Repo stars" />
+</p>
+
+<p align="center">
+    <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.zh-Hant.md">繁體中文</a> | <a href="README.ja-JP.md">日本語</a>
+</p>
+
+<p align="center">
+    <a href="https://github.com/Dreaminko/VRCS/releases/latest">Download</a> · <a href="https://github.com/Dreaminko/VRCS/issues">Report an issue</a> · <a href="CONTRIBUTING.md">Contribute</a> · <a href="https://discord.gg/53H872eYq">Discord</a> · <a href="https://qm.qq.com/q/i9kOOxFn44">QQ Group</a>
+</p>
 
 ![](./screenshots/01.png)
-
-VRCS is a Windows real-time subtitle, translation, and language-learning tool for VRChat. Capture system audio and microphone input for desktop or SteamVR subtitles, translate text in images with OCR, and use subtitles for dictionary lookup, learning analysis, and Anki cards.
-
-[Download](https://github.com/Dreaminko/VRCS/releases/latest) · [Report an issue](https://github.com/Dreaminko/VRCS/issues) · [Contribute](CONTRIBUTING.md) · [Discord](https://discord.gg/53H872eYq) · [QQ Group](https://qm.qq.com/q/i9kOOxFn44)
 
 ## Installation
 
@@ -29,29 +39,29 @@ Download `VRCS-<version>-windows-x64.exe` from [GitHub Releases](https://github.
 3. Start transcription. Enable translation, Chatbox output, or the SteamVR overlay as needed.
 
 To run the wizard again, open **Settings › System**.
-Open **Settings › System › Features** to turn off optional features. The feature stops and its settings and actions disappear. Your configuration and data are kept and restored when you turn it back on.
+
+Turn off unused features in **Settings › System › Features** to hide their settings and actions while keeping your configuration and data.
 
 ## Features
 
-- Real-time subtitles from system or VRChat process audio alongside microphone input, with separate controls for the two audio streams, compact window mode, and local session history.
-- Local Qwen3 ASR on CPU or Vulkan, plus cloud recognition with Qwen3 ASR, Fun-ASR, OpenAI Realtime, Gemini, Groq, and OpenRouter. Silero VAD and optional Smart Turn control speech segmentation.
-- Manual or automatic translation with DeepL, Microsoft Translator, OpenAI, Gemini, Alibaba Cloud LLM, and OpenAI-compatible services. Configure up to three target languages per audio stream, each with its own service and model.
-- Qwen Live Translate, Gemini Live Translate (Preview), and OpenAI Realtime Translation produce live source text and translations for each stream's first target language. Qwen also distinguishes speakers.
-- Custom prompts, local glossaries, online glossary subscriptions, recent subtitle context, and optional world and member information from [VRCX-0](https://vrcx-0.dev/). Save language presets to switch recognition language, translation targets, and Chatbox sending strategies.
-- Send final microphone subtitles and translations to the VRChat OSC Chatbox, with quick input, translation preview, and multilingual output. With OSCQuery mute synchronization enabled, automatic sending stops when muted or when mute status is unknown.
-- SteamVR headset subtitles and a wrist conversation view, with source text, translations, and multilingual display. Adjust languages, subtitle position, size, opacity, and Chatbox settings from the dashboard.
-- Desktop OCR: use a configurable shortcut to drag-select visible text on the desktop or in other apps, including across monitors. Screen snapshots are used only for local selection; only the selected area enters OCR. There is no full-screen selection action. View source text and multilingual translations in a result window, copy them, or scan again.
-- VR OCR: select text with hand gestures or controllers and display translations on a wrist panel or over the source in both eyes.
-- PaddleOCR cloud recognition or local PP-OCRv6 for OCR. Download local models in Settings and use CPU or a DirectML GPU.
-- Desktop visual question answering: enable visual question answering and desktop mode in Settings → Vision, then select an image-capable API profile and model. Press `Ctrl+Alt+V` (configurable) to drag-select visible content on the desktop or in other apps, including across monitors. Screen snapshots are used only for local selection, with no full-screen selection action. Type a question or recognize speech and edit the result, then explicitly send only the selected image and question from the question window. VR Overlay and OCR are not required.
-- VR visual question answering: select a region, then hold the left trigger to start temporary microphone capture and ask a question. Answers support Markdown headings, emphasis, lists, quotes, and code on the wrist panel. Tables appear as entries with column labels; images display only their alternative text.
-- Import Yomitan dictionaries, look up subtitle text or Ask AI, collect learning material, and review definitions, sentence patterns, and conversations. Edit vocabulary, sentence-pattern, or cloze card drafts and create cards through AnkiConnect.
+- Capture system or VRChat process audio alongside your microphone for real-time subtitles, with separate audio controls, a compact window, and local session history.
+- Choose local Qwen3 ASR on CPU or Vulkan, or cloud services including Qwen3 ASR, Fun-ASR, OpenAI Realtime, Gemini, Groq, and OpenRouter. Use Silero VAD and optional Smart Turn for speech segmentation.
+- Translate manually or automatically into up to three languages per audio stream. Choose a service and model for each language, with support for DeepL, Microsoft Translator, OpenAI, Gemini, Alibaba Cloud LLM, and OpenAI-compatible services.
+- Get live source text and translations with Qwen Live Translate, Gemini Live Translate, or OpenAI Realtime Translation.
+- Customize prompts, local and subscribed glossaries, and subtitle context. Add world and member context from [VRCX-0](https://vrcx-0.dev/), and switch recognition, translation, and Chatbox settings with language presets.
+- Send microphone subtitles and translations to the VRChat OSC Chatbox, with quick input, translation preview, multilingual output, and optional OSCQuery mute synchronization.
+- Read multilingual subtitles in your SteamVR headset or on your wrist. Adjust subtitle layout, languages, and Chatbox settings from the dashboard.
+- Select text on your desktop or in VR for OCR translation. Use PaddleOCR cloud or local PP-OCRv6 on CPU or DirectML GPU; view results in a desktop window, on your wrist, or over the source text in VR.
+- Ask questions about selected images on your desktop or in VR. Type or dictate on the desktop; hold the left trigger to speak in VR. Answers appear in a separate window or a wrist panel with Markdown support. OCR is not required.
+- Import Yomitan dictionaries, look up words or Ask AI from subtitles, and review definitions, sentence patterns, and conversations. Edit vocabulary, sentence-pattern, or cloze cards and send them to Anki through AnkiConnect.
 
 ## Privacy
 
 VRCS does not store raw audio. Subtitle history, learning items, dictionaries, and settings are stored locally by default. Local Qwen ASR and local OCR process audio and images on the device; cloud recognition sends speech segments or selected images to the chosen provider.
 
 Translation, learning analysis, and Ask AI send relevant text, explicitly selected context, and submitted questions to the configured service. Whether text from local recognition is sent to the cloud depends on the selected translation and AI services.
+
+Desktop OCR and visual questions process only the selected region. Visual questions send the selected image and question text to the configured model service; cloud speech recognition also receives the spoken question. Images and answers are not saved to disk or a question history by default. Speech recognition and image requests may incur separate charges.
 
 ## Development
 
