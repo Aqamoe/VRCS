@@ -404,7 +404,7 @@ export function VrOverlaySettingsSection({
                 onChange={(value) => updateWrist("dominant_hand", value as VrOverlayWristSettings["dominant_hand"])}
               />
               <MeterRange label={t("settings.vrOverlay.maxEntries")} value={draft.vr_overlay.wrist.max_entries} min={3} max={10} step={1} unit="" disabled={wristDisabled} onCommit={(value) => updateWrist("max_entries", value)} />
-              <MeterRange label={t("settings.vrOverlay.idleHideSeconds")} value={draft.vr_overlay.wrist.idle_hide_seconds} min={0} max={120} step={5} unit=" s" disabled={wristDisabled} onCommit={(value) => updateWrist("idle_hide_seconds", value)} />
+              <RangeField label={t("settings.vrOverlay.idleHideSeconds")} value={draft.vr_overlay.wrist.idle_hide_seconds} min={0} max={120} step={5} formatValue={(value) => value === 0 ? t("settings.vrOverlay.keepVisible") : `${value} s`} disabled={wristDisabled} onCommit={(value) => updateWrist("idle_hide_seconds", value)} />
             </div>
 
             <fieldset className="vr-overlay-toggle-group" disabled={wristDisabled}>
