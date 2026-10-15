@@ -32,11 +32,10 @@ use recognition_lifecycle::RecognitionLifecycle;
 #[derive(Clone, Default)]
 pub(crate) struct AsrEchoGuard {
     signatures: Vec<String>,
-    repeated_world: Option<String>,
 }
 
 impl AsrEchoGuard {
-    pub(crate) fn new(signatures: Vec<String>, repeated_world: Option<String>) -> Self {
+    pub(crate) fn new(signatures: Vec<String>) -> Self {
         let mut signatures = signatures
             .into_iter()
             .map(|text| normalize_echo_text(&text))
@@ -44,51 +43,21 @@ impl AsrEchoGuard {
             .collect::<Vec<_>>();
         signatures.sort_unstable();
         signatures.dedup();
-        Self {
-            signatures,
-            repeated_world: repeated_world.map(|world| normalize_echo_text(&world)),
-        }
+        Self { signatures }
     }
 
     fn is_echo(&self, text: &str) -> bool {
         let text = normalize_echo_text(text);
-        !text.is_empty()
-            && (self.signatures.iter().any(|signature| signature == &text)
-                || self.is_repeated_world(&text, false))
+        !text.is_empty() && self.signatures.iter().any(|signature| signature == &text)
     }
 
     fn suppresses_partial(&self, text: &str) -> bool {
         let text = normalize_echo_text(text);
-        (text.contains(':')
+        text.contains(':')
             && self
                 .signatures
                 .iter()
-                .any(|signature| signature.starts_with(&text)))
-            || self.is_repeated_world(&text, true)
-    }
-
-    fn is_repeated_world(&self, text: &str, allow_trailing_prefix: bool) -> bool {
-        let Some(world) = self
-            .repeated_world
-            .as_deref()
-            .filter(|world| !world.is_empty())
-        else {
-            return false;
-        };
-        let mut remaining = text;
-        let mut count = 0;
-        loop {
-            let Some(rest) = remaining.strip_prefix(world) else {
-                return allow_trailing_prefix && count >= 1 && world.starts_with(remaining);
-            };
-            count += 1;
-            remaining = rest.trim_start_matches([
-                ' ', ',', '，', ';', '；', '/', '|', '.', '。', '!', '！', '?', '？', ':', '：',
-            ]);
-            if remaining.is_empty() {
-                return count >= 2;
-            }
-        }
+                .any(|signature| signature.starts_with(&text))
     }
 }
 
@@ -1205,26 +1174,18 @@ mod tests {
 
     #[test]
     fn vrcx_echo_guard_blocks_generated_context_without_blocking_real_mentions() {
-        let guard = AsrEchoGuard::new(
-            vec![
-                "World: Club_GoH2.0".into(),
-                "World: Club_GoH2.0; Names: Alice, Bob".into(),
-                "Club_GoH2.0\nAlice\nBob".into(),
-            ],
-            Some("Club_GoH2.0".into()),
-        );
+        let guard = AsrEchoGuard::new(vec!["Names: Alice, Bob".into(), "Alice\nBob".into()]);
 
-        assert!(guard.is_echo("World: Club_GoH2.0."));
-        assert!(guard.is_echo("world: club_goh2.0; names: alice, bob"));
-        assert!(guard.is_echo("Club_GoH2.0\nAlice\nBob"));
-        assert!(guard.is_echo("Club_GoH2.0 Club_GoH2.0"));
-        assert!(guard.is_echo("Club_GoH2.0Club_GoH2.0"));
-        assert!(guard.is_echo("Club_GoH2.0，Club_GoH2.0"));
-        assert!(guard.suppresses_partial("World: Club_"));
-        assert!(guard.suppresses_partial("Club_GoH2.0Club_GoH2"));
+        assert!(guard.is_echo("Names: Alice, Bob."));
+        assert!(guard.is_echo("names: alice, bob"));
+        assert!(guard.is_echo("Alice\nBob"));
+        assert!(guard.suppresses_partial("Names: Al"));
+        assert!(!guard.is_echo("Alice"));
+        assert!(!guard.is_echo("Hi Alice"));
         assert!(!guard.is_echo("Club_GoH2.0"));
         assert!(!guard.is_echo("We are in Club_GoH2.0"));
         assert!(!guard.is_echo("Club_GoH2.0 is a nice world"));
+        assert!(!guard.is_echo("Club_GoH2.0 Club_GoH2.0"));
         assert!(!guard.suppresses_partial("Club_GoH2.0"));
     }
 
@@ -1444,7 +1405,7 @@ mod tests {
     #[test]
     fn cloud_reducer_filters_and_throttles_partials() {
         let start = Instant::now();
-        let guard = AsrEchoGuard::new(vec!["World: Example".into()], Some("Example".into()));
+        let guard = AsrEchoGuard::new(vec!["Names: Alice".into()]);
         let mut state = PipelineState::new(16_000);
         let partial = |utterance_id: &str, text: &str, now| PipelineEvent::Cloud {
             event: CloudEvent::Partial {
@@ -1456,7 +1417,7 @@ mod tests {
         };
 
         let effects =
-            reduce_pipeline_event(&mut state, partial("echo", "World: Examp", start), &guard);
+            reduce_pipeline_event(&mut state, partial("echo", "Names: Ali", start), &guard);
         assert!(effects.is_empty());
         let effects = reduce_pipeline_event(&mut state, partial("one", "hello", start), &guard);
         assert_eq!(effects.len(), 1);
@@ -1620,14 +1581,14 @@ mod tests {
         let events = DomainEventHub::new();
         let mut receiver = events.subscribe();
         let dependencies = test_dependencies(events);
-        let guard = AsrEchoGuard::new(vec!["World: Example".into()], Some("Example".into()));
+        let guard = AsrEchoGuard::new(vec!["Names: Alice".into()]);
 
         publish_cloud_final(
             &dependencies,
             "speaker",
             &guard,
             "utterance-filtered".into(),
-            "World: Example.".into(),
+            "Names: Alice.".into(),
             None,
         )
         .await

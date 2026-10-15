@@ -22,8 +22,8 @@ pub(crate) struct CaptureReloadPlan {
 impl CaptureReloadPlan {
     pub(crate) fn between(current: &AppConfig, candidate: &AppConfig) -> Self {
         let shared = current.vad != candidate.vad
-            || (current.vrcx.include_in_asr_context || candidate.vrcx.include_in_asr_context)
-                && current.vrcx.enabled != candidate.vrcx.enabled
+            || (current.vrcx.enabled && current.vrcx.include_in_asr_context)
+                != (candidate.vrcx.enabled && candidate.vrcx.include_in_asr_context)
             || asr_runtime_changed(current, candidate)
             || glossary_asr_runtime_changed(current, candidate)
             || current.storage.model_directory != candidate.storage.model_directory;
@@ -320,13 +320,12 @@ fn effective_asr_config(
         .terms_for_asr(&config.glossary)
         .join("\n");
     crate::glossary::append_asr_context(&mut asr, &terms);
-    let (signatures, repeated_world) = if config.vrcx.enabled && config.vrcx.include_in_asr_context
-    {
+    let signatures = if config.vrcx.enabled && config.vrcx.include_in_asr_context {
         state.integrations.vrcx.apply_asr_context(&mut asr)
     } else {
-        (Vec::new(), None)
+        Vec::new()
     };
-    (asr, AsrEchoGuard::new(signatures, repeated_world))
+    (asr, AsrEchoGuard::new(signatures))
 }
 
 fn pipeline_dependencies(state: &CaptureContext) -> PipelineDependencies {
@@ -651,6 +650,36 @@ pub(crate) async fn resume_microphone(state: &CaptureContext) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::{asr_runtime_changed, CaptureReloadPlan};
+
+    #[test]
+    fn vrcx_asr_context_toggle_reloads_both_pipelines() {
+        let mut current = crate::config::AppConfig::default();
+        current.asr.backend = crate::providers::SERVICE_QWEN_REALTIME.into();
+        current.vrcx.enabled = true;
+        for enabled in [false, true] {
+            current.vrcx.include_in_asr_context = enabled;
+            let mut next = current.clone();
+            next.vrcx.include_in_asr_context = !enabled;
+            assert_eq!(
+                CaptureReloadPlan::between(&current, &next),
+                CaptureReloadPlan::all()
+            );
+        }
+    }
+
+    #[test]
+    fn disabled_vrcx_context_changes_do_not_reload_capture() {
+        let mut current = crate::config::AppConfig::default();
+        current.vrcx.enabled = false;
+        let mut next = current.clone();
+        next.vrcx.include_in_asr_context = !current.vrcx.include_in_asr_context;
+        assert!(CaptureReloadPlan::between(&current, &next).is_empty());
+
+        current.vrcx.enabled = true;
+        next = current.clone();
+        next.vrcx.include_in_llm_context = !current.vrcx.include_in_llm_context;
+        assert!(CaptureReloadPlan::between(&current, &next).is_empty());
+    }
 
     #[test]
     fn qwen_glossary_changes_reload_live_sessions_for_either_consumer() {

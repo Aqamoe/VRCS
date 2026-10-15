@@ -1438,7 +1438,7 @@
         "portHint": "Use the port configured in VRCX-0.",
         "invalidPort": "Enter a valid port from 1 to 65535.",
         "includeInLlmContext": "Include VRCX world data in LLM context",
-        "includeInAsrContext": "Include VRCX world data in ASR context",
+        "includeInAsrContext": "Include VRCX member names in ASR context",
         "test": "Test connection",
         "testing": "Testing…",
         "testFailed": "The VRCX-0 connection test failed.",
