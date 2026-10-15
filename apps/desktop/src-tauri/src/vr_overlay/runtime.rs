@@ -1,4 +1,3 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -366,6 +365,7 @@ struct WorkerState {
     dashboard_dirty: bool,
     dashboard_thumbnail_uploaded: bool,
     next_reconnect: Instant,
+    next_probe: Instant,
     #[cfg(windows)]
     ocr: super::ocr_runtime::OcrRuntime,
 }
@@ -415,6 +415,7 @@ fn worker_loop(
         dashboard_dirty: true,
         dashboard_thumbnail_uploaded: false,
         next_reconnect: Instant::now(),
+        next_probe: Instant::now(),
         #[cfg(windows)]
         ocr,
     };
@@ -490,6 +491,7 @@ fn worker_loop(
                 state.dashboard_dirty = true;
                 state.dashboard_thumbnail_uploaded = false;
                 state.next_reconnect = Instant::now();
+                state.next_probe = Instant::now();
                 status.reconnect_attempt = 0;
                 status.last_error_detail = None;
             }
@@ -511,7 +513,13 @@ fn worker_loop(
         }
 
         let available = features.borrow().vr_overlay;
-        tick(&app, &mut state, &mut status, available);
+        // The panic hook records details; keep the worker alive and reconnect.
+        let ticked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            tick(&app, &mut state, &mut status, available)
+        }));
+        if ticked.is_err() {
+            recover_from_panic(&mut state, &mut status);
+        }
         #[cfg(windows)]
         if open_ocr_bindings
             && available
@@ -544,6 +552,21 @@ fn worker_loop(
             std::thread::sleep(delay);
         }
     }
+}
+
+fn recover_from_panic(state: &mut WorkerState, status: &mut VrOverlayStatus) {
+    tracing::error!("VR Overlay worker panicked; reconnecting");
+    #[cfg(windows)]
+    state.ocr.clear();
+    drop(state.backend.take());
+    state.headset_hash = None;
+    state.wrist_hash = None;
+    state.dashboard_dirty = true;
+    state.dashboard_thumbnail_uploaded = false;
+    state.next_reconnect = Instant::now() + RECONNECT_INTERVAL;
+    status.state = RuntimeState::Reconnecting;
+    status.reconnect_attempt = status.reconnect_attempt.saturating_add(1);
+    status.last_error_detail = Some("VR Overlay worker panicked".into());
 }
 
 fn tick(app: &AppHandle, state: &mut WorkerState, status: &mut VrOverlayStatus, available: bool) {
@@ -611,8 +634,12 @@ fn tick(app: &AppHandle, state: &mut WorkerState, status: &mut VrOverlayStatus, 
         status.wrist.bound_role = None;
         return;
     }
-    status.runtime_installed = OpenVrBackend::runtime_installed();
-    status.hmd_present = OpenVrBackend::hmd_present();
+    // These probes read openvrpaths and may load vrclient.dll, so avoid running them per frame.
+    if Instant::now() >= state.next_probe {
+        status.runtime_installed = OpenVrBackend::runtime_installed();
+        status.hmd_present = OpenVrBackend::hmd_present();
+        state.next_probe = Instant::now() + RECONNECT_INTERVAL;
+    }
     status.headset.sample_visible = state.headset_sample;
     status.wrist.sample_visible = state.wrist_sample;
 
@@ -1034,9 +1061,6 @@ fn render_and_show(
         renderer::content_hash(layout, &frame.content, font_size_px, background_opacity);
     if *last_hash != Some(content_hash) {
         let texture = renderer::render(layout, &frame.content, font_size_px, background_opacity)?;
-        let mut pixel_hasher = DefaultHasher::new();
-        texture.pixels.hash(&mut pixel_hasher);
-        let pixel_hash = pixel_hasher.finish();
         let (message_count, line_count) = match &frame.content {
             PresentationContent::Headset(text) => (1, text.lines().count()),
             PresentationContent::Wrist(messages) => (
@@ -1047,10 +1071,9 @@ fn render_and_show(
                     .sum(),
             ),
         };
-        tracing::info!(
+        tracing::debug!(
             ?kind,
             content_hash,
-            pixel_hash,
             message_count,
             line_count,
             width = texture.width,

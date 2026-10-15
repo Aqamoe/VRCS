@@ -928,7 +928,7 @@ mod platform {
                 .filter(|texture| texture.matches_dimensions(source))
             {
                 device.copy_texture(texture, source)?;
-                tracing::info!(
+                tracing::debug!(
                     ?kind,
                     shared_handle = texture.shared_handle() as usize,
                     submitted = false,
