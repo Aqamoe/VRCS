@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 
 use crate::config::{ApiProfile, TranslationPromptConfig, TranslationTargetConfig};
-use crate::db::conversations::{publish_latest_catalog, ConversationCatalog};
+use crate::db::conversations::{CatalogRefresh, ConversationCatalog};
 use crate::db::Database;
 use crate::models::Subtitle;
 use crate::subtitle_output::{SubtitleLifecyclePublisher, TranslationFailure};
@@ -63,7 +63,7 @@ struct TranslationJob {
 struct TranslationJobContext {
     service: Arc<TranslationService>,
     database: Arc<Mutex<Database>>,
-    conversation_catalog: broadcast::Sender<ConversationCatalog>,
+    catalog: CatalogRefresh,
     output: SubtitleLifecyclePublisher,
     vrcx: crate::vrcx::VrcxIntegration,
 }
@@ -79,8 +79,8 @@ impl TranslationDispatcher {
         let (sender, mut receiver) = mpsc::channel::<TranslationJob>(64);
         let context = TranslationJobContext {
             service,
+            catalog: CatalogRefresh::new(Arc::clone(&database), conversation_catalog),
             database,
-            conversation_catalog,
             output,
             vrcx,
         };
@@ -147,7 +147,7 @@ async fn process_job(
     let TranslationJobContext {
         service,
         database,
-        conversation_catalog,
+        catalog,
         output,
         vrcx,
     } = context;
@@ -186,18 +186,25 @@ async fn process_job(
             &progress_source,
         );
     };
-    let mut context = match database.lock() {
-        Ok(database) => database
-            .recent_translation_context(&job.prompt, Some(subtitle_id))
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "translation context could not be loaded");
+    // Waiting for the shared database lock must not stall an async worker.
+    let mut context = tokio::task::spawn_blocking({
+        let database = Arc::clone(&database);
+        let prompt = job.prompt.clone();
+        move || match database.lock() {
+            Ok(database) => database
+                .recent_translation_context(&prompt, Some(subtitle_id))
+                .unwrap_or_else(|error| {
+                    tracing::warn!(%error, "translation context could not be loaded");
+                    Vec::new()
+                }),
+            Err(_) => {
+                tracing::warn!("translation context database lock is unavailable");
                 Vec::new()
-            }),
-        Err(_) => {
-            tracing::warn!("translation context database lock is unavailable");
-            Vec::new()
+            }
         }
-    };
+    })
+    .await
+    .unwrap_or_default();
     if job.include_vrcx_context {
         if let Some(entry) = vrcx.translation_context_entry() {
             context.push(entry);
@@ -252,7 +259,7 @@ async fn process_job(
                         .save_translation(subtitle_id, &record)
                         .map_err(|error| error.to_string())?;
                     if catalog_changed {
-                        publish_latest_catalog(&database, &conversation_catalog);
+                        catalog.request();
                     }
                     Ok::<_, String>(())
                 }

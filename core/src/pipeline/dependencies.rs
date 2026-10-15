@@ -5,7 +5,7 @@ use tokio::sync::broadcast;
 
 use crate::asr::{ModelManager, QwenRuntime};
 use crate::config::{AppConfig, TranslationConfig};
-use crate::db::conversations::{publish_latest_catalog, ConversationCatalog};
+use crate::db::conversations::{CatalogRefresh, ConversationCatalog};
 use crate::db::Database;
 use crate::models::{
     now_iso8601, LiveTranscription, Subtitle, SubtitleTranslation, TranslationSourceGroup,
@@ -31,7 +31,7 @@ struct RecognizedText {
 pub(crate) struct PipelineDependencies {
     database: Arc<Mutex<Database>>,
     live: broadcast::Sender<LiveTranscription>,
-    conversation_catalog: broadcast::Sender<ConversationCatalog>,
+    catalog: CatalogRefresh,
     translation: TranslationDispatcher,
     config: Arc<std::sync::RwLock<AppConfig>>,
     language_session: Arc<std::sync::RwLock<crate::language_session::ActiveLanguageSession>>,
@@ -52,9 +52,9 @@ impl PipelineDependencies {
         output: SubtitleLifecyclePublisher,
     ) -> Self {
         Self {
+            catalog: CatalogRefresh::new(Arc::clone(&database), conversation_catalog),
             database,
             live,
-            conversation_catalog,
             translation,
             config,
             language_session,
@@ -257,7 +257,7 @@ impl PipelineDependencies {
         } else {
             let database = Arc::clone(&self.database);
             let record = translation.clone();
-            let catalog = self.conversation_catalog.clone();
+            let catalog = self.catalog.clone();
             match tokio::task::spawn_blocking(move || {
                 let database = database
                     .lock()
@@ -266,7 +266,7 @@ impl PipelineDependencies {
                     .save_translation(item.subtitle_id, &record)
                     .map_err(|error| error.to_string())?;
                 if changed {
-                    publish_latest_catalog(&database, &catalog);
+                    catalog.request();
                 }
                 Ok::<_, String>(())
             })
@@ -437,7 +437,7 @@ impl PipelineDependencies {
         let storage_error = {
             let database = Arc::clone(&self.database);
             let record = translation.clone();
-            let catalog = self.conversation_catalog.clone();
+            let catalog = self.catalog.clone();
             match tokio::task::spawn_blocking(move || {
                 let database = database
                     .lock()
@@ -446,7 +446,7 @@ impl PipelineDependencies {
                     .save_translation_group(&subtitle_ids, &record)
                     .map_err(|error| error.to_string())?;
                 if changed {
-                    publish_latest_catalog(&database, &catalog);
+                    catalog.request();
                 }
                 Ok::<_, String>(())
             })
@@ -517,7 +517,7 @@ impl PipelineDependencies {
             translations: Vec::new(),
         };
         let database = Arc::clone(&self.database);
-        let conversation_catalog = self.conversation_catalog.clone();
+        let catalog = self.catalog.clone();
         let native_record = native
             .clone()
             .filter(|translation| !translation.text.is_empty());
@@ -536,7 +536,7 @@ impl PipelineDependencies {
                     Err(error) => native_error = Some(error.to_string()),
                 }
             }
-            publish_latest_catalog(&database, &conversation_catalog);
+            catalog.request();
             Ok::<_, String>((saved, native_error))
         })
         .await

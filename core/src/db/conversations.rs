@@ -1,3 +1,7 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tokio::sync::broadcast;
@@ -109,6 +113,48 @@ pub(crate) fn publish_latest_catalog(
     match database.conversation_catalog() {
         Ok(catalog) => publish_catalog(sender, &catalog),
         Err(error) => tracing::warn!(%error, "conversation catalog could not be published"),
+    }
+}
+
+const CATALOG_REFRESH_DELAY: Duration = Duration::from_millis(250);
+
+/// Coalesces catalog rebuilds so realtime writes do not scan history under the database lock.
+#[derive(Clone)]
+pub(crate) struct CatalogRefresh {
+    database: Arc<Mutex<Database>>,
+    sender: broadcast::Sender<ConversationCatalog>,
+    scheduled: Arc<AtomicBool>,
+}
+
+impl CatalogRefresh {
+    pub(crate) fn new(
+        database: Arc<Mutex<Database>>,
+        sender: broadcast::Sender<ConversationCatalog>,
+    ) -> Self {
+        Self {
+            database,
+            sender,
+            scheduled: Arc::default(),
+        }
+    }
+
+    pub(crate) fn request(&self) {
+        if self.scheduled.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let refresh = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(CATALOG_REFRESH_DELAY).await;
+            let _ = tokio::task::spawn_blocking(move || {
+                // Clear first so a write committed during this rebuild schedules another.
+                refresh.scheduled.store(false, Ordering::Release);
+                match refresh.database.lock() {
+                    Ok(database) => publish_latest_catalog(&database, &refresh.sender),
+                    Err(_) => tracing::warn!("conversation catalog database lock is unavailable"),
+                }
+            })
+            .await;
+        });
     }
 }
 
