@@ -84,7 +84,7 @@ export const DEFAULT_VR_OVERLAY_WRIST_SETTINGS: VrOverlayWristSettings = {
   include_microphone: false,
   include_chatbox: false,
   max_entries: 5,
-  idle_hide_seconds: 0,
+  idle_hide_seconds: 15,
   offset_x_m: 0.03,
   offset_y_m: 0.08,
   offset_z_m: -0.06,

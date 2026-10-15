@@ -861,7 +861,7 @@
         "displaySeconds": "停留时间",
         "fadeSeconds": "淡出时间",
         "maxEntries": "对话条数",
-        "idleHideSeconds": "空闲后隐藏（0 表示不隐藏）",
+        "idleHideSeconds": "无新对话后隐藏（秒；0 关闭超时）",
         "position": "位置",
         "horizontal": "左右",
         "vertical": "上下",

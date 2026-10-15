@@ -319,6 +319,15 @@ impl WristPresentation {
                         preferred: true,
                     });
                 }
+                let has_content = !preview_text(
+                    &item,
+                    "all_languages",
+                    config.show_partials,
+                    config.show_translation_partials,
+                    None,
+                )
+                .trim()
+                .is_empty();
                 if let Some(existing) = self
                     .partials
                     .iter_mut()
@@ -328,7 +337,9 @@ impl WristPresentation {
                 } else {
                     self.partials.push_back(item);
                 }
-                self.last_activity = Some(now);
+                if has_content {
+                    self.last_activity = Some(now);
+                }
             }
             PresentationEvent::RecognitionPartial {
                 utterance_id,
@@ -377,10 +388,23 @@ impl WristPresentation {
                     });
                 }
                 if source_enabled(&subtitle.source, config) {
-                    self.entries
-                        .push_back(item_from_subtitle(subtitle, utterance_id, now));
+                    let item = item_from_subtitle(subtitle, utterance_id, now);
+                    let has_content = !wrist_message(
+                        &item,
+                        selected_caption_mode(
+                            config.show_partials,
+                            config.show_translation_partials,
+                        ),
+                        "all_languages",
+                    )
+                    .text
+                    .trim()
+                    .is_empty();
+                    self.entries.push_back(item);
                     self.trim(config.max_entries);
-                    self.last_activity = Some(now);
+                    if has_content {
+                        self.last_activity = Some(now);
+                    }
                 }
             }
             PresentationEvent::TranslationPartial {
@@ -394,7 +418,9 @@ impl WristPresentation {
                     .iter_mut()
                     .find(|item| item.subtitle_id == Some(subtitle_id))
                 {
-                    if update_translation(item, target_language, text, preferred) {
+                    if update_translation(item, target_language, text, preferred)
+                        && source_enabled(&item.source, config)
+                    {
                         self.last_activity = Some(now);
                     }
                 }
@@ -421,7 +447,7 @@ impl WristPresentation {
                         .map(|translation| translation.target_language.as_str())
                         .collect::<Vec<_>>()
                         .join(",");
-                    if accepted {
+                    if accepted && source_enabled(&item.source, config) {
                         self.last_activity = Some(now);
                     }
                 }

@@ -969,7 +969,7 @@ fn update_wrist(
     }
 
     let frame = if state.wrist_sample {
-        PresentationFrame::wrist(vec![
+        Some(PresentationFrame::wrist(vec![
             WristMessage {
                 text: "你好，欢迎使用 VRCS。".into(),
                 side: MessageSide::Left,
@@ -982,16 +982,19 @@ fn update_wrist(
                 text: "对方在左侧，己方在右侧。".into(),
                 side: MessageSide::Left,
             },
-        ])
+        ]))
     } else {
-        state
-            .wrist
-            .frame_with_translation_display(
-                Instant::now(),
-                &state.config.wrist,
-                &state.config.translation_display,
-            )
-            .unwrap_or_else(|| PresentationFrame::wrist(Vec::new()))
+        state.wrist.frame_with_translation_display(
+            Instant::now(),
+            &state.config.wrist,
+            &state.config.translation_display,
+        )
+    };
+    let Some(frame) = frame else {
+        backend.hide(OverlayKind::Wrist);
+        status.wrist.state = ResourceState::ReadyHidden;
+        status.wrist.last_error_code = None;
+        return;
     };
 
     match render_and_show(

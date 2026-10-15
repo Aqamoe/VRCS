@@ -861,7 +861,7 @@
         "displaySeconds": "Display duration",
         "fadeSeconds": "Fade duration",
         "maxEntries": "Conversation lines",
-        "idleHideSeconds": "Hide after idle (0 = never)",
+        "idleHideSeconds": "Hide after no new dialogue (seconds; 0 disables timeout)",
         "position": "Position",
         "horizontal": "Horizontal",
         "vertical": "Vertical",

@@ -861,7 +861,7 @@
         "displaySeconds": "表示時間",
         "fadeSeconds": "フェード時間",
         "maxEntries": "会話の件数",
-        "idleHideSeconds": "未操作時に非表示（0 は常時表示）",
+        "idleHideSeconds": "新しい会話がない場合に非表示（秒、0 でタイムアウト無効）",
         "position": "位置",
         "horizontal": "左右",
         "vertical": "上下",

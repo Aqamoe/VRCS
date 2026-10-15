@@ -79,7 +79,7 @@ pub struct VrOverlayWristConfig {
     pub include_chatbox: bool,
     #[serde(default = "default_wrist_max_entries")]
     pub max_entries: u32,
-    #[serde(default)]
+    #[serde(default = "default_wrist_idle_hide_seconds")]
     pub idle_hide_seconds: u32,
     #[serde(default = "default_wrist_offset_x_m")]
     pub offset_x_m: f32,
@@ -161,6 +161,10 @@ fn default_dominant_hand() -> String {
 
 fn default_wrist_max_entries() -> u32 {
     5
+}
+
+fn default_wrist_idle_hide_seconds() -> u32 {
+    15
 }
 
 fn default_wrist_offset_x_m() -> f32 {
@@ -245,7 +249,7 @@ impl Default for VrOverlayWristConfig {
             include_microphone: false,
             include_chatbox: false,
             max_entries: default_wrist_max_entries(),
-            idle_hide_seconds: 0,
+            idle_hide_seconds: default_wrist_idle_hide_seconds(),
             offset_x_m: default_wrist_offset_x_m(),
             offset_y_m: default_wrist_offset_y_m(),
             offset_z_m: default_wrist_offset_z_m(),
@@ -264,6 +268,21 @@ impl Default for VrOverlayWristConfig {
 mod tests {
     use super::super::VrOcrConfig;
     use super::*;
+
+    #[test]
+    fn wrist_idle_hide_default_and_saved_values_are_preserved() {
+        assert_eq!(VrOverlayWristConfig::default().idle_hide_seconds, 15);
+        let missing: VrOverlayWristConfig = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(missing.idle_hide_seconds, 15);
+        for seconds in [0, 5, 120] {
+            let saved: VrOverlayWristConfig =
+                serde_json::from_value(serde_json::json!({"idle_hide_seconds": seconds})).unwrap();
+            assert_eq!(saved.idle_hide_seconds, seconds);
+            let restored: VrOverlayWristConfig =
+                serde_json::from_value(serde_json::to_value(saved).unwrap()).unwrap();
+            assert_eq!(restored.idle_hide_seconds, seconds);
+        }
+    }
 
     #[test]
     fn missing_ocr_display_uses_stereo_and_saved_display_choices_round_trip() {

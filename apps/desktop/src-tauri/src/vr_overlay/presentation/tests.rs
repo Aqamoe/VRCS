@@ -189,6 +189,258 @@ fn translation(text: &str) -> vrcs_core::SubtitleTranslation {
     translation_in("zh", text)
 }
 
+#[test]
+fn wrist_without_visible_content_has_no_frame() {
+    let now = Instant::now();
+    for idle_hide_seconds in [0, 15] {
+        let mut config = VrOverlayWristConfig {
+            idle_hide_seconds,
+            ..Default::default()
+        };
+        let mut wrist = WristPresentation::default();
+        assert!(wrist.frame(now, &config).is_none());
+        wrist.apply(final_event(subtitle(1, " \n ")), now, &config);
+        assert!(wrist.frame(now, &config).is_none());
+        wrist.apply(final_event(subtitle(2, "hello")), now, &config);
+        config.include_speaker = false;
+        assert!(wrist.frame(now, &config).is_none());
+    }
+}
+
+#[test]
+fn wrist_idle_deadline_preserves_history_and_new_activity_restores_visibility() {
+    let now = Instant::now();
+    let config = VrOverlayWristConfig {
+        idle_hide_seconds: 15,
+        ..Default::default()
+    };
+    let mut wrist = WristPresentation::default();
+    wrist.apply(final_event(subtitle(1, "hello")), now, &config);
+    assert!(wrist
+        .frame(now + Duration::from_millis(14999), &config)
+        .is_some());
+    assert!(wrist
+        .frame(now + Duration::from_secs(15), &config)
+        .is_none());
+    assert!(wrist
+        .frame(now + Duration::from_secs(60), &config)
+        .is_none());
+    assert_eq!(wrist.entries.len(), 1);
+
+    wrist.apply(
+        final_event(subtitle(2, "again")),
+        now + Duration::from_secs(60),
+        &config,
+    );
+    let frame = wrist.frame(now + Duration::from_secs(60), &config).unwrap();
+    assert_eq!(
+        frame.content,
+        PresentationContent::Wrist(vec![
+            WristMessage {
+                text: "hello".into(),
+                side: MessageSide::Left
+            },
+            WristMessage {
+                text: "again".into(),
+                side: MessageSide::Left
+            },
+        ])
+    );
+    assert!(wrist
+        .frame(now + Duration::from_secs(75), &config)
+        .is_none());
+}
+
+#[test]
+fn wrist_partials_and_late_translation_restart_idle_deadline() {
+    let now = Instant::now();
+    let config = VrOverlayWristConfig {
+        idle_hide_seconds: 15,
+        show_partials: true,
+        ..Default::default()
+    };
+    let mut wrist = WristPresentation::default();
+    wrist.apply(final_event(subtitle(1, "hello")), now, &config);
+    wrist.apply(
+        partial_event("u2", "speaker", "again"),
+        now + Duration::from_secs(10),
+        &config,
+    );
+    assert!(wrist
+        .frame(now + Duration::from_secs(15), &config)
+        .is_some());
+    assert!(wrist
+        .frame(now + Duration::from_secs(25), &config)
+        .is_none());
+    wrist.apply(
+        PresentationEvent::TranslationCompleted {
+            subtitle_id: 1,
+            translation: translation("你好"),
+            preferred: true,
+        },
+        now + Duration::from_secs(30),
+        &config,
+    );
+    assert!(wrist
+        .frame(now + Duration::from_secs(30), &config)
+        .is_some());
+    assert!(wrist
+        .frame(now + Duration::from_secs(45), &config)
+        .is_none());
+}
+
+#[test]
+fn wrist_ignored_events_do_not_extend_idle_deadline() {
+    let now = Instant::now();
+    let config = VrOverlayWristConfig {
+        idle_hide_seconds: 15,
+        ..Default::default()
+    };
+    let mut excluded = subtitle(2, "local");
+    excluded.source = "microphone".into();
+    let events = [
+        final_event(subtitle(2, " \n ")),
+        final_event(excluded),
+        partial_event("u2", "speaker", "disabled preview"),
+        PresentationEvent::TranslationPartial {
+            subtitle_id: 1,
+            text: "disabled translation".into(),
+            target_language: "zh".into(),
+            preferred: true,
+        },
+        PresentationEvent::TranslationCompleted {
+            subtitle_id: 99,
+            translation: translation("unmatched"),
+            preferred: true,
+        },
+        PresentationEvent::TranslationCompleted {
+            subtitle_id: 1,
+            translation: translation("  "),
+            preferred: true,
+        },
+        PresentationEvent::RecognitionCancelled {
+            utterance_id: "u2".into(),
+            source: "speaker".into(),
+        },
+        PresentationEvent::RecognitionReset {
+            source: "speaker".into(),
+        },
+    ];
+    for event in events {
+        let mut wrist = WristPresentation::default();
+        wrist.apply(final_event(subtitle(1, "hello")), now, &config);
+        wrist.apply(event.clone(), now + Duration::from_secs(10), &config);
+        assert!(
+            wrist
+                .frame(now + Duration::from_secs(15), &config)
+                .is_none(),
+            "{event:?}"
+        );
+    }
+}
+
+#[test]
+fn wrist_empty_live_preview_does_not_extend_idle_deadline() {
+    let now = Instant::now();
+    let config = VrOverlayWristConfig {
+        idle_hide_seconds: 15,
+        show_partials: true,
+        ..Default::default()
+    };
+    let mut wrist = WristPresentation::default();
+    wrist.apply(final_event(subtitle(1, "hello")), now, &config);
+    wrist.apply(
+        PresentationEvent::LiveTranslationUpdated {
+            source: "speaker".into(),
+            snapshot: vrcs_core::LiveTranslation {
+                utterance_id: "u2".into(),
+                source_utterance_id: None,
+                completed_original: None,
+                conversation_preview: None,
+                speaker: None,
+                text: "  ".into(),
+                language: Some("en".into()),
+                translation: "hidden translation".into(),
+                target_language: "zh".into(),
+            },
+        },
+        now + Duration::from_secs(10),
+        &config,
+    );
+    assert!(wrist
+        .frame(now + Duration::from_secs(15), &config)
+        .is_none());
+}
+
+#[test]
+fn wrist_translation_from_disabled_source_does_not_extend_idle_deadline() {
+    let now = Instant::now();
+    for partial in [false, true] {
+        let mut config = VrOverlayWristConfig {
+            idle_hide_seconds: 15,
+            include_microphone: true,
+            show_translation_partials: partial,
+            ..Default::default()
+        };
+        let mut wrist = WristPresentation::default();
+        let mut local = subtitle(2, "local");
+        local.source = "microphone".into();
+        wrist.apply(final_event(local), now, &config);
+        wrist.apply(final_event(subtitle(1, "hello")), now, &config);
+        config.include_microphone = false;
+        let event = if partial {
+            PresentationEvent::TranslationPartial {
+                subtitle_id: 2,
+                text: "本地".into(),
+                target_language: "zh".into(),
+                preferred: true,
+            }
+        } else {
+            PresentationEvent::TranslationCompleted {
+                subtitle_id: 2,
+                translation: translation("本地"),
+                preferred: true,
+            }
+        };
+        wrist.apply(event, now + Duration::from_secs(10), &config);
+        assert!(wrist
+            .frame(now + Duration::from_secs(15), &config)
+            .is_none());
+    }
+}
+
+#[test]
+fn wrist_zero_timeout_only_disables_idle_hiding() {
+    let now = Instant::now();
+    let mut config = VrOverlayWristConfig {
+        idle_hide_seconds: 0,
+        show_partials: true,
+        ..Default::default()
+    };
+    let mut wrist = WristPresentation::default();
+    wrist.apply(partial_event("u1", "speaker", "hello"), now, &config);
+    assert!(wrist
+        .frame(now + Duration::from_secs(3600), &config)
+        .is_some());
+    wrist.apply(
+        PresentationEvent::RecognitionCancelled {
+            utterance_id: "u1".into(),
+            source: "speaker".into(),
+        },
+        now,
+        &config,
+    );
+    assert!(wrist.frame(now, &config).is_none());
+    wrist.apply(final_event(subtitle(1, "hello")), now, &config);
+    assert!(wrist
+        .frame(now + Duration::from_secs(3600), &config)
+        .is_some());
+    config.idle_hide_seconds = 15;
+    assert!(wrist
+        .frame(now + Duration::from_secs(3600), &config)
+        .is_none());
+}
+
 fn translation_in(target_language: &str, text: &str) -> vrcs_core::SubtitleTranslation {
     vrcs_core::SubtitleTranslation {
         source_group: None,

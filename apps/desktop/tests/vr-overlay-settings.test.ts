@@ -68,6 +68,7 @@ test("VR Overlay defaults keep OCR settings separate", () => {
   ]);
   assert.equal(DEFAULT_VR_OVERLAY_HEADSET_SETTINGS.show_partials, false);
   assert.equal(DEFAULT_VR_OVERLAY_WRIST_SETTINGS.show_partials, false);
+  assert.equal(DEFAULT_VR_OVERLAY_WRIST_SETTINGS.idle_hide_seconds, 15);
   assert.deepEqual(Object.keys(DEFAULT_VR_OVERLAY_WRIST_SETTINGS).sort(), [
     "background_opacity",
     "dominant_hand",
@@ -139,7 +140,7 @@ test("headset and wrist reset independently without changing the master switch",
       opacity: 0.35,
       width_m: 2.5,
     }),
-    { opacity: 0.4, max_entries: 9 },
+    { opacity: 0.4, max_entries: 9, idle_hide_seconds: 0 },
   );
 
   const resetHeadset = resetVrOverlayHeadset(changed);
@@ -150,6 +151,7 @@ test("headset and wrist reset independently without changing the master switch",
   const resetWrist = resetVrOverlayWrist(changed);
   assert.equal(resetWrist.vr_overlay.enabled, true);
   assert.deepEqual(resetWrist.vr_overlay.wrist, DEFAULT_VR_OVERLAY_WRIST_SETTINGS);
+  assert.equal(resetWrist.vr_overlay.wrist.idle_hide_seconds, 15);
   assert.equal(resetWrist.vr_overlay.headset, changed.vr_overlay.headset);
 });
 
